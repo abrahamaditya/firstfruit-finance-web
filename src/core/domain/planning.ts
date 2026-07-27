@@ -24,7 +24,7 @@ export function estimateMonthlyIncome(transactions: Transaction[], today: Date =
     const from = new Date(today);
     from.setDate(from.getDate() - days);
     return transactions
-      .filter((item) => item.type === 'income' && new Date(item.date) >= from)
+      .filter((item) => !item.adjustment && item.type === 'income' && new Date(item.date) >= from)
       .reduce((sum, item) => sum + item.amount, 0);
   };
   const lastMonth = sumSince(31);

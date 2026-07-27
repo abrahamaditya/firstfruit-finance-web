@@ -37,16 +37,16 @@ export default function ClosingScreen() {
   const closePeriod = async () => {
     if (!current || !nextStart || !nextEnd) return;
     setClosing(true);
-    await repos.periods.update(current.id, { closed: true });
-    await repos.periods.create({
-      alias: nextAlias,
-      start: nextStart.toISOString(),
-      end: nextEnd.toISOString(),
-      closed: false,
-    });
-    ui.refresh();
-    ui.notify(t('closing.transition', { from: current.alias, to: nextAlias }));
-    ui.go('home');
+    try {
+      await repos.commands.closePeriod(current.id, nextAlias);
+      ui.refresh();
+      ui.notify(t('closing.transition', { from: current.alias, to: nextAlias }));
+      ui.go('home');
+    } catch (caught) {
+      ui.notify(caught instanceof Error ? caught.message : 'Periode gagal ditutup');
+    } finally {
+      setClosing(false);
+    }
   };
 
   return (
@@ -90,8 +90,10 @@ export default function ClosingScreen() {
             <div className="pr-main">
               <div className="pr-name">
                 {item.alias}
-                <span className={`pstatus ${item.closed ? 'draft' : 'active'}`}>
-                  {item.closed ? t('closing.statusClosed') : t('closing.statusActive')}
+                <span className={`pstatus ${item.status === 'open' ? 'active' : 'draft'}`}>
+                  {item.status === 'draft'
+                    ? 'Draft'
+                    : item.closed ? t('closing.statusClosed') : t('closing.statusActive')}
                 </span>
               </div>
               <div className="pr-range">{range(item.start, item.end)}</div>

@@ -1,7 +1,7 @@
 # FirstFruit — Supabase PostgreSQL Implementation Plan
 
-Status: architecture and implementation blueprint  
-Scope: seluruh proses bisnis yang saat ini ada di aplikasi FirstFruit  
+Status: implemented; database runtime tests dijalankan pada project Supabase Cloud yang ditautkan.
+Scope: seluruh proses bisnis yang saat ini ada di aplikasi FirstFruit.
 Target: aplikasi multi-user production-grade dengan Supabase Auth, PostgreSQL, Row Level Security, Realtime, Storage, Cron, dan database migrations
 
 ---
@@ -31,7 +31,8 @@ Prinsip yang tidak boleh dilanggar:
 9. Tabel pada schema yang diekspos wajib memakai RLS.
 10. Perubahan schema hanya melalui versioned migration, tidak melalui perubahan manual production.
 
-Firestore tidak perlu diaktifkan. Folder `src/infrastructure/firebase` dan `firestore.rules` baru dihapus setelah cutover Supabase selesai dan lolos regression test.
+Firestore tidak dipakai. Runtime production terhubung langsung ke repository Supabase;
+scaffold Firebase sudah dihapus setelah typecheck, production build, dan audit dependency lolos.
 
 ---
 
@@ -1268,7 +1269,7 @@ Backup:
 
 ## 16. Migration dari aplikasi sekarang
 
-Karena backend sekarang masih in-memory, tidak ada migrasi data production yang kompleks.
+Backend sebelumnya masih in-memory, sehingga tidak ada migrasi data production yang kompleks.
 
 ### Langkah code migration
 
@@ -1290,14 +1291,9 @@ Karena backend sekarang masih in-memory, tidak ada migrasi data production yang 
 
 ### Seed
 
-`supabase/seed.sql` menyediakan:
-
-- kategori sistem;
-- test users/workspaces untuk local development;
-- contoh wallet, transaksi, budget, tabungan, piutang, subscription;
-- data edge case credit card, partial receivable, over-budget, dan closed period.
-
-Seed production hanya berisi global categories/system configuration, bukan contoh transaksi pengguna.
+`supabase/seed.sql` hanya menyediakan kategori sistem/global configuration. Test users dan
+data finansial dibuat oleh pgTAP dalam transaksi yang selalu di-rollback, sehingga seed
+tidak dapat tercampur dengan akun nyata.
 
 ---
 
@@ -1459,7 +1455,7 @@ Total realistis: sekitar **8–13 minggu**, bergantung pada kedalaman UI auth/co
 - Supabase database functions: https://supabase.com/docs/guides/database/functions
 - Supabase RPC JavaScript: https://supabase.com/docs/reference/javascript/rpc
 - Supabase Next.js SSR client: https://supabase.com/docs/guides/auth/server-side/creating-a-client
-- Supabase local development/migrations: https://supabase.com/docs/guides/local-development/overview
+- Supabase database migrations: https://supabase.com/docs/guides/deployment/database-migrations
 - Supabase database testing: https://supabase.com/docs/guides/local-development/testing/overview
 - Supabase Cron/Edge scheduling: https://supabase.com/docs/guides/functions/schedule-functions
 - Supabase Storage RLS: https://supabase.com/docs/guides/storage/security/access-control

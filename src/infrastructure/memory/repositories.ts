@@ -13,16 +13,63 @@ class MemoryRepo<T extends { id: string }> implements Repository<T> {
 }
 
 export function createMemoryRepositories(): DataRepositories {
+  const wallets = new MemoryRepo(seed.seedWallets);
+  const transactions = new MemoryRepo(seed.seedTransactions);
+  const budgets = new MemoryRepo(seed.seedBudgets);
+  const periods = new MemoryRepo(seed.seedPeriods);
+  const subscriptions = new MemoryRepo(seed.seedSubscriptions);
+  const receivables = new MemoryRepo(seed.seedReceivables);
+  const plans = new MemoryRepo(seed.seedPlans);
+  const savings = new MemoryRepo(seed.seedSavings);
+  const reminders = new MemoryRepo(seed.seedReminders);
+  const beneficiaries = new MemoryRepo(seed.seedBeneficiaries);
   return {
-    wallets: new MemoryRepo(seed.seedWallets),
-    transactions: new MemoryRepo(seed.seedTransactions),
-    budgets: new MemoryRepo(seed.seedBudgets),
-    periods: new MemoryRepo(seed.seedPeriods),
-    subscriptions: new MemoryRepo(seed.seedSubscriptions),
-    receivables: new MemoryRepo(seed.seedReceivables),
-    plans: new MemoryRepo(seed.seedPlans),
-    savings: new MemoryRepo(seed.seedSavings),
-    reminders: new MemoryRepo(seed.seedReminders),
-    beneficiaries: new MemoryRepo(seed.seedBeneficiaries),
+    wallets,
+    transactions,
+    budgets,
+    periods,
+    subscriptions,
+    receivables,
+    plans,
+    savings,
+    reminders,
+    beneficiaries,
+    commands: {
+      async closePeriod(periodId, nextAlias) {
+        await periods.update(periodId, { closed: true });
+        const now = new Date();
+        return (await periods.create({
+          alias: nextAlias,
+          start: now.toISOString(),
+          end: new Date(now.getFullYear(), now.getMonth() + 1, now.getDate()).toISOString(),
+          closed: false,
+        })).id;
+      },
+      async adjustSaving(savingId, amount, action) {
+        const goal = await savings.get(savingId);
+        if (!goal) throw new Error('Tabungan tidak ditemukan');
+        await savings.update(savingId, {
+          balance: action === 'reserve' ? goal.balance + amount : goal.balance - amount,
+        });
+      },
+      async settleReceivable(receivableId) {
+        const item = await receivables.get(receivableId);
+        if (!item) throw new Error('Piutang tidak ditemukan');
+        await receivables.update(receivableId, {
+          settled: true,
+          paid: item.amount,
+          settledAt: new Date().toISOString(),
+        });
+      },
+      async markReminderDone(reminderId, done) {
+        await reminders.update(reminderId, { done });
+      },
+      async archiveWallet(walletId) {
+        await wallets.remove(walletId);
+      },
+      async finalizeSplitBill() {
+        return 'split_' + Math.random().toString(36).slice(2, 9);
+      },
+    },
   };
 }

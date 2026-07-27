@@ -23,7 +23,7 @@ export default function PeopleScreen() {
   // Rekap per pihak: berapa kali muncul dan berapa nilainya (masuk vs keluar).
   const stats = new Map<string, { count: number; out: number; in: number }>();
   transactions.forEach((tx) => {
-    if (!tx.beneficiaryId) return;
+    if (tx.adjustment || !tx.beneficiaryId) return;
     const entry = stats.get(tx.beneficiaryId) ?? { count: 0, out: 0, in: 0 };
     entry.count += 1;
     if (tx.type === 'income') entry.in += tx.amount;

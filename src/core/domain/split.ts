@@ -21,11 +21,14 @@ export interface Receipt {
 const factor = (taxPercent: number) => 1 + taxPercent / 100;
 
 /** Nilai item setelah menanggung porsi pajaknya. */
-export const itemTotal = (item: SplitItem, taxPercent: number) => item.price * factor(taxPercent);
-export const itemTax = (item: SplitItem, taxPercent: number) => item.price * (taxPercent / 100);
+export const itemTotal = (item: SplitItem, taxPercent: number) =>
+  Math.round(item.price * factor(taxPercent));
+export const itemTax = (item: SplitItem, taxPercent: number) =>
+  itemTotal(item, taxPercent) - item.price;
 export const receiptSubtotal = (receipt: Receipt) => receipt.items.reduce((sum, item) => sum + item.price, 0);
-export const receiptTax = (receipt: Receipt) => receiptSubtotal(receipt) * (receipt.taxPercent / 100);
-export const receiptTotal = (receipt: Receipt) => receiptSubtotal(receipt) * factor(receipt.taxPercent);
+export const receiptTotal = (receipt: Receipt) =>
+  receipt.items.reduce((sum, item) => sum + itemTotal(item, receipt.taxPercent), 0);
+export const receiptTax = (receipt: Receipt) => receiptTotal(receipt) - receiptSubtotal(receipt);
 
 export interface PersonBalance {
   personId: string;

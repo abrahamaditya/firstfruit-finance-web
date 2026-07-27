@@ -902,4 +902,31 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .toast{bottom:44px}
 }
 
+.auth-shell{min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 20% 10%,rgba(61,214,149,.13),transparent 34%),var(--bg);color:var(--ink)}
+.auth-card{width:min(100%,430px);padding:32px;border:1px solid var(--line);border-radius:28px;background:var(--surface);box-shadow:0 30px 90px rgba(0,0,0,.2)}
+.auth-card>img{width:64px;height:64px;display:block;margin-bottom:24px}
+.auth-card h1{font-size:30px;line-height:1.1;letter-spacing:-.035em;margin:8px 0 10px}
+.auth-card p{color:var(--ink-soft);font-size:14px;line-height:1.6;margin:0 0 22px}
+.auth-brand{display:flex;align-items:center;gap:2px;margin-bottom:22px}
+.auth-brand img{width:56px;height:56px;object-fit:contain}
+.auth-brand b{font-size:21px;font-weight:800;letter-spacing:.02em}
+.auth-brand b span{font-weight:400}
+.auth-eyebrow{display:block;color:var(--mint);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
+.auth-form{display:grid;gap:16px}
+.auth-form label{display:grid;gap:7px;color:var(--ink-soft);font-size:12px;font-weight:700}
+.auth-form input{width:100%;height:48px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--ink);padding:0 14px;font:inherit;outline:0}
+.auth-form input:focus{border-color:var(--mint);box-shadow:0 0 0 3px rgba(61,214,149,.12)}
+.auth-form small{color:var(--ink-faint);font-size:10px}
+.auth-form .cta{margin-top:4px}
+.auth-links{display:flex;justify-content:space-between;gap:12px;margin-top:18px}
+.auth-links button{border:0;background:none;color:var(--mint);font:inherit;font-size:12px;font-weight:700;cursor:pointer;padding:4px 0}
+.auth-error,.auth-success{padding:11px 13px;border-radius:12px;font-size:12px;line-height:1.45}
+.auth-error{background:rgba(214,72,72,.12);color:#ef8e8e}
+.auth-success{background:rgba(61,214,149,.11);color:var(--mint)}
+.auth-command{padding:13px 15px;border-radius:12px;background:var(--bg);border:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;margin-bottom:16px}
+.auth-card .auth-hint{font-size:11px;margin:0;color:var(--ink-faint)}
+.auth-loading{display:flex;align-items:center;gap:16px;font-weight:700}
+.auth-loading>img{width:46px;height:46px;margin:0;animation:auth-pulse 1.4s ease-in-out infinite}
+@keyframes auth-pulse{50%{opacity:.5;transform:scale(.96)}}
+
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}

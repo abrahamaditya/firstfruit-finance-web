@@ -10,6 +10,7 @@
 
 # Next.js build output
 /.next/
+/.next-build-check/
 /out/
 /dist/
 /build/
@@ -50,7 +51,7 @@ next-env.d.ts
 /.nyc_output/
 /junit.xml
 
-# Supabase local-only artifacts
+# Supabase CLI artifacts and secrets
 /supabase/.branches/
 /supabase/.temp/
 /supabase/.env
@@ -67,6 +68,21 @@ next-env.d.ts
 *.dump.gz
 *.sql.gz
 /exports/
+
+# Supabase scratch queries and generated query output
+/supabase/queries/
+/supabase/query-results/
+/migration-queries/
+*.query.sql
+*.scratch.sql
+*.query-result.json
+*.query-result.csv
+
+# Versioned migrations and database tests are source code and must stay tracked
+!/supabase/migrations/
+!/supabase/migrations/*.sql
+!/supabase/tests/
+!/supabase/tests/**/*.sql
 
 # Editor settings
 /.idea/
@@ -94,3 +110,7 @@ $RECYCLE.BIN/
 
 # Local one-off audit helper
 /c.js
+
+# Legacy local files superseded by the Supabase implementation
+/firestore.rules
+/finance-app-README.md

@@ -92,18 +92,16 @@ export default function SplitScreen() {
   const createReceivables = async () => {
     setCreating(true);
     try {
-      for (const transfer of owedToMe) {
-        await repos.receivables.create({
-          person: nameOf(transfer.fromId),
-          amount: transfer.amount,
-          source: `Split bill · ${receipts.length} nota`,
-          date: new Date().toISOString(),
-          settled: false,
-        });
-      }
+      await repos.commands.finalizeSplitBill(
+        `Split bill · ${receipts.length} nota`,
+        people,
+        receipts,
+      );
       ui.refresh();
       ui.notify(t('split.created', { n: owedToMe.length }));
       ui.go('piutang');
+    } catch (caught) {
+      ui.notify(caught instanceof Error ? caught.message : 'Split bill gagal dibuat');
     } finally {
       setCreating(false);
     }

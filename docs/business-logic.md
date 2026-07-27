@@ -214,8 +214,9 @@ Dibangun dari data nyata setiap kali data berubah:
 | Pengingat | belum selesai dan jatuh tempo ≤3 hari lagi (termasuk yang telat). |
 | Anggaran | `spent > allocated`. |
 
-Status baca disimpan per-id di `localStorage` (`abraham.notifRead`); membuka panel lonceng
-**tidak** menandai apa pun. Lonceng menampilkan jumlah yang belum dibaca.
+Notifikasi dihasilkan job PostgreSQL harian dan status baca disimpan per user/workspace
+di tabel `notifications`; membuka panel lonceng **tidak** menandai apa pun. Perubahan status
+baca tersinkron realtime dan lonceng menampilkan jumlah yang belum dibaca.
 
 ---
 

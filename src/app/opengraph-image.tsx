@@ -72,7 +72,7 @@ export default function OpenGraphImage() {
               border: '2px solid rgba(255, 255, 255, 0.13)',
             }}
           >
-            <img src={logo} alt="" width="330" height="330" />
+            <img src={logo} alt="" width={330} height={330} />
           </div>
           <div
             style={{

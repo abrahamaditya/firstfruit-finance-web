@@ -25,15 +25,14 @@ export default function ReceivablesScreen() {
     iso ? new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
   const settleNow = async (id: string, person: string) => {
-    const target = active.find(r => r.id === id);
-    await repos.receivables.update(id, {
-      settled: true,
-      paid: target?.amount,
-      settledAt: new Date().toISOString(),
-    });
-    setDone([...done, id]);
-    ui.refresh();
-    ui.notify(t('piutang.settledToast', { name: person }));
+    try {
+      await repos.commands.settleReceivable(id, ui.prefs.defaultWalletId || undefined);
+      setDone([...done, id]);
+      ui.refresh();
+      ui.notify(t('piutang.settledToast', { name: person }));
+    } catch (caught) {
+      ui.notify(caught instanceof Error ? caught.message : 'Pelunasan piutang gagal');
+    }
   };
 
   return (

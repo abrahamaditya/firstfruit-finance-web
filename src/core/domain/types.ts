@@ -24,6 +24,7 @@ export interface Transaction {
   walletId: string; toWalletId?: string; labels: string[];
   merchant?: string;            // tempat transaksi: Indomaret, Shopee, kaki lima, …
   budgetId?: string;            // anggaran yang dibebani pengeluaran ini
+  savingId?: string;            // transfer ini sekaligus menyisihkan dana ke tabungan
   settlesReceivableId?: string; // pemasukan ini adalah pelunasan piutang tertentu
   beneficiaryId?: string;       // pihak terkait dari daftar penerima
   // Transaksi yang lahir dari perubahan saldo manual / penghapusan dompet, bukan
@@ -36,7 +37,14 @@ export interface Transaction {
   subscriptionId?: string; date: string;
 }
 export interface Budget { id: string; category: string; allocated: number; spent: number; }
-export interface BudgetPeriod { id: string; alias: string; start: string; end: string; closed: boolean; }
+export interface BudgetPeriod {
+  id: string;
+  alias: string;
+  start: string;
+  end: string;
+  closed: boolean;
+  status?: 'draft' | 'open' | 'closed';
+}
 export interface Subscription {
   id: string; name: string; amount: number; walletId: string; category: string;
   cycle: BillingCycle; customIntervalDays?: number; startDate: string;

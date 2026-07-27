@@ -9,6 +9,8 @@ import React, {
   useState,
 } from 'react';
 import { RepositoryProvider, useRepositories } from '../infrastructure/RepositoryProvider';
+import { AuthBoundary, AuthProvider, useAuthWorkspace } from '../infrastructure/supabase/AuthProvider';
+import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { BeneficiaryKind, TxBeneficiary, WalletMedium } from '../core/domain/types';
 import {
@@ -140,6 +142,8 @@ interface UI {
   refresh: () => void;
   prefs: Preferences;
   setPref: <K extends keyof Preferences>(key: K, value: Preferences[K]) => void;
+  saveProfile: (name: string, email: string) => Promise<void>;
+  signOut: () => Promise<void>;
   rate: number;          // IDR per 1 USD
   rateUpdated: string;   // kapan kurs terakhir diperbarui
 }
@@ -273,8 +277,6 @@ interface NotifEntry {
   tone: 'r' | 'e';            // r = mendesak/biaya, e = informasi
   icon: React.ReactNode;
 }
-const NOTIF_READ_KEY = 'abraham.notifRead';
-
 export const BENEFICIARY_KINDS: CategoryOption[] = [
   { value: 'person', label: 'Orang' },
   { value: 'family', label: 'Keluarga' },
@@ -323,6 +325,7 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
 
 function Inner() {
   const repos = useRepositories();
+  const auth = useAuthWorkspace();
   const { active: activePeriod } = usePeriods();
   const [tab, setTab] = useState<Tab>('home');
   const [tabHistory, setTabHistory] = useState<Tab[]>([]);
@@ -358,37 +361,75 @@ function Inner() {
   const [rate, setRate] = useState(FX_FALLBACK);
   const [rateUpdated, setRateUpdated] = useState('');
 
-  // Muat preferensi dari localStorage sekali di klien (hindari mismatch hidrasi).
+  // Preferensi dan identitas selalu dimuat dari akun/workspace Supabase aktif.
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(PREFS_KEY);
-      if (raw) setPrefs((current) => {
-        const saved = JSON.parse(raw) as Partial<Preferences>;
-        // Daftar pintasan dinormalkan sekali di sini — data lama belum punya field ini, dan
-        // tab yang sudah tidak ada di katalog dibuang. Sesudah ini isinya boleh dipercaya.
-        const homeTools = Array.isArray(saved.homeTools)
-          ? saved.homeTools.filter((id) => HOME_SHORTCUTS.some((entry) => entry.id === id))
-          : current.homeTools;
-        // Normalisasinya harus persis sama dengan skrip anti-kedip di layout.tsx; kalau
-        // keduanya menyimpulkan tema berbeda, layar berkedip saat React mengambil alih.
-        return { ...current, ...saved, theme: saved.theme === 'light' ? 'light' : 'dark', homeTools };
+    if (!auth.user || !auth.workspaceId) return;
+    let active = true;
+    const user = auth.user;
+    const workspaceId = auth.workspaceId;
+    setPrefsLoaded(false);
+    const supabase = getBrowserSupabase();
+    void Promise.all([
+      supabase.from('profiles').select('display_name').eq('user_id', user.id).single(),
+      supabase.from('user_workspace_preferences').select('*')
+        .eq('user_id', user.id).eq('workspace_id', workspaceId).single(),
+    ]).then(([profileResult, preferenceResult]) => {
+      if (!active) return;
+      if (profileResult.error) throw profileResult.error;
+      if (preferenceResult.error) throw preferenceResult.error;
+      const row = preferenceResult.data;
+      const tools = Array.isArray(row.home_tools)
+        ? row.home_tools.filter((id: string) => HOME_SHORTCUTS.some((entry) => entry.id === id))
+        : DEFAULT_HOME_TOOLS;
+      setPrefs({
+        theme: row.theme === 'light' ? 'light' : 'dark',
+        language: row.language === 'EN' ? 'EN' : 'ID',
+        currency: row.display_currency === 'USD' ? 'USD' : 'IDR',
+        notifications: row.notifications_enabled,
+        hideHomeAmounts: row.hide_home_amounts,
+        name: profileResult.data.display_name
+          || String(user.user_metadata.display_name ?? '')
+          || user.email?.split('@')[0]
+          || 'Pengguna FirstFruit',
+        email: user.email ?? '',
+        defaultWalletId: row.default_wallet_id ?? '',
+        homeTools: tools,
       });
-    } catch {
-      /* abaikan storage yang rusak */
-    }
-    setPrefsLoaded(true);
-  }, []);
+    }).catch((error) => {
+      console.error('Gagal memuat preferensi Supabase', error);
+    }).finally(() => {
+      if (active) setPrefsLoaded(true);
+    });
+    return () => { active = false; };
+  }, [auth.user, auth.workspaceId]);
 
-  // Terapkan tema & simpan setiap kali preferensi berubah (setelah dimuat).
+  // Terapkan tema secara langsung dan sinkronkan preferensi workspace secara debounced.
   useEffect(() => {
-    if (!prefsLoaded) return;
+    if (!prefsLoaded || !auth.user || !auth.workspaceId) return;
     document.documentElement.dataset.theme = prefs.theme;
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify(prefs));
+      localStorage.setItem(PREFS_KEY, JSON.stringify({ theme: prefs.theme }));
     } catch {
       /* storage penuh / diblokir — abaikan */
     }
-  }, [prefs, prefsLoaded]);
+    const timer = window.setTimeout(() => {
+      void getBrowserSupabase().from('user_workspace_preferences').upsert({
+        user_id: auth.user!.id,
+        workspace_id: auth.workspaceId!,
+        language: prefs.language,
+        display_currency: prefs.currency,
+        theme: prefs.theme,
+        default_wallet_id: prefs.defaultWalletId || null,
+        hide_home_amounts: prefs.hideHomeAmounts,
+        notifications_enabled: prefs.notifications,
+        home_tools: prefs.homeTools,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'user_id,workspace_id' }).then(({ error }) => {
+        if (error) console.error('Gagal menyimpan preferensi Supabase', error);
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [auth.user, auth.workspaceId, prefs, prefsLoaded]);
 
   // Memasang pintasan menambahkannya di akhir daftar, jadi urutan grid beranda mengikuti
   // urutan pemasangan — pengguna dapat kendali urutan tanpa perlu antarmuka geser.
@@ -487,9 +528,59 @@ function Inner() {
     refresh: () => setDataVersion((version) => version + 1),
     prefs,
     setPref,
+    saveProfile: async (name, email) => {
+      const supabase = getBrowserSupabase();
+      const displayName = name.trim() || 'Tanpa nama';
+      const { error: profileError } = await supabase
+        .from('profiles').update({ display_name: displayName }).eq('user_id', auth.user!.id);
+      if (profileError) throw profileError;
+      if (email.trim() && email.trim().toLowerCase() !== auth.user?.email?.toLowerCase()) {
+        const { error: emailError } = await supabase.auth.updateUser({ email: email.trim() });
+        if (emailError) throw emailError;
+      }
+      setPrefs((current) => ({ ...current, name: displayName, email: email.trim() }));
+    },
+    signOut: auth.signOut,
     rate,
     rateUpdated,
   };
+
+  // Perubahan dari perangkat atau anggota workspace lain langsung menyegarkan read model.
+  useEffect(() => {
+    if (!auth.workspaceId) return;
+    const supabase = getBrowserSupabase();
+    const workspaceId = auth.workspaceId;
+    let timer: number | undefined;
+    const scheduleRefresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setDataVersion((version) => version + 1), 120);
+    };
+    let channel = supabase.channel(`firstfruit-finance-${workspaceId}`);
+    [
+      'wallets',
+      'transactions',
+      'budgets',
+      'budget_periods',
+      'subscriptions',
+      'reminders',
+      'savings_goals',
+      'receivables',
+      'financial_plans',
+      'beneficiaries',
+    ].forEach((table) => {
+      channel = channel.on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table,
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, scheduleRefresh);
+    });
+    channel.subscribe();
+    return () => {
+      window.clearTimeout(timer);
+      void supabase.removeChannel(channel);
+    };
+  }, [auth.workspaceId]);
 
   const formConfig = useCallback(
     (type: CreateType): FormConfig => {
@@ -900,82 +991,75 @@ function Inner() {
       beneficiaryOptions, merchantSuggestions, prefs.defaultWalletId],
   );
 
-  // Notifikasi dibangun dari data nyata: tagihan langganan, langganan yang akan
-  // berakhir, pengingat kalender yang jatuh tempo, dan anggaran yang jebol.
+  // Notifikasi dan status bacanya tersimpan per akun di PostgreSQL.
   useEffect(() => {
-    const days = (iso: string) => Math.ceil((+new Date(iso) - Date.now()) / 86_400_000);
-    const relative = (n: number) =>
-      n < 0 ? t('notif.overdue', { n: -n }) : n === 0 ? t('notif.today') : t('notif.inDays', { n });
-    Promise.all([repos.subscriptions.list(), repos.reminders.list(), repos.budgets.list()])
-      .then(([subscriptions, reminders, budgets]) => {
-        const entries: NotifEntry[] = [];
-        subscriptions.filter((s) => s.status === 'active').forEach((sub) => {
-          const toBilling = days(sub.nextBillingDate);
-          if (toBilling >= 0 && toBilling <= sub.reminderDaysBefore) {
-            entries.push({
-              id: `bill-${sub.id}-${sub.nextBillingDate.slice(0, 10)}`,
-              title: t('notif.billTitle', { name: sub.name }),
-              body: `${formatIDR(sub.amount)} · ${new Date(sub.nextBillingDate).toLocaleDateString(numLocale, { day: 'numeric', month: 'long' })}`,
-              when: relative(toBilling),
-              tone: 'r',
-              icon: <Card />,
-            });
-          }
-          if (sub.endDate) {
-            const toEnd = days(sub.endDate);
-            if (toEnd >= 0 && toEnd <= 14) {
-              entries.push({
-                id: `end-${sub.id}-${sub.endDate.slice(0, 10)}`,
-                title: t('notif.endTitle', { name: sub.name }),
-                body: t('notif.endBody'),
-                when: relative(toEnd),
-                tone: 'e',
-                icon: <Recur />,
-              });
-            }
-          }
-        });
-        reminders.filter((r) => !r.done).forEach((reminder) => {
-          const toDue = days(reminder.date);
-          if (toDue > 3) return;
-          entries.push({
-            id: `rem-${reminder.id}`,
-            title: reminder.title,
-            body: reminder.amount ? formatIDR(reminder.amount) : reminder.note || t('cal.todoTag'),
-            when: relative(toDue),
-            tone: toDue < 0 ? 'r' : 'e',
-            icon: <Calendar />,
-          });
-        });
-        budgets.filter((b) => b.spent > b.allocated).forEach((budget) => {
-          entries.push({
-            id: `bud-${budget.id}`,
-            title: t('notif.budgetTitle', { name: budget.category }),
-            body: t('notif.budgetBody', { amount: formatIDR(budget.spent - budget.allocated) }),
-            when: t('notif.now'),
-            tone: 'r',
-            icon: <Gauge />,
-          });
-        });
-        setNotifications(entries);
-      });
-  }, [repos, dataVersion, t, numLocale]);
+    if (!auth.user || !auth.workspaceId) return;
+    const supabase = getBrowserSupabase();
+    const workspaceId = auth.workspaceId;
+    const loadNotifications = async () => {
+      const { data, error } = await supabase.from('notifications').select('*')
+        .eq('workspace_id', workspaceId)
+        .eq('user_id', auth.user!.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        console.error('Gagal memuat notifikasi Supabase', error);
+        return;
+      }
+      const rows = data ?? [];
+      setReadNotifs(rows.filter((row) => row.read_at).map((row) => row.id as string));
+      setNotifications(rows.map((row) => ({
+        id: row.id as string,
+        title: row.title as string,
+        body: row.body as string,
+        when: new Date(row.created_at as string).toLocaleDateString(numLocale, {
+          day: 'numeric',
+          month: 'short',
+        }),
+        tone: row.type === 'budget_overrun' || row.type === 'subscription_renewal' ? 'r' : 'e',
+        icon: row.type === 'budget_overrun'
+          ? <Gauge />
+          : row.type === 'reminder_due'
+            ? <Calendar />
+            : row.type === 'subscription_ending'
+              ? <Recur />
+              : <Card />,
+      })));
+    };
+    void loadNotifications();
+    const channel = supabase.channel(`firstfruit-notifications-${workspaceId}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'notifications',
+        filter: `workspace_id=eq.${workspaceId}`,
+      }, () => void loadNotifications())
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [auth.user, auth.workspaceId, dataVersion, numLocale]);
 
-  // Status "sudah dibaca" bertahan antar sesi.
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(NOTIF_READ_KEY);
-      if (raw) setReadNotifs(JSON.parse(raw));
-    } catch { /* abaikan */ }
-  }, []);
-
-  const persistRead = useCallback((next: string[]) => {
-    setReadNotifs(next);
-    try { localStorage.setItem(NOTIF_READ_KEY, JSON.stringify(next)); } catch { /* abaikan */ }
-  }, []);
-  const toggleNotifRead = (id: string) =>
-    persistRead(readNotifs.includes(id) ? readNotifs.filter((entry) => entry !== id) : [...readNotifs, id]);
-  const markAllRead = () => persistRead([...new Set([...readNotifs, ...notifications.map((entry) => entry.id)])]);
+  const toggleNotifRead = async (id: string) => {
+    const isRead = readNotifs.includes(id);
+    setReadNotifs((current) => isRead ? current.filter((entry) => entry !== id) : [...current, id]);
+    const { error } = await getBrowserSupabase().from('notifications')
+      .update({ read_at: isRead ? null : new Date().toISOString() })
+      .eq('id', id);
+    if (error) {
+      setReadNotifs((current) => isRead ? [...current, id] : current.filter((entry) => entry !== id));
+      notify(`Gagal mengubah notifikasi: ${error.message}`);
+    }
+  };
+  const markAllRead = async () => {
+    const before = readNotifs;
+    setReadNotifs(notifications.map((entry) => entry.id));
+    const { error } = await getBrowserSupabase().rpc('mark_all_notifications_read', {
+      p_workspace_id: auth.workspaceId!,
+    });
+    if (error) {
+      setReadNotifs(before);
+      notify(`Gagal menandai notifikasi: ${error.message}`);
+    }
+  };
   const unreadCount = notifications.filter((entry) => !readNotifs.includes(entry.id)).length;
 
   useEffect(() => {
@@ -1092,36 +1176,6 @@ function Inner() {
 
   const close = () => setSheet(null);
 
-  /**
-   * Setiap perubahan nominal di luar pencatatan biasa (edit saldo dompet,
-   * penghapusan dompet) tetap meninggalkan jejak berupa transaksi penyesuaian.
-   */
-  const logAdjustment = useCallback(
-    async (entry: {
-      walletId: string;
-      toWalletId?: string;
-      amount: number;
-      type: 'income' | 'expense' | 'transfer';
-      note: string;
-      reason: string;
-    }) => {
-      if (entry.amount <= 0) return;
-      await repos.transactions.create({
-        type: entry.type,
-        nature: 'unexpected',
-        amount: entry.amount,
-        walletId: entry.walletId,
-        toWalletId: entry.toWalletId,
-        labels: entry.type === 'transfer' ? [] : ['Penyesuaian Saldo'],
-        note: entry.note,
-        adjustment: true,
-        adjustmentReason: entry.reason,
-        date: new Date().toISOString(),
-      });
-    },
-    [repos],
-  );
-
   const saveForm = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -1144,20 +1198,10 @@ function Inner() {
           creditLimit: medium === 'credit' ? toNumber(form.creditLimit) : undefined,
         };
         if (shouldUpdate) {
-          // Saldo diubah manual → selisihnya dicatat sebagai transaksi penyesuaian,
-          // supaya uang tidak pernah muncul/hilang tanpa jejak di riwayat.
           const before = await repos.wallets.get(id!);
           await repos.wallets.update(id!, payload);
           const delta = payload.balance - (before?.balance ?? 0);
           if (before && delta !== 0) {
-            await logAdjustment({
-              walletId: id!,
-              amount: Math.abs(delta),
-              // Untuk kartu kredit, tagihan naik = pengeluaran, tagihan turun = pembayaran.
-              type: (payload.kind === 'credit' ? (delta > 0 ? 'expense' : 'income') : (delta > 0 ? 'income' : 'expense')),
-              note: `Penyesuaian saldo ${payload.name}`,
-              reason: `${formatIDR(before.balance)} → ${formatIDR(payload.balance)}`,
-            });
             extraNote = ` · selisih ${formatIDR(Math.abs(delta))} dicatat sebagai penyesuaian`;
           }
         } else {
@@ -1249,6 +1293,7 @@ function Inner() {
           labels: isTransfer ? [] : [category],
           merchant: isTransfer ? undefined : form.merchant.trim() || undefined,
           budgetId,
+          savingId: isTransfer && form.savingId !== 'none' ? form.savingId : undefined,
           beneficiaryId,
           settlesReceivableId,
           note: form.note.trim() || (isTransfer ? 'Transfer internal' : 'Transaksi'),
@@ -1258,57 +1303,9 @@ function Inner() {
           owedAmount: owedAmount > 0 ? owedAmount : undefined,
           date: toIso(form.date),
         };
-        const savedTx = shouldUpdate
+        shouldUpdate
           ? await repos.transactions.update(id!, payload)
           : await repos.transactions.create(payload);
-
-        // Piutang ikut berkurang / lunas. Hanya saat CREATE supaya edit tidak dobel.
-        if (!shouldUpdate && settlesReceivableId) {
-          const target = await repos.receivables.get(settlesReceivableId);
-          if (target) {
-            const paid = (target.paid ?? 0) + amount;
-            const settled = paid >= target.amount;
-            await repos.receivables.update(settlesReceivableId, {
-              paid,
-              settled,
-              settledAt: settled ? toIso(form.date) : undefined,
-              settledByTxId: settled ? savedTx.id : undefined,
-            });
-            extraNote = settled
-              ? ` · piutang ${target.person} ditandai lunas`
-              : ` · piutang ${target.person} berkurang, sisa ${formatIDR(target.amount - paid)}`;
-          }
-        }
-        // Piutang otomatis — hanya saat CREATE agar tidak dobel bila transaksi diedit.
-        if (!shouldUpdate && owedAmount > 0) {
-          await repos.receivables.create({
-            person: recipient || 'Seseorang',
-            amount: owedAmount,
-            source: form.note.trim() || category || 'Talangan',
-            date: toIso(form.date),
-            settled: false,
-          });
-          extraNote = ` · piutang ${formatIDR(owedAmount)} ke ${recipient || 'Seseorang'} dibuat`;
-        }
-        // Realisasi anggaran ikut naik. Hanya saat CREATE — mengedit transaksi tidak
-        // menghitung ulang selisihnya, jadi kalau ditambah lagi angkanya akan dobel.
-        if (!shouldUpdate && budgetId) {
-          const budget = await repos.budgets.get(budgetId);
-          if (budget) {
-            await repos.budgets.update(budgetId, { spent: budget.spent + amount });
-            extraNote = ` · dibebankan ke anggaran ${budget.category}`;
-          }
-        }
-        // Transfer boleh langsung mengunci uangnya ke tabungan di dompet tujuan.
-        // Hanya saat CREATE — kalau tidak, mengedit transfer akan menambah dobel.
-        const savingId = form.savingId;
-        if (isTransfer && !shouldUpdate && savingId && savingId !== 'none') {
-          const target = await repos.savings.get(savingId);
-          if (target && target.walletId === form.toWalletId) {
-            await repos.savings.update(savingId, { balance: target.balance + amount });
-            extraNote = ` · ${formatIDR(amount)} disisihkan ke ${target.name}`;
-          }
-        }
       }
 
       if (create.type === 'subscription') {
@@ -1382,13 +1379,13 @@ function Inner() {
             notify(`Saldo tersedia ${wallet?.name ?? 'dompet'} cuma ${formatIDR(available)}`);
             return;
           }
-          await repos.savings.update(id!, { balance: saving.balance + amount });
+          await repos.commands.adjustSaving(id!, amount, 'reserve');
         } else {
           if (amount > saving.balance) {
             notify(`Maksimal ${formatIDR(saving.balance)} bisa diambil`);
             return;
           }
-          await repos.savings.update(id!, { balance: saving.balance - amount });
+          await repos.commands.adjustSaving(id!, amount, 'release');
         }
       }
 
@@ -1447,69 +1444,32 @@ function Inner() {
               ? `${savedAmount} diambil dari ${create.name ?? 'tabungan'}`
               : `${formConfig(create.type).title} berhasil ${shouldUpdate ? 'diperbarui' : 'disimpan'}${extraNote}`,
       );
+    } catch (caught) {
+      notify(caught instanceof Error ? caught.message : 'Data gagal disimpan');
     } finally {
       setSaving(false);
     }
   };
 
-  /**
-   * Menghapus dompet tidak boleh menguapkan uangnya. Saldo debit dipindahkan ke
-   * dompet default (tercatat sebagai transfer), sisa tagihan kartu kredit dilunasi
-   * dari dompet default (tercatat sebagai pengeluaran). Tabungan yang menempel
-   * ikut dipindahkan ke dompet default agar earmark-nya tidak menggantung.
-   */
   const removeWallet = async (walletId: string): Promise<string> => {
-    const [wallet, wallets, savings] = await Promise.all([
+    const [wallet, wallets] = await Promise.all([
       repos.wallets.get(walletId),
       repos.wallets.list(),
-      repos.savings.list(),
     ]);
-    if (!wallet) {
-      await repos.wallets.remove(walletId);
-      return '';
-    }
+    if (!wallet) return '';
     const fallback =
       wallets.find((entry) => entry.id === prefs.defaultWalletId && entry.id !== walletId && entry.kind === 'debit')
       ?? wallets.find((entry) => entry.id !== walletId && entry.kind === 'debit');
 
-    let note = '';
-    if (wallet.balance > 0 && fallback) {
-      if (wallet.kind === 'credit') {
-        await repos.wallets.update(fallback.id, { balance: fallback.balance - wallet.balance });
-        await logAdjustment({
-          walletId: fallback.id,
-          amount: wallet.balance,
-          type: 'expense',
-          note: `Pelunasan sisa tagihan ${wallet.name}`,
-          reason: `${wallet.name} dihapus`,
-        });
-        note = ` · sisa tagihan ${formatIDR(wallet.balance)} dibayar dari ${fallback.name}`;
-      } else {
-        await repos.wallets.update(fallback.id, { balance: fallback.balance + wallet.balance });
-        await logAdjustment({
-          walletId,
-          toWalletId: fallback.id,
-          amount: wallet.balance,
-          type: 'transfer',
-          note: `Saldo ${wallet.name} dipindahkan ke ${fallback.name}`,
-          reason: `${wallet.name} dihapus`,
-        });
-        note = ` · saldo ${formatIDR(wallet.balance)} pindah ke ${fallback.name}`;
-      }
-    } else if (wallet.balance > 0) {
-      note = ' · tidak ada dompet tujuan, saldo ikut terhapus';
+    if (wallet.balance > 0 && !fallback) {
+      throw new Error('Buat atau pilih dompet debit tujuan sebelum mengarsipkan dompet ini');
     }
-
-    if (fallback) {
-      await Promise.all(
-        savings
-          .filter((entry) => entry.walletId === walletId)
-          .map((entry) => repos.savings.update(entry.id, { walletId: fallback.id })),
-      );
-    }
-    await repos.wallets.remove(walletId);
+    await repos.commands.archiveWallet(walletId, fallback?.id);
     if (prefs.defaultWalletId === walletId) setPref('defaultWalletId', fallback?.id ?? '');
-    return note;
+    if (wallet.balance <= 0 || !fallback) return '';
+    return wallet.kind === 'credit'
+      ? ` · sisa tagihan ${formatIDR(wallet.balance)} dibayar dari ${fallback.name}`
+      : ` · saldo ${formatIDR(wallet.balance)} pindah ke ${fallback.name}`;
   };
 
   const removeItem = async () => {
@@ -1517,22 +1477,26 @@ function Inner() {
       close();
       return;
     }
-    let removalNote = '';
-    if (item.type === 'wallet') removalNote = await removeWallet(item.id);
-    if (item.type === 'subscription') await repos.subscriptions.remove(item.id);
-    if (item.type === 'planning') await repos.plans.remove(item.id);
-    if (item.type === 'tabungan') await repos.savings.remove(item.id);
-    if (item.type === 'piutang') await repos.receivables.remove(item.id);
-    if (item.type === 'budget') await repos.budgets.remove(item.id);
-    if (item.type === 'reminder') await repos.reminders.remove(item.id);
-    if (item.type === 'beneficiary') await repos.beneficiaries.remove(item.id);
-    if (item.type === 'periode') await repos.periods.remove(item.id);
-    if (item.type === 'transaksi' || item.type === 'transfer') {
-      await repos.transactions.remove(item.id);
+    try {
+      let removalNote = '';
+      if (item.type === 'wallet') removalNote = await removeWallet(item.id);
+      if (item.type === 'subscription') await repos.subscriptions.remove(item.id);
+      if (item.type === 'planning') await repos.plans.remove(item.id);
+      if (item.type === 'tabungan') await repos.savings.remove(item.id);
+      if (item.type === 'piutang') await repos.receivables.remove(item.id);
+      if (item.type === 'budget') await repos.budgets.remove(item.id);
+      if (item.type === 'reminder') await repos.reminders.remove(item.id);
+      if (item.type === 'beneficiary') await repos.beneficiaries.remove(item.id);
+      if (item.type === 'periode') await repos.periods.remove(item.id);
+      if (item.type === 'transaksi' || item.type === 'transfer') {
+        await repos.transactions.remove(item.id);
+      }
+      setDataVersion((version) => version + 1);
+      close();
+      notify(`${item.name} dihapus${removalNote}`);
+    } catch (caught) {
+      notify(caught instanceof Error ? caught.message : 'Data gagal dihapus');
     }
-    setDataVersion((version) => version + 1);
-    close();
-    notify(`${item.name} dihapus${removalNote}`);
   };
 
   const currentConfig = formConfig(create.type);
@@ -1710,7 +1674,7 @@ function Inner() {
           <div className="grab" /><h3>{t('notif.title')}</h3>
           <p className="lead">{unreadCount > 0 ? t('notif.unread', { n: unreadCount }) : t('notif.allRead')}</p>
           {unreadCount > 0 && (
-            <button className="notif-readall" onClick={markAllRead}><Check /> {t('notif.markAllRead')}</button>
+            <button className="notif-readall" onClick={() => void markAllRead()}><Check /> {t('notif.markAllRead')}</button>
           )}
           {notifications.length === 0 && (
             <div className="empty-state"><Bell /><b>{t('notif.emptyTitle')}</b><span>{t('notif.emptyBody')}</span></div>
@@ -1729,7 +1693,7 @@ function Inner() {
                     Titiknya digambar lewat ::before di CSS, jadi tombolnya tanpa anak. */}
                 <button
                   className={`notif-read${isRead ? ' on' : ''}`}
-                  onClick={() => toggleNotifRead(entry.id)}
+                  onClick={() => void toggleNotifRead(entry.id)}
                   aria-label={isRead ? t('notif.markUnread') : t('notif.markRead')}
                   title={isRead ? t('notif.markUnread') : t('notif.markRead')}
                 />
@@ -1760,9 +1724,11 @@ function Inner() {
               </button>
             </>
           )}
-          <button className="act" onClick={() => openCreate(item.type, true, item.name, item.id)}>
-            <span className="ax"><Pencil /></span> {t('common.edit')}
-          </button>
+          {item.type !== 'piutang' && (
+            <button className="act" onClick={() => openCreate(item.type, true, item.name, item.id)}>
+              <span className="ax"><Pencil /></span> {t('common.edit')}
+            </button>
+          )}
           {/* Periode & tabungan tidak boleh diduplikat — keduanya harus unik. */}
           {item.type !== 'tabungan' && item.type !== 'periode' && (
             <button className="act" onClick={() => openCreate(item.type, false, item.name, item.id)}>
@@ -1890,6 +1856,17 @@ function Inner() {
   );
 }
 
+function WorkspaceApp() {
+  const { workspaceId } = useAuthWorkspace();
+  return <RepositoryProvider><Inner key={workspaceId} /></RepositoryProvider>;
+}
+
 export default function AppShell() {
-  return <RepositoryProvider><Inner /></RepositoryProvider>;
+  return (
+    <AuthProvider>
+      <AuthBoundary>
+        <WorkspaceApp />
+      </AuthBoundary>
+    </AuthProvider>
+  );
 }

@@ -1,8 +1,8 @@
-# Skema Data — Abraham Finance
+# Skema Data — FirstFruit Finance
 
-Definisi resmi ada di [`src/core/domain/types.ts`](../src/core/domain/types.ts). Dokumen ini
-menjelaskan arti tiap field, relasi antar-entitas, dan hal yang perlu diperhatikan saat
-memetakannya ke Firestore.
+Skema PostgreSQL kanonis ada di
+[`supabase/migrations`](../supabase/migrations). Dokumen ini menjelaskan projection model
+yang dipakai UI; nama field camelCase dipetakan oleh repository Supabase ke tabel/view SQL.
 
 Semua koleksi memakai kontrak CRUD yang sama (`src/core/ports/repositories.ts`):
 `list()`, `get(id)`, `create(item)`, `update(id, patch)`, `remove(id)`.
@@ -10,7 +10,7 @@ Semua koleksi memakai kontrak CRUD yang sama (`src/core/ports/repositories.ts`):
 Konvensi:
 
 - `amount` / `balance` / `allocated` / `spent` = **integer Rupiah**.
-- Field bertanda `?` opsional. Nilai `undefined` tidak ditulis ke Firestore.
+- Field bertanda `?` opsional. Repository memetakannya menjadi `null` bila relevan.
 - Tanggal = **ISO 8601 string** (`2026-07-26T05:00:00.000Z`).
 
 ---
@@ -72,8 +72,8 @@ Plan          (berdiri sendiri, sandbox rencana)
 | `adjustmentReason` | string | | Penjelasan singkat, mis. "Rp 1.000.000 → Rp 900.000". |
 | `date` | ISO string | ✔ | |
 
-> **Indeks Firestore yang disarankan:** `(date desc)`, `(type, date desc)`,
-> `(budgetId, date desc)`, `(beneficiaryId, date desc)`, `(settlesReceivableId)`.
+> Indeks PostgreSQL, composite foreign key, ledger, dan aturan immutability didefinisikan
+> pada versioned migrations, bukan di client.
 
 ---
 
@@ -187,18 +187,18 @@ Turunan (dihitung, tidak disimpan): `velocity`, `over`, `remaining` — lihat `b
 
 ---
 
-## Data yang tidak disimpan di koleksi
+## Data pendukung
 
 | Data | Lokasi | Keterangan |
 | --- | --- | --- |
-| Preferensi pengguna | `localStorage` → `abraham.prefs` | tema, bahasa, mata uang, notifikasi, nama, email, `defaultWalletId`. |
+| Preferensi pengguna | `user_workspace_preferences` + `profiles` | tema, bahasa, mata uang, notifikasi, nama, dan `defaultWalletId`; tema saja dicache lokal untuk mencegah flash. |
 | Kurs USD↔IDR | `localStorage` → `abraham.fx` | hasil cache API kurs harian. |
-| Status baca notifikasi | `localStorage` → `abraham.notifRead` | array id notifikasi. |
-| Draft split bill | state layar | nota, item, peserta; hanya hasil akhirnya yang menjadi piutang. |
+| Status baca notifikasi | `notifications.read_at` | persisten per user dan tersinkron realtime. |
+| Split bill | `split_bills` dan child tables | peserta, nota, item, share, settlement, dan piutang hasil finalisasi. |
 
 ---
 
-## Catatan migrasi
+## Projection compatibility
 
 Semua field baru bersifat opsional, jadi data lama tetap terbaca:
 

@@ -1,17 +1,20 @@
 'use client';
 import React, { createContext, useContext, useMemo } from 'react';
 import { DataRepositories } from '../core/ports/repositories';
-import { createMemoryRepositories } from './memory/repositories';
-// import { createFirestoreRepositories } from './firebase/repositories';
+import { useAuthWorkspace } from './supabase/AuthProvider';
+import { getBrowserSupabase } from './supabase/browser';
+import { createSupabaseRepositories } from './supabase/repositories';
 
 const RepoContext = createContext<DataRepositories | null>(null);
 
 export function RepositoryProvider({ children }: { children: React.ReactNode }) {
+  const { user, workspaceId } = useAuthWorkspace();
   const repos = useMemo<DataRepositories>(() => {
-    const driver = process.env.NEXT_PUBLIC_REPOSITORY_DRIVER ?? 'memory';
-    // if (driver === 'firebase') return createFirestoreRepositories();
-    return createMemoryRepositories();
-  }, []);
+    if (!user || !workspaceId) {
+      throw new Error('RepositoryProvider requires an authenticated Supabase workspace');
+    }
+    return createSupabaseRepositories(getBrowserSupabase(), workspaceId, user.id);
+  }, [user, workspaceId]);
   return <RepoContext.Provider value={repos}>{children}</RepoContext.Provider>;
 }
 

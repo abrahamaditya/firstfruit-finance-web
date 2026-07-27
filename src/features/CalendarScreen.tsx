@@ -71,8 +71,8 @@ export default function CalendarScreen() {
     if (!entry) return { income: 0, expense: 0 };
     return entry.tx.reduce(
       (sum, item) => ({
-        income: sum.income + (item.type === 'income' ? item.amount : 0),
-        expense: sum.expense + (item.type === 'expense' ? item.amount : 0),
+        income: sum.income + (!item.adjustment && item.type === 'income' ? item.amount : 0),
+        expense: sum.expense + (!item.adjustment && item.type === 'expense' ? item.amount : 0),
       }),
       { income: 0, expense: 0 },
     );

@@ -28,7 +28,9 @@ export default function ReportsScreen() {
     const months = range === '3months' ? 3 : 6;
     return new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
   })();
-  const transactions = allTransactions.filter((item) => new Date(item.date) >= rangeStart);
+  const transactions = allTransactions.filter(
+    (item) => !item.adjustment && new Date(item.date) >= rangeStart,
+  );
 
   const expenses = transactions.filter((item) => item.type === 'expense');
   const income = transactions

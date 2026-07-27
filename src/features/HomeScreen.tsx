@@ -34,12 +34,12 @@ export default function HomeScreen() {
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
   const todayNet = txs
-    .filter(t => t.type !== 'transfer' && new Date(t.date) >= midnight)
+    .filter(t => !t.adjustment && t.type !== 'transfer' && new Date(t.date) >= midnight)
     .reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
   const sevenDaysAgo = new Date(midnight);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const sevenDaySpending = txs
-    .filter(t => t.type === 'expense' && new Date(t.date) >= sevenDaysAgo)
+    .filter(t => !t.adjustment && t.type === 'expense' && new Date(t.date) >= sevenDaysAgo)
     .reduce((sum, t) => sum + t.amount, 0);
   const daysLeft = Math.max(1, d.progress?.daysLeft ?? 1);
   const safePerDay = Math.max(0, Math.floor(d.safeToSpend / daysLeft));

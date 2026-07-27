@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useUI, useT, Preferences } from '../components/AppShell';
 import { useWallets } from '../application/hooks';
 import { Bell, Calendar, ChevronR, Settings, User, WalletIcon } from '../components/ui/icons';
+import { useAuthWorkspace } from '../infrastructure/supabase/AuthProvider';
 
 function Seg({
   options,
@@ -25,6 +26,7 @@ function Seg({
 
 export default function ProfileScreen() {
   const ui = useUI();
+  const auth = useAuthWorkspace();
   const tr = useT();
   const { prefs, setPref } = ui;
   const { wallets } = useWallets();
@@ -45,12 +47,15 @@ export default function ProfileScreen() {
     setEditing(true);
   };
 
-  const saveProfile = (event: React.FormEvent) => {
+  const saveProfile = async (event: React.FormEvent) => {
     event.preventDefault();
-    setPref('name', name.trim() || 'Tanpa nama');
-    setPref('email', email.trim());
-    setEditing(false);
-    ui.notify(tr('profile.updated'));
+    try {
+      await ui.saveProfile(name, email);
+      setEditing(false);
+      ui.notify(tr('profile.updated'));
+    } catch (caught) {
+      ui.notify(caught instanceof Error ? caught.message : 'Profil gagal diperbarui');
+    }
   };
 
   const themeLight = tr('profile.themeLight');
@@ -70,7 +75,7 @@ export default function ProfileScreen() {
       </div>
 
       {editing && (
-        <form className="profile-edit" onSubmit={saveProfile}>
+        <form className="profile-edit" onSubmit={(event) => void saveProfile(event)}>
           <label className="input-field"><span>{tr('profile.name')}</span>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder={tr('profile.namePlaceholder')} required />
           </label>
@@ -97,6 +102,23 @@ export default function ProfileScreen() {
 
       <div className="sec"><span className="t">{tr('profile.money')}</span></div>
       <div className="setg">
+        {auth.workspaces.length > 1 && (
+          <div className="set">
+            <div className="si"><User /></div>
+            <div className="sl">Workspace</div>
+            <select
+              className="set-select"
+              value={auth.workspaceId ?? ''}
+              onChange={(event) => auth.switchWorkspace(event.target.value)}
+            >
+              {auth.workspaces.map((workspace) => (
+                <option value={workspace.id} key={workspace.id}>
+                  {workspace.name} · {workspace.role}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         {/* Dompet default dipakai saat dompet lain dihapus dan sebagai isian awal form. */}
         <div className="set">
           <div className="si"><WalletIcon /></div>
@@ -125,7 +147,7 @@ export default function ProfileScreen() {
         <div className="set"><div className="si"><Bell /></div><div className="sl">{tr('profile.notifications')}</div>
           <Seg options={[notifOn, tr('profile.off')]} value={prefs.notifications ? notifOn : tr('profile.off')} onChange={(v) => change('notifications', v === notifOn)} /></div>
         <button className="set set-button" onClick={() => ui.go('tutup')}><div className="si"><Calendar /></div><div className="sl">{tr('profile.closePeriod')}</div><ChevronR /></button>
-        <button className="set set-button danger-row" onClick={() => { ui.notify(tr('profile.loggedOut')); ui.go('home'); }}><div className="si"><User /></div><div className="sl">{tr('profile.logout')}</div><ChevronR /></button>
+        <button className="set set-button danger-row" onClick={() => void ui.signOut()}><div className="si"><User /></div><div className="sl">{tr('profile.logout')}</div><ChevronR /></button>
       </div>
 
       <p className="app-version">FirstFruit Finance · versi 0.1.0</p>
