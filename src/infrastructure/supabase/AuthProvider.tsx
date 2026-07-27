@@ -150,6 +150,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthWorkspaceContext.Provider value={value}>{children}</AuthWorkspaceContext.Provider>;
 }
 
+/**
+ * Kerangka semua layar auth. Di layar lebar ia terbelah dua: panel merek yang mengisi sisi
+ * kiri ujung ke ujung, dan panggung form di kanan — itu yang membuat layarnya terpakai penuh
+ * alih-alih satu kartu kecil mengambang di tengah bidang kosong.
+ * Di ponsel panel merek disembunyikan, jadi yang tersisa persis kartu terpusat seperti semula.
+ */
+function AuthShell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="auth-shell">
+      <aside className="auth-pane" aria-hidden="true">
+        <img src="/brand/logo.svg" alt="" />
+        <b>FIRST<span>FRUIT</span></b>
+        <p>Dompet, anggaran, langganan, dan rencana keuangan dalam satu tempat.</p>
+      </aside>
+      <div className="auth-stage">{children}</div>
+    </main>
+  );
+}
+
 export function AuthBoundary({ children }: { children: React.ReactNode }) {
   const auth = useAuthWorkspace();
   if (!isSupabaseConfigured) return <SupabaseSetupRequired />;
@@ -158,14 +177,14 @@ export function AuthBoundary({ children }: { children: React.ReactNode }) {
   if (auth.passwordRecovery) return <PasswordRecoveryScreen />;
   if (!auth.workspaceId) {
     return (
-      <main className="auth-shell">
+      <AuthShell>
         <div className="auth-card">
           <img src="/brand/logo.svg" alt="" />
           <h1>Workspace belum tersedia</h1>
           <p>Bootstrap akun belum selesai. Coba muat ulang atau keluar lalu masuk kembali.</p>
           <button className="cta" onClick={() => void auth.refreshWorkspaces()}>Coba lagi</button>
         </div>
-      </main>
+      </AuthShell>
     );
   }
   return <>{children}</>;
@@ -188,7 +207,7 @@ function PasswordRecoveryScreen() {
   };
 
   return (
-    <main className="auth-shell">
+    <AuthShell>
       <div className="auth-card">
         <div className="auth-brand"><img src="/brand/logo.svg" alt="" /><b>FIRST<span>FRUIT</span></b></div>
         <span className="auth-eyebrow">Pemulihan akun</span>
@@ -204,24 +223,24 @@ function PasswordRecoveryScreen() {
           <button className="cta" disabled={busy || Boolean(message)}>{busy ? 'Memproses…' : 'Simpan password'}</button>
         </form>
       </div>
-    </main>
+    </AuthShell>
   );
 }
 
 function AuthLoading() {
   return (
-    <main className="auth-shell">
+    <AuthShell>
       <div className="auth-card auth-loading">
         <img src="/brand/logo.svg" alt="" />
         <span>Menyiapkan FirstFruit…</span>
       </div>
-    </main>
+    </AuthShell>
   );
 }
 
 function SupabaseSetupRequired() {
   return (
-    <main className="auth-shell">
+    <AuthShell>
       <div className="auth-card">
         <img src="/brand/logo.svg" alt="" />
         <span className="auth-eyebrow">Setup diperlukan</span>
@@ -230,7 +249,7 @@ function SupabaseSetupRequired() {
         <div className="auth-command">npm run supabase:start</div>
         <p className="auth-hint">FirstFruit tidak kembali ke data demo agar data production tidak tercampur dengan seed lokal.</p>
       </div>
-    </main>
+    </AuthShell>
   );
 }
 
@@ -279,7 +298,7 @@ function AuthScreen() {
   };
 
   return (
-    <main className="auth-shell">
+    <AuthShell>
       <div className="auth-card">
         <div className="auth-brand"><img src="/brand/logo.svg" alt="" /><b>FIRST<span>FRUIT</span></b></div>
         <span className="auth-eyebrow">Keuangan yang rapi, keputusan yang tenang</span>
@@ -318,6 +337,6 @@ function AuthScreen() {
           )}
         </div>
       </div>
-    </main>
+    </AuthShell>
   );
 }

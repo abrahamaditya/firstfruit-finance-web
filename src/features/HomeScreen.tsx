@@ -1,7 +1,8 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
-import { useDashboard, useTransactions } from '../application/hooks';
+import { useDashboard, useTransactions, useSubscriptions, useReminders } from '../application/hooks';
+import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, Transfer, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
 
 export default function HomeScreen() {
@@ -10,6 +11,8 @@ export default function HomeScreen() {
   const tr = useT();
   const d = useDashboard();
   const { data: txs } = useTransactions();
+  const { subs } = useSubscriptions();
+  const { reminders } = useReminders();
   const recent = txs.slice(0, 4);
   const hidden = ui.prefs.hideHomeAmounts;
   const [highlightIndex, setHighlightIndex] = React.useState(0);
@@ -55,6 +58,42 @@ export default function HomeScreen() {
     .map(id => HOME_SHORTCUTS.find(entry => entry.id === id))
     .filter((entry): entry is typeof HOME_SHORTCUTS[number] => Boolean(entry));
 
+  // ===== Agenda kolom kanan (hanya dirender di layar lebar, lihat .home-aside) =====
+  const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
+  const today = startOfDay(midnight);
+  const todayKey = dayKey(today);
+  const calDays = monthGrid(today);
+  const monthLabel = today.toLocaleDateString(locale, { month: 'long', year: 'numeric' });
+
+  // Jumlah jadwal per tanggal, dipakai untuk titik di bawah angka. Tagihan langganan
+  // diturunkan dari siklusnya, bukan cuma nextBillingDate, supaya seluruh kisi terisi.
+  const scheduled = new Map<string, number>();
+  const bump = (key: string) => scheduled.set(key, (scheduled.get(key) ?? 0) + 1);
+  subs.forEach(sub =>
+    billingDatesInRange(sub, calDays[0], calDays[calDays.length - 1]).forEach(date => bump(dayKey(date))),
+  );
+  reminders.filter(item => !item.done).forEach(item => bump(dayKey(item.date)));
+
+  // Empat jadwal terdekat ke depan. Rentangnya dibatasi 60 hari supaya langganan tahunan
+  // tidak memenuhi daftar dengan tanggal yang masih jauh.
+  const horizon = addDays(today, 60);
+  const upcoming = [
+    ...subs.flatMap(sub =>
+      billingDatesInRange(sub, today, horizon).map(date => ({
+        id: `${sub.id}-${dayKey(date)}`, rawId: sub.id, date, title: sub.name,
+        amount: sub.amount, kind: 'bill' as const,
+      })),
+    ),
+    ...reminders
+      .filter(item => !item.done && new Date(item.date) >= today && new Date(item.date) <= horizon)
+      .map(item => ({
+        id: item.id, rawId: item.id, date: new Date(item.date), title: item.title,
+        amount: item.amount ?? 0, kind: 'todo' as const,
+      })),
+  ]
+    .sort((a, b) => a.date.getTime() - b.date.getTime())
+    .slice(0, 4);
+
   const txIcon = (type: string) => (type === 'income' ? <Up /> : type === 'transfer' ? <Transfer /> : <Down />);
   const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
   const moneyOrHidden = (value: number, compact = false) =>
@@ -88,7 +127,11 @@ export default function HomeScreen() {
   const activeHighlight = highlights[highlightIndex];
 
   return (
-    <>
+    /* .home-grid hanya berperan di layar lebar: di sana ia jadi dua kolom, konten di kiri dan
+       agenda di kanan. Di bawah 1240px ia blok biasa dan .home-aside disembunyikan, jadi
+       tata letak ponsel/desktop sempit tidak berubah sama sekali. */
+    <div className="home-grid">
+      <div className="home-lead">
       {/* Blok pembuka memakai .shero — pola yang sama dengan Anggaran, Piutang, Langganan. */}
       <div className="shero home-hero">
         <div className="sl">{tr('home.safeToSpend')}</div>
@@ -173,6 +216,64 @@ export default function HomeScreen() {
           </div>
         ))}
       </div>
-    </>
+      </div>
+
+      <aside className="home-aside">
+        <div className="sec"><span className="t">{tr('home.agenda')}</span>
+          <button className="addg" onClick={() => ui.go('calendar')}>{tr('common.seeAll')}</button></div>
+        <div className="mini-cal">
+          <div className="mini-cal-head">
+            <b>{monthLabel}</b>
+            <button className="addg" onClick={() => ui.openCreate('reminder', false, dayKey(today))}>
+              <Plus />{tr('cal.reminder')}
+            </button>
+          </div>
+          <div className="mini-cal-grid">
+            {calDays.slice(0, 7).map(day => (
+              <div className="mini-cal-dow" key={`dow-${day.getTime()}`}>
+                {day.toLocaleDateString(locale, { weekday: 'narrow' })}
+              </div>
+            ))}
+            {calDays.map(day => {
+              const key = dayKey(day);
+              return (
+                <button
+                  key={key}
+                  className={`mini-cal-day${day.getMonth() === today.getMonth() ? '' : ' out'}${key === todayKey ? ' today' : ''}${scheduled.has(key) ? ' has' : ''}`}
+                  onClick={() => ui.go('calendar')}
+                  title={scheduled.has(key) ? `${scheduled.get(key)} jadwal` : undefined}
+                >
+                  {day.getDate()}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {upcoming.length === 0 ? (
+          <div className="agenda-empty">{tr('home.agendaEmpty')}</div>
+        ) : (
+          <div className="agenda-list">
+            {upcoming.map(item => (
+              <button
+                className="agenda-item"
+                key={item.id}
+                onClick={() => (item.kind === 'todo' ? ui.openItem(item.title, 'reminder', item.rawId) : ui.go('subs'))}
+              >
+                <span className="agenda-date">
+                  <b>{item.date.getDate()}</b>
+                  <span>{item.date.toLocaleDateString(locale, { month: 'short' })}</span>
+                </span>
+                <span className="agenda-copy">
+                  <b>{item.title}</b>
+                  <span>{tr(item.kind === 'bill' ? 'home.agendaBill' : 'home.agendaTodo')}</span>
+                </span>
+                {item.amount ? <span className="agenda-amt">{money.fmtCompact(item.amount)}</span> : null}
+              </button>
+            ))}
+          </div>
+        )}
+      </aside>
+    </div>
   );
 }
