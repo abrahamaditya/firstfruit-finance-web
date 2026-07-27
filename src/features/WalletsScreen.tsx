@@ -1,7 +1,7 @@
 'use client';
 import React, { useRef, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useWallets, useSavings } from '../application/hooks';
+import { useWallets, useSavings, useSubscriptions } from '../application/hooks';
 import { ChevronR, Card, Eye, Recur, Plus } from '../components/ui/icons';
 
 const color: Record<string, string> = { BCA: '#1a4ea3', 'blu by BCA': '#0a8cd4', GoPay: '#00aa13', OVO: '#4c2a86', Tunai: 'var(--emerald)', 'Kartu Kredit BCA': '#2F4858' };
@@ -14,6 +14,7 @@ export default function WalletsScreen() {
   const t = useT();
   const { wallets } = useWallets();
   const { savings, reservedIn } = useSavings();
+  const { subs } = useSubscriptions();
   const debit = wallets.filter(w => w.kind === 'debit');
   const credit = wallets.filter(w => w.kind === 'credit');
   const walletName = (id: string) => wallets.find(w => w.id === id)?.name ?? 'dompet';
@@ -25,6 +26,9 @@ export default function WalletsScreen() {
   const cards = [...credit, ...debit];
   const current = cards[Math.min(active, cards.length - 1)];
   const currentReserved = current ? reservedIn(current.id) : 0;
+  const currentSubscriptionCount = current
+    ? subs.filter(subscription => subscription.walletId === current.id && subscription.status === 'active').length
+    : 0;
 
   // Track punya padding (zona pudar di tepi), jadi patokannya lebar slide, bukan
   // clientWidth: slide ke-n selalu berhenti pas di scrollLeft = n × lebar slide.
@@ -115,11 +119,15 @@ export default function WalletsScreen() {
         </div>
       )}
 
-      <div className="sec"><span className="t">{t('wallets.manageCard')}</span></div>
-      <div className="card manage">
-        <button className="mrow" onClick={() => ui.openCreate('wallet', true, current?.name, current?.id)}><div className="mi"><Card /></div><div className="mm"><div className="ml">{t('wallets.paymentMethod')}</div><div className="ms">{current?.name}</div></div><span className="mc"><ChevronR /></span></button>
-        <button className="mrow" onClick={() => ui.go('subs')}><div className="mi"><Recur /></div><div className="mm"><div className="ml">{t('wallets.subsViaCard')}</div><div className="ms">{t('wallets.subsCount')}</div></div><span className="mc"><ChevronR /></span></button>
-      </div>
+      {current && (
+        <>
+          <div className="sec"><span className="t">{t('wallets.manageCard')}</span></div>
+          <div className="card manage">
+            <button className="mrow" onClick={() => ui.openCreate('wallet', true, current.name, current.id)}><div className="mi"><Card /></div><div className="mm"><div className="ml">{t('wallets.paymentMethod')}</div><div className="ms">{current.name}</div></div><span className="mc"><ChevronR /></span></button>
+            <button className="mrow" onClick={() => ui.go('subs')}><div className="mi"><Recur /></div><div className="mm"><div className="ml">{t('wallets.subsViaCard')}</div><div className="ms">{t('wallets.subsCount', { n: currentSubscriptionCount })}</div></div><span className="mc"><ChevronR /></span></button>
+          </div>
+        </>
+      )}
 
       <div className="sec"><span className="t">{t('wallets.liquidityDebit')}</span><button className="addg" onClick={() => ui.openCreate('wallet')}><Plus />{t('common.add')}</button></div>
       {debit.map(w => {

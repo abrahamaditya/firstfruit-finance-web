@@ -110,7 +110,7 @@ const D: Record<string, Entry> = {
   'wallets.paymentMethod': { id: 'Metode pembayaran', en: 'Payment method' },
   'wallets.autoDebit': { id: 'Auto-debit aktif', en: 'Auto-debit active' },
   'wallets.subsViaCard': { id: 'Langganan via kartu ini', en: 'Subscriptions on this card' },
-  'wallets.subsCount': { id: '3 langganan', en: '3 subscriptions' },
+  'wallets.subsCount': { id: '{n} langganan', en: '{n} subscriptions' },
   'wallets.liquidityDebit': { id: 'Likuiditas · debit', en: 'Liquidity · debit' },
   'wallets.physicalWallet': { id: 'Dompet fisik', en: 'Physical wallet' },
   'wallets.reservedTag': { id: 'disimpan', en: 'locked' },

@@ -2,8 +2,10 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { User } from '@supabase/supabase-js';
+import { useRouter } from 'next/navigation';
 import { getBrowserSupabase } from './browser';
 import { isSupabaseConfigured } from './config';
+import { displayNameMetadata } from '../../core/preferences';
 
 export interface WorkspaceAccess {
   id: string;
@@ -27,17 +29,51 @@ interface AuthWorkspaceContextValue {
 const AuthWorkspaceContext = createContext<AuthWorkspaceContextValue | null>(null);
 const WORKSPACE_KEY = 'firstfruit.workspace';
 
+function readWorkspaceSelection() {
+  if (typeof window === 'undefined') return null;
+  const cookie = document.cookie
+    .split('; ')
+    .find(entry => entry.startsWith(`${WORKSPACE_KEY}=`))
+    ?.split('=')[1];
+  return cookie ? decodeURIComponent(cookie) : localStorage.getItem(WORKSPACE_KEY);
+}
+
+function persistWorkspaceSelection(workspaceId: string | null) {
+  if (typeof window === 'undefined') return;
+  if (workspaceId) {
+    localStorage.setItem(WORKSPACE_KEY, workspaceId);
+    document.cookie = `${WORKSPACE_KEY}=${encodeURIComponent(workspaceId)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+  } else {
+    localStorage.removeItem(WORKSPACE_KEY);
+    document.cookie = `${WORKSPACE_KEY}=; Path=/; Max-Age=0; SameSite=Lax`;
+  }
+}
+
 export function useAuthWorkspace() {
   const value = useContext(AuthWorkspaceContext);
   if (!value) throw new Error('useAuthWorkspace must be used inside AuthProvider');
   return value;
 }
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [workspaces, setWorkspaces] = useState<WorkspaceAccess[]>([]);
-  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+export function AuthProvider({
+  children,
+  initialUser = null,
+  initialWorkspaces = [],
+  initialWorkspaceId = null,
+}: {
+  children: React.ReactNode;
+  initialUser?: User | null;
+  initialWorkspaces?: WorkspaceAccess[];
+  initialWorkspaceId?: string | null;
+}) {
+  const initialSelection = initialWorkspaces.some(entry => entry.id === initialWorkspaceId)
+    ? initialWorkspaceId
+    : initialWorkspaces[0]?.id ?? null;
+  const hasInitialAccess = Boolean(initialUser && initialSelection);
+  const [user, setUser] = useState<User | null>(initialUser);
+  const [loading, setLoading] = useState(!hasInitialAccess);
+  const [workspaces, setWorkspaces] = useState<WorkspaceAccess[]>(initialWorkspaces);
+  const [workspaceId, setWorkspaceId] = useState<string | null>(initialSelection);
   const [passwordRecovery, setPasswordRecovery] = useState(false);
 
   const refreshWorkspaces = useCallback(async () => {
@@ -53,7 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(authData.user);
 
     const { error: bootstrapError } = await supabase.rpc('ensure_user_bootstrap');
-    if (bootstrapError) throw bootstrapError;
+    if (bootstrapError) {
+      console.error('Gagal memastikan bootstrap akun Supabase', bootstrapError);
+    }
 
     const { data: memberships, error: membershipError } = await supabase
       .from('workspace_members')
@@ -63,6 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const ids = (memberships ?? []).map((entry) => entry.workspace_id as string);
     if (ids.length === 0) {
+      if (bootstrapError) throw bootstrapError;
       setWorkspaces([]);
       setWorkspaceId(null);
       return;
@@ -85,10 +124,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }));
     setWorkspaces(next);
 
-    const stored = typeof window !== 'undefined' ? localStorage.getItem(WORKSPACE_KEY) : null;
+    const stored = readWorkspaceSelection();
     const selected = next.some((entry) => entry.id === stored) ? stored : next[0]?.id ?? null;
     setWorkspaceId(selected);
-    if (selected) localStorage.setItem(WORKSPACE_KEY, selected);
+    persistWorkspaceSelection(selected);
   }, []);
 
   useEffect(() => {
@@ -98,38 +137,46 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     const supabase = getBrowserSupabase();
     let active = true;
-    void refreshWorkspaces()
-      .catch((error) => console.error('Gagal memuat workspace Supabase', error))
-      .finally(() => active && setLoading(false));
+    const initialRefresh = refreshWorkspaces()
+      .catch((error) => console.error('Gagal memuat workspace Supabase', error));
+    if (!hasInitialAccess) {
+      void initialRefresh.finally(() => active && setLoading(false));
+    }
 
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!active) return;
       if (event === 'PASSWORD_RECOVERY') setPasswordRecovery(true);
       setUser(nextSession?.user ?? null);
       if (nextSession?.user) {
-        setLoading(true);
-        void refreshWorkspaces().finally(() => active && setLoading(false));
+        const blocksInitialRender = !hasInitialAccess && event === 'INITIAL_SESSION';
+        if (blocksInitialRender) setLoading(true);
+        void refreshWorkspaces()
+          .catch((error) => console.error('Gagal menyegarkan workspace Supabase', error))
+          .finally(() => {
+            if (active && blocksInitialRender) setLoading(false);
+          });
       } else {
         setWorkspaces([]);
         setWorkspaceId(null);
+        setLoading(false);
       }
     });
     return () => {
       active = false;
       data.subscription.unsubscribe();
     };
-  }, [refreshWorkspaces]);
+  }, [hasInitialAccess, refreshWorkspaces]);
 
   const switchWorkspace = useCallback((nextId: string) => {
     if (!workspaces.some((entry) => entry.id === nextId)) return;
-    localStorage.setItem(WORKSPACE_KEY, nextId);
+    persistWorkspaceSelection(nextId);
     setWorkspaceId(nextId);
   }, [workspaces]);
 
   const signOut = useCallback(async () => {
     if (!isSupabaseConfigured) return;
     await getBrowserSupabase().auth.signOut();
-    localStorage.removeItem(WORKSPACE_KEY);
+    persistWorkspaceSelection(null);
     setUser(null);
     setWorkspaces([]);
     setWorkspaceId(null);
@@ -161,7 +208,7 @@ function AuthShell({ children }: { children: React.ReactNode }) {
     <main className="auth-shell">
       <aside className="auth-pane" aria-hidden="true">
         <img src="/brand/logo.svg" alt="" />
-        <b>FIRST<span>FRUIT</span></b>
+        <span className="wordmark"><b>First<span>Fruit</span></b><small>Finance</small></span>
         <p>Dompet, anggaran, langganan, dan rencana keuangan dalam satu tempat.</p>
       </aside>
       <div className="auth-stage">{children}</div>
@@ -171,9 +218,17 @@ function AuthShell({ children }: { children: React.ReactNode }) {
 
 export function AuthBoundary({ children }: { children: React.ReactNode }) {
   const auth = useAuthWorkspace();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (isSupabaseConfigured && !auth.loading && !auth.user) {
+      router.replace('/login');
+    }
+  }, [auth.loading, auth.user, router]);
+
   if (!isSupabaseConfigured) return <SupabaseSetupRequired />;
   if (auth.loading) return <AuthLoading />;
-  if (!auth.user) return <AuthScreen />;
+  if (!auth.user) return <AuthLoading />;
   if (auth.passwordRecovery) return <PasswordRecoveryScreen />;
   if (!auth.workspaceId) {
     return (
@@ -188,6 +243,27 @@ export function AuthBoundary({ children }: { children: React.ReactNode }) {
     );
   }
   return <>{children}</>;
+}
+
+export function LoginBoundary() {
+  const auth = useAuthWorkspace();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (
+      isSupabaseConfigured
+      && !auth.loading
+      && auth.user
+      && !auth.passwordRecovery
+    ) {
+      router.replace('/');
+    }
+  }, [auth.loading, auth.passwordRecovery, auth.user, router]);
+
+  if (!isSupabaseConfigured) return <SupabaseSetupRequired />;
+  if (auth.loading || (auth.user && !auth.passwordRecovery)) return <AuthLoading />;
+  if (auth.passwordRecovery) return <PasswordRecoveryScreen />;
+  return <AuthScreen />;
 }
 
 function PasswordRecoveryScreen() {
@@ -209,7 +285,10 @@ function PasswordRecoveryScreen() {
   return (
     <AuthShell>
       <div className="auth-card">
-        <div className="auth-brand"><img src="/brand/logo.svg" alt="" /><b>FIRST<span>FRUIT</span></b></div>
+        <div className="auth-brand">
+          <img src="/brand/logo.svg" alt="" />
+          <span className="wordmark"><b>First<span>Fruit</span></b><small>Finance</small></span>
+        </div>
         <span className="auth-eyebrow">Pemulihan akun</span>
         <h1>Buat password baru</h1>
         <p>Gunakan minimal 10 karakter dan hindari password yang dipakai di layanan lain.</p>
@@ -246,8 +325,8 @@ function SupabaseSetupRequired() {
         <span className="auth-eyebrow">Setup diperlukan</span>
         <h1>Hubungkan Supabase</h1>
         <p>Salin <code>.env.example</code> menjadi <code>.env.local</code>, lalu isi URL dan publishable key Supabase.</p>
-        <div className="auth-command">npm run supabase:start</div>
-        <p className="auth-hint">FirstFruit tidak kembali ke data demo agar data production tidak tercampur dengan seed lokal.</p>
+        <div className="auth-command">Hubungkan aplikasi ke project Supabase Cloud</div>
+        <p className="auth-hint">FirstFruit tidak kembali ke data demo agar data production tidak tercampur dengan data akun.</p>
       </div>
     </AuthShell>
   );
@@ -271,17 +350,18 @@ function AuthScreen() {
     try {
       if (mode === 'forgot') {
         const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: `${window.location.origin}/`,
+          redirectTo: `${window.location.origin}/login`,
         });
         if (resetError) throw resetError;
         setMessage('Tautan pemulihan sudah dikirim ke email Anda.');
       } else if (mode === 'signup') {
+        const displayName = name.trim();
         const { error: signUpError } = await supabase.auth.signUp({
           email,
           password,
           options: {
-            data: { display_name: name.trim() },
-            emailRedirectTo: `${window.location.origin}/`,
+            data: displayNameMetadata(displayName),
+            emailRedirectTo: `${window.location.origin}/login`,
           },
         });
         if (signUpError) throw signUpError;
@@ -300,7 +380,10 @@ function AuthScreen() {
   return (
     <AuthShell>
       <div className="auth-card">
-        <div className="auth-brand"><img src="/brand/logo.svg" alt="" /><b>FIRST<span>FRUIT</span></b></div>
+        <div className="auth-brand">
+          <img src="/brand/logo.svg" alt="" />
+          <span className="wordmark"><b>First<span>Fruit</span></b><small>Finance</small></span>
+        </div>
         <span className="auth-eyebrow">Keuangan yang rapi, keputusan yang tenang</span>
         <h1>{mode === 'signup' ? 'Buat akun' : mode === 'forgot' ? 'Pulihkan akun' : 'Selamat datang'}</h1>
         <p>

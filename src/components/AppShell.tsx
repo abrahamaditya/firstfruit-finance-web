@@ -8,8 +8,14 @@ import React, {
   useEffect,
   useState,
 } from 'react';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 import { RepositoryProvider, useRepositories } from '../infrastructure/RepositoryProvider';
-import { AuthBoundary, AuthProvider, useAuthWorkspace } from '../infrastructure/supabase/AuthProvider';
+import {
+  AuthBoundary,
+  AuthProvider,
+  type WorkspaceAccess,
+  useAuthWorkspace,
+} from '../infrastructure/supabase/AuthProvider';
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { BeneficiaryKind, TxBeneficiary, WalletMedium } from '../core/domain/types';
@@ -27,6 +33,15 @@ import {
   topCategories,
 } from '../core/domain/categories';
 import { translate } from '../core/i18n';
+import {
+  DEFAULT_HOME_TOOLS,
+  DEFAULT_PREFS,
+  PROFILE_PLACEHOLDER_NAME,
+  displayNameMetadata,
+  identityFromUser,
+  resolveDisplayName,
+  type Preferences,
+} from '../core/preferences';
 import {
   Bell,
   ArrowLeft,
@@ -101,35 +116,9 @@ export type CreateType =
   | 'reminder'
   | 'beneficiary';
 
-export interface Preferences {
-  theme: 'dark' | 'light';
-  language: 'ID' | 'EN';
-  currency: 'IDR' | 'USD';
-  notifications: boolean;
-  /** Menyembunyikan nominal sensitif di hero beranda. */
-  hideHomeAmounts: boolean;
-  name: string;
-  email: string;
-  /** Dompet tujuan default — dipakai saat dompet lain dihapus & sebagai isian awal form. */
-  defaultWalletId: string;
-  /** Id pintasan pilihan pengguna di beranda, urut sesuai urutan pemasangan. */
-  homeTools: string[];
-}
+export type { Preferences } from '../core/preferences';
 
 const PREFS_KEY = 'abraham.prefs';
-/** Pintasan beranda bawaan — empat aksi tersering, sisanya ditambah sendiri. */
-const DEFAULT_HOME_TOOLS = ['log', 'transfer', 'split', 'budget'];
-const DEFAULT_PREFS: Preferences = {
-  theme: 'dark',
-  language: 'ID',
-  currency: 'IDR',
-  notifications: true,
-  hideHomeAmounts: false,
-  name: 'Arya Pratama',
-  email: 'arya.pratama@email.com',
-  defaultWalletId: '',
-  homeTools: DEFAULT_HOME_TOOLS,
-};
 
 interface UI {
   go: (tab: Tab) => void;
@@ -323,7 +312,7 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
   return { ...form, [key]: value };
 };
 
-function Inner() {
+function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const repos = useRepositories();
   const auth = useAuthWorkspace();
   const { active: activePeriod } = usePeriods();
@@ -356,8 +345,11 @@ function Inner() {
   const [openSuggest, setOpenSuggest] = useState<string | null>(null);
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
-  const [prefs, setPrefs] = useState<Preferences>(DEFAULT_PREFS);
-  const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [prefs, setPrefs] = useState<Preferences>(() => initialPreferences ?? ({
+    ...DEFAULT_PREFS,
+    ...(auth.user ? identityFromUser(auth.user) : {}),
+  }));
+  const [prefsLoaded, setPrefsLoaded] = useState(Boolean(initialPreferences));
   const [rate, setRate] = useState(FX_FALLBACK);
   const [rateUpdated, setRateUpdated] = useState('');
 
@@ -367,34 +359,66 @@ function Inner() {
     let active = true;
     const user = auth.user;
     const workspaceId = auth.workspaceId;
+    const sessionIdentity = identityFromUser(user);
     setPrefsLoaded(false);
     const supabase = getBrowserSupabase();
     void Promise.all([
-      supabase.from('profiles').select('display_name').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('display_name').eq('user_id', user.id).maybeSingle(),
       supabase.from('user_workspace_preferences').select('*')
-        .eq('user_id', user.id).eq('workspace_id', workspaceId).single(),
+        .eq('user_id', user.id).eq('workspace_id', workspaceId).maybeSingle(),
     ]).then(([profileResult, preferenceResult]) => {
       if (!active) return;
-      if (profileResult.error) throw profileResult.error;
-      if (preferenceResult.error) throw preferenceResult.error;
+      if (profileResult.error) {
+        console.error('Gagal memuat profil Supabase', profileResult.error);
+      }
+      if (preferenceResult.error) {
+        console.error('Gagal memuat preferensi Supabase', preferenceResult.error);
+      }
       const row = preferenceResult.data;
-      const tools = Array.isArray(row.home_tools)
+      const tools = Array.isArray(row?.home_tools)
         ? row.home_tools.filter((id: string) => HOME_SHORTCUTS.some((entry) => entry.id === id))
         : DEFAULT_HOME_TOOLS;
+      const storedName = profileResult.data?.display_name?.trim() ?? '';
+      const resolvedName = resolveDisplayName(user, storedName);
       setPrefs({
-        theme: row.theme === 'light' ? 'light' : 'dark',
-        language: row.language === 'EN' ? 'EN' : 'ID',
-        currency: row.display_currency === 'USD' ? 'USD' : 'IDR',
-        notifications: row.notifications_enabled,
-        hideHomeAmounts: row.hide_home_amounts,
-        name: profileResult.data.display_name
-          || String(user.user_metadata.display_name ?? '')
-          || user.email?.split('@')[0]
-          || 'Pengguna FirstFruit',
-        email: user.email ?? '',
-        defaultWalletId: row.default_wallet_id ?? '',
+        theme: row?.theme === 'light' ? 'light' : DEFAULT_PREFS.theme,
+        language: row?.language === 'EN' ? 'EN' : DEFAULT_PREFS.language,
+        currency: row?.display_currency === 'USD' ? 'USD' : DEFAULT_PREFS.currency,
+        notifications: row?.notifications_enabled ?? DEFAULT_PREFS.notifications,
+        hideHomeAmounts: row?.hide_home_amounts ?? DEFAULT_PREFS.hideHomeAmounts,
+        name: resolvedName,
+        email: sessionIdentity.email,
+        defaultWalletId: row?.default_wallet_id ?? DEFAULT_PREFS.defaultWalletId,
         homeTools: tools,
       });
+      // Akun lama mungkin sudah terlanjur dibootstrap dengan nama placeholder.
+      // Simpan nama autentik agar reload berikutnya memakai satu sumber yang konsisten.
+      if (
+        !profileResult.error
+        && storedName === PROFILE_PLACEHOLDER_NAME
+        && resolvedName !== PROFILE_PLACEHOLDER_NAME
+      ) {
+        void supabase.from('profiles')
+          .update({ display_name: resolvedName })
+          .eq('user_id', user.id)
+          .then(({ error }) => {
+            if (error) console.error('Gagal menyelaraskan nama profil Supabase', error);
+          });
+      }
+      const currentMetadata = user.user_metadata;
+      if (
+        resolvedName !== PROFILE_PLACEHOLDER_NAME
+        && (
+          currentMetadata.display_name !== resolvedName
+          || currentMetadata.full_name !== resolvedName
+          || currentMetadata.name !== resolvedName
+        )
+      ) {
+        void supabase.auth.updateUser({ data: displayNameMetadata(resolvedName) })
+          .then(({ error }) => {
+            if (error) console.error('Gagal menyelaraskan metadata nama Auth', error);
+          });
+      }
     }).catch((error) => {
       console.error('Gagal memuat preferensi Supabase', error);
     }).finally(() => {
@@ -531,14 +555,45 @@ function Inner() {
     saveProfile: async (name, email) => {
       const supabase = getBrowserSupabase();
       const displayName = name.trim() || 'Tanpa nama';
-      const { error: profileError } = await supabase
-        .from('profiles').update({ display_name: displayName }).eq('user_id', auth.user!.id);
-      if (profileError) throw profileError;
-      if (email.trim() && email.trim().toLowerCase() !== auth.user?.email?.toLowerCase()) {
-        const { error: emailError } = await supabase.auth.updateUser({ email: email.trim() });
-        if (emailError) throw emailError;
+      const nextEmail = email.trim();
+      const emailChanged = Boolean(
+        nextEmail
+        && nextEmail.toLowerCase() !== auth.user?.email?.toLowerCase(),
+      );
+
+      // Supabase Auth menyimpan display name di user_metadata (raw_user_meta_data
+      // pada auth.users), bukan sebagai kolom top-level yang dapat diedit client.
+      const { data: authData, error: authError } = await supabase.auth.updateUser({
+        data: displayNameMetadata(displayName),
+        ...(emailChanged ? { email: nextEmail } : {}),
+      });
+      if (authError) throw authError;
+      if (
+        authData.user.user_metadata.display_name !== displayName
+        || authData.user.user_metadata.full_name !== displayName
+        || authData.user.user_metadata.name !== displayName
+      ) {
+        throw new Error('Metadata nama Supabase Auth tidak berhasil diperbarui.');
       }
-      setPrefs((current) => ({ ...current, name: displayName, email: email.trim() }));
+
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .update({ display_name: displayName })
+        .eq('user_id', auth.user!.id)
+        .select('display_name')
+        .maybeSingle();
+      if (profileError) throw profileError;
+      if (profileData?.display_name !== displayName) {
+        throw new Error('Profil tidak ditemukan atau tidak dapat diperbarui.');
+      }
+
+      setPrefs((current) => ({
+        ...current,
+        name: displayName,
+        // Bila perubahan email memerlukan konfirmasi, Supabase masih mengembalikan
+        // email lama sampai tautan konfirmasi disetujui.
+        email: authData.user.email ?? nextEmail,
+      }));
     },
     signOut: auth.signOut,
     rate,
@@ -1540,10 +1595,10 @@ function Inner() {
               <img className="brand-logo-light" src="/brand/logo.svg" alt="" />
               <img className="brand-logo-dark" src="/brand/logo-white.svg" alt="" />
             </span>
-            <b>
-              <span>First</span>
-              <span className="brand-fruit">Fruit</span>
-            </b>
+            <span className="wordmark">
+              <b>First<span>Fruit</span></b>
+              <small>Finance</small>
+            </span>
           </button>
           <button
             className={`side-period${tab === 'tutup' ? ' on' : ''}`}
@@ -1856,16 +1911,46 @@ function Inner() {
   );
 }
 
-function WorkspaceApp() {
+function WorkspaceApp({
+  initialPreferences,
+  initialWorkspaceId,
+}: {
+  initialPreferences?: Preferences;
+  initialWorkspaceId?: string | null;
+}) {
   const { workspaceId } = useAuthWorkspace();
-  return <RepositoryProvider><Inner key={workspaceId} /></RepositoryProvider>;
+  const hydratedPreferences = workspaceId === initialWorkspaceId
+    ? initialPreferences
+    : undefined;
+  return (
+    <RepositoryProvider>
+      <Inner key={workspaceId} initialPreferences={hydratedPreferences} />
+    </RepositoryProvider>
+  );
 }
 
-export default function AppShell() {
+export default function AppShell({
+  initialUser,
+  initialWorkspaces,
+  initialWorkspaceId,
+  initialPreferences,
+}: {
+  initialUser?: SupabaseUser | null;
+  initialWorkspaces?: WorkspaceAccess[];
+  initialWorkspaceId?: string | null;
+  initialPreferences?: Preferences;
+}) {
   return (
-    <AuthProvider>
+    <AuthProvider
+      initialUser={initialUser}
+      initialWorkspaces={initialWorkspaces}
+      initialWorkspaceId={initialWorkspaceId}
+    >
       <AuthBoundary>
-        <WorkspaceApp />
+        <WorkspaceApp
+          initialPreferences={initialPreferences}
+          initialWorkspaceId={initialWorkspaceId}
+        />
       </AuthBoundary>
     </AuthProvider>
   );

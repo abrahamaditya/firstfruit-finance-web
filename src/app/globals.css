@@ -867,9 +867,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .brand-logo-light{display:none!important}
   :root[data-theme="light"] .brand-logo-light{display:block!important}
   :root[data-theme="light"] .brand-logo-dark{display:none!important}
-  /* Logo dan kartu akun tadinya berbagi aturan ini, itu sebabnya keduanya tampil kembar. */
-  .brand b{font-size:19px;font-weight:800;letter-spacing:.02em;line-height:1;text-transform:uppercase;text-shadow:.012em 0 currentColor,-.012em 0 currentColor;display:flex;align-items:baseline}
-  .brand-fruit{font-weight:400}
+  .brand .wordmark{font-size:19px}
   .side-profile b{display:block;font-size:14px}
   .side-profile small{display:block;color:var(--ink-faint);font-size:10.5px;margin-top:2px}
   .side-label{flex:0 0 auto;font-size:9px;font-weight:800;letter-spacing:.13em;color:var(--ink-faint);padding:0 12px;margin:10px 0 7px}
@@ -952,8 +950,26 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .auth-card p{color:var(--ink-soft);font-size:14px;line-height:1.6;margin:0 0 22px}
 .auth-brand{display:flex;align-items:center;gap:2px;margin-bottom:22px}
 .auth-brand img{width:56px;height:56px;object-fit:contain}
-.auth-brand b{font-size:21px;font-weight:800;letter-spacing:.02em}
-.auth-brand b span{font-weight:400}
+/*
+ * Lockup merek: FIRSTFRUIT dengan "FINANCE" rapat di bawahnya. Satu definisi untuk ketiga
+ * tempat yang merendernya (panel auth, kartu auth, sidebar) supaya tidak menyimpang lagi.
+ * Fontnya Space Grotesk penuh, sama dengan angka nominal beranda — `--sans` tidak cukup
+ * karena 'FirstFruit Numerals' di dalamnya dibatasi unicode-range ke angka, sehingga
+ * hurufnya justru jatuh ke Hanken Grotesk. 700 dipakai karena Space Grotesk tidak punya
+ * 800; meminta 800 hanya memicu faux-bold yang terlihat kotor.
+ * Ukuran diatur lewat font-size di .wordmark saja; baris kedua ikut dalam satuan em.
+ */
+.wordmark{display:flex;flex-direction:column;align-items:flex-start;line-height:1}
+.wordmark b{font-family:'Space Grotesk',var(--sans);font-size:1em;font-weight:700;
+  letter-spacing:-.03em;line-height:1;text-transform:uppercase}
+.wordmark b span{font-weight:400}
+/* `margin-top` negatif merapatkan leading melewati kotak baris huruf kapital; tanpa itu
+   masih tersisa celah dari descender yang tidak terpakai. `margin-right` negatif membatalkan
+   spasi ekor dari letter-spacing, supaya "FINANCE" tetap rata kiri-kanan dengan wordmark. */
+.wordmark small{font-family:'Space Grotesk',var(--sans);font-size:.38em;font-weight:500;
+  letter-spacing:.26em;margin:.04em -.26em 0 0;text-transform:uppercase;
+  line-height:1;color:var(--ink-soft)}
+.auth-brand .wordmark{font-size:21px}
 .auth-eyebrow{display:block;color:var(--mint);font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase}
 .auth-form{display:grid;gap:16px}
 .auth-form label{display:grid;gap:7px;color:var(--ink-soft);font-size:12px;font-weight:700}
@@ -1005,8 +1021,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
       linear-gradient(160deg,rgba(13,110,82,.52) 0%,rgba(13,110,82,.12) 58%,transparent 100%),
       var(--surface)}
   .auth-pane img{width:76px;height:76px}
-  .auth-pane b{font-size:34px;font-weight:800;letter-spacing:.02em;line-height:1}
-  .auth-pane b span{font-weight:400}
+  .auth-pane .wordmark{font-size:34px}
   .auth-pane p{max-width:32ch;color:var(--ink-soft);font-size:14.5px;line-height:1.6;margin:0}
   .auth-stage{display:grid;place-items:center;place-items:safe center;padding:48px;overflow-y:auto}
   /* Panggung kanan sudah jadi bidangnya sendiri, jadi kartu tidak perlu bingkai lagi —

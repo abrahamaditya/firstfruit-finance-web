@@ -77,7 +77,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
-        <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet" />
+        {/* Space Grotesk dimuat sampai bobot 400 karena wordmark "FirstFruit" memakainya
+            dengan kontras tebal/tipis. Tanpa 400, sisi "FRUIT" akan jatuh ke 600 dan
+            kontrasnya hilang. Space Grotesk tidak punya 800 — 700 adalah bobot tertebalnya. */}
+        <link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body>{children}</body>
     </html>
