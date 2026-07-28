@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { getBrowserSupabase } from './browser';
 import { isSupabaseConfigured } from './config';
 import { displayNameMetadata } from '../../core/preferences';
+import { Eye, EyeOff } from '../../components/ui/icons';
 
 export interface WorkspaceAccess {
   id: string;
@@ -80,7 +81,10 @@ export function AuthProvider({
     if (!isSupabaseConfigured) return;
     const supabase = getBrowserSupabase();
     const { data: authData, error: authError } = await supabase.auth.getUser();
-    if (authError || !authData.user) {
+    // Gangguan jaringan sementara tidak boleh dianggap sebagai sign-out karena itu
+    // akan membongkar seluruh UI dan menghilangkan state form yang belum disimpan.
+    if (authError) throw authError;
+    if (!authData.user) {
       setUser(null);
       setWorkspaces([]);
       setWorkspaceId(null);
@@ -137,8 +141,9 @@ export function AuthProvider({
     }
     const supabase = getBrowserSupabase();
     let active = true;
-    const initialRefresh = refreshWorkspaces()
-      .catch((error) => console.error('Gagal memuat workspace Supabase', error));
+    const initialRefresh = hasInitialAccess
+      ? Promise.resolve()
+      : refreshWorkspaces().catch((error) => console.error('Gagal memuat workspace Supabase', error));
     if (!hasInitialAccess) {
       void initialRefresh.finally(() => active && setLoading(false));
     }
@@ -150,11 +155,19 @@ export function AuthProvider({
       if (nextSession?.user) {
         const blocksInitialRender = !hasInitialAccess && event === 'INITIAL_SESSION';
         if (blocksInitialRender) setLoading(true);
-        void refreshWorkspaces()
-          .catch((error) => console.error('Gagal menyegarkan workspace Supabase', error))
-          .finally(() => {
-            if (active && blocksInitialRender) setLoading(false);
-          });
+        // TOKEN_REFRESHED dan USER_UPDATED hanya mengubah objek session/user.
+        // Membership workspace tidak perlu dimuat ulang pada setiap tab focus.
+        const needsWorkspaceRefresh = !hasInitialAccess
+          && (event === 'INITIAL_SESSION' || event === 'SIGNED_IN');
+        if (needsWorkspaceRefresh) {
+          void refreshWorkspaces()
+            .catch((error) => console.error('Gagal menyegarkan workspace Supabase', error))
+            .finally(() => {
+              if (active && blocksInitialRender) setLoading(false);
+            });
+        } else if (blocksInitialRender) {
+          setLoading(false);
+        }
       } else {
         setWorkspaces([]);
         setWorkspaceId(null);
@@ -266,6 +279,59 @@ export function LoginBoundary() {
   return <AuthScreen />;
 }
 
+/**
+ * Field password dengan tombol lihat/sembunyikan.
+ *
+ * Ikonnya menggambarkan AKSI yang akan terjadi, bukan keadaan saat ini: selama password
+ * tersembunyi tombolnya bermata terbuka ("tampilkan"), begitu terbaca ia berganti jadi
+ * mata tercoret ("sembunyikan"). Dibaca terbalik — ikon sebagai lambang keadaan — tombol
+ * itu jadi ambigu karena keadaannya sudah terlihat jelas dari isi field itu sendiri.
+ *
+ * Keadaan terlihat sengaja tidak diingat antar field maupun antar pergantian mode:
+ * password yang tidak sengaja tertinggal terbaca di layar adalah risiko yang tidak
+ * sebanding dengan kemudahan yang dihemat.
+ */
+function PasswordField({
+  label,
+  value,
+  onChange,
+  autoComplete,
+  hint,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  autoComplete: 'current-password' | 'new-password';
+  hint?: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <label>
+      <span>{label}</span>
+      <div className="auth-password">
+        <input
+          type={visible ? 'text' : 'password'}
+          minLength={10}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
+          required
+        />
+        <button
+          type="button"
+          className="auth-eye"
+          onClick={() => setVisible((current) => !current)}
+          aria-label={visible ? 'Sembunyikan password' : 'Tampilkan password'}
+          aria-pressed={visible}
+        >
+          {visible ? <EyeOff /> : <Eye />}
+        </button>
+      </div>
+      {hint && <small>{hint}</small>}
+    </label>
+  );
+}
+
 function PasswordRecoveryScreen() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -293,10 +359,12 @@ function PasswordRecoveryScreen() {
         <h1>Buat password baru</h1>
         <p>Gunakan minimal 10 karakter dan hindari password yang dipakai di layanan lain.</p>
         <form className="auth-form" onSubmit={submit}>
-          <label>
-            <span>Password baru</span>
-            <input type="password" minLength={10} value={password} onChange={(event) => setPassword(event.target.value)} required />
-          </label>
+          <PasswordField
+            label="Password baru"
+            value={password}
+            onChange={setPassword}
+            autoComplete="new-password"
+          />
           {error && <div className="auth-error">{error}</div>}
           {message && <div className="auth-success">{message}</div>}
           <button className="cta" disabled={busy || Boolean(message)}>{busy ? 'Memproses…' : 'Simpan password'}</button>
@@ -399,11 +467,15 @@ function AuthScreen() {
           )}
           <label><span>Email</span><input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
           {mode !== 'forgot' && (
-            <label>
-              <span>Password</span>
-              <input type="password" minLength={10} value={password} onChange={(event) => setPassword(event.target.value)} required />
-              <small>Minimal 10 karakter</small>
-            </label>
+            <PasswordField
+              label="Password"
+              value={password}
+              onChange={setPassword}
+              // Password manager perlu tahu bedanya: 'new-password' memicu tawaran
+              // membuatkan password baru, 'current-password' memicu pengisian otomatis.
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              hint="Minimal 10 karakter"
+            />
           )}
           {error && <div className="auth-error">{error}</div>}
           {message && <div className="auth-success">{message}</div>}

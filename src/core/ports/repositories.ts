@@ -10,8 +10,15 @@ export interface Repository<T extends { id: string }> {
   remove(id: string): Promise<void>;
 }
 
+/** Tutup buku: periode selalu dikunci, membuka periode berikutnya bersifat pilihan. */
+export interface ClosePeriodOptions {
+  createNext: boolean;
+  nextAlias?: string;
+}
+
 export interface FinanceCommands {
-  closePeriod(periodId: string, nextAlias: string): Promise<string>;
+  /** Mengembalikan id periode baru, atau null bila ditutup tanpa membuka periode berikutnya. */
+  closePeriod(periodId: string, options: ClosePeriodOptions): Promise<string | null>;
   adjustSaving(savingId: string, amount: number, action: 'reserve' | 'release'): Promise<void>;
   settleReceivable(receivableId: string, walletId?: string): Promise<void>;
   markReminderDone(reminderId: string, done: boolean): Promise<void>;

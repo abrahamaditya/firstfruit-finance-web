@@ -85,6 +85,7 @@ function mapBudget(row: DbRow): Budget {
     category: row.category_name,
     allocated: amount(row.allocated_minor),
     spent: amount(row.spent_minor),
+    periodId: row.period_id,
   };
 }
 
@@ -306,6 +307,7 @@ export function createSupabaseRepositories(
         phone_masked: patch.phone ?? before.phone ?? null,
         credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
         target_balance_minor: patch.balance ?? before.balance,
+        visible_in_feed: patch.showAdjustmentInTransactions ?? true,
         reason: `Penyesuaian saldo ${patch.name ?? before.name}`,
       };
       const { error } = await supabase.rpc('update_wallet', { p_payload: payload });
@@ -335,7 +337,9 @@ export function createSupabaseRepositories(
       const { data, error } = await supabase
         .from('v_transactions').select('*')
         .eq('workspace_id', workspaceId)
-        .order('occurred_at', { ascending: false })
+        // Feed beranda dan halaman transaksi mengikuti aksi pencatatan terbaru.
+        // `occurred_at` bisa sengaja diisi mundur oleh pengguna, jadi bukan penentu urutan feed.
+        .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .limit(500);
       throwIfError(error, 'Gagal memuat transaksi');
@@ -442,15 +446,23 @@ export function createSupabaseRepositories(
       return data ? mapPeriod(data) : null;
     },
     async create(item) {
+      const { data: openPeriod, error: openPeriodError } = await supabase
+        .from('budget_periods')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('status', 'open')
+        .limit(1)
+        .maybeSingle();
+      throwIfError(openPeriodError, 'Gagal memeriksa periode aktif');
       const { data, error } = await supabase.from('budget_periods').insert({
         workspace_id: workspaceId,
         alias: item.alias,
         start_date: item.start.slice(0, 10),
         end_date: item.end.slice(0, 10),
-        status: 'draft',
+        status: openPeriod ? 'draft' : 'open',
         created_by: userId,
       }).select('*').single();
-      throwIfError(error, 'Gagal membuat draft periode');
+      throwIfError(error, 'Gagal membuat periode');
       return mapPeriod(data!);
     },
     async update(id, patch) {
@@ -834,18 +846,20 @@ export function createSupabaseRepositories(
     reminders,
     beneficiaries,
     commands: {
-      async closePeriod(periodId, nextAlias) {
+      async closePeriod(periodId, options) {
         const { data, error } = await supabase.rpc('close_budget_period', {
           p_payload: {
             workspace_id: workspaceId,
             period_id: periodId,
-            next_alias: nextAlias,
-            copy_budgets: true,
+            create_next: options.createNext,
+            next_alias: options.createNext ? options.nextAlias ?? '' : '',
+            copy_budgets: options.createNext,
             idempotency_key: idempotencyKey(),
           },
         });
         throwIfError(error, 'Gagal menutup periode');
-        return data as string;
+        // Tanpa periode berikutnya, RPC memulangkan id periode yang baru saja ditutup.
+        return options.createNext ? (data as string) : null;
       },
       async adjustSaving(savingId, value, action) {
         const { error } = await supabase.rpc('adjust_saving', {

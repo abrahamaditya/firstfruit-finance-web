@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useUI, useT, Preferences } from '../components/AppShell';
 import { useWallets } from '../application/hooks';
-import { Bell, Calendar, ChevronR, Settings, User, WalletIcon } from '../components/ui/icons';
+import { Bell, Calendar, Chevron, ChevronR, Settings, User, WalletIcon } from '../components/ui/icons';
 import { useAuthWorkspace } from '../infrastructure/supabase/AuthProvider';
 
 function Seg({
@@ -146,7 +146,9 @@ export default function ProfileScreen() {
       <div className="setg">
         <div className="set"><div className="si"><Bell /></div><div className="sl">{tr('profile.notifications')}</div>
           <Seg options={[notifOn, tr('profile.off')]} value={prefs.notifications ? notifOn : tr('profile.off')} onChange={(v) => change('notifications', v === notifOn)} /></div>
-        <button className="set set-button" onClick={() => ui.go('tutup')}><div className="si"><Calendar /></div><div className="sl">{tr('profile.closePeriod')}</div><ChevronR /></button>
+        {/* Membuka daftar periode (sheet), bukan pindah layar — chevron ke bawah,
+            sama seperti tombol periode di sidebar. */}
+        <button className="set set-button" onClick={ui.openPeriods}><div className="si"><Calendar /></div><div className="sl">{tr('profile.closePeriod')}</div><Chevron /></button>
         <button className="set set-button danger-row" onClick={() => void ui.signOut()}><div className="si"><User /></div><div className="sl">{tr('profile.logout')}</div><ChevronR /></button>
       </div>
 

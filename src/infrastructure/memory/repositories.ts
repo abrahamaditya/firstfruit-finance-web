@@ -35,14 +35,21 @@ export function createMemoryRepositories(): DataRepositories {
     reminders,
     beneficiaries,
     commands: {
-      async closePeriod(periodId, nextAlias) {
-        await periods.update(periodId, { closed: true });
-        const now = new Date();
+      async closePeriod(periodId, options) {
+        const closed = await periods.get(periodId);
+        await periods.update(periodId, { closed: true, status: 'closed' });
+        if (!options.createNext) return null;
+        const start = closed ? new Date(closed.end) : new Date();
+        start.setDate(start.getDate() + 1);
+        const end = new Date(start);
+        end.setMonth(end.getMonth() + 1);
+        end.setDate(end.getDate() - 1);
         return (await periods.create({
-          alias: nextAlias,
-          start: now.toISOString(),
-          end: new Date(now.getFullYear(), now.getMonth() + 1, now.getDate()).toISOString(),
+          alias: options.nextAlias || 'Periode berikutnya',
+          start: start.toISOString(),
+          end: end.toISOString(),
           closed: false,
+          status: 'open',
         })).id;
       },
       async adjustSaving(savingId, amount, action) {

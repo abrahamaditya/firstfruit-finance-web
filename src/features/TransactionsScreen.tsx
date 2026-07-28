@@ -115,7 +115,7 @@ export default function TransactionsScreen() {
               }
             >
               <div className={`ic ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                {transaction.type === 'income' ? <Up /> : transaction.type === 'transfer' ? <Transfer /> : <Down />}
+                {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <Transfer /> : <Up />}
               </div>
               <div className="mid">
                 <div className="t1">{transaction.note}</div>

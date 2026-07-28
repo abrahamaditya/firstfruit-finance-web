@@ -18,6 +18,11 @@
   --glass:rgba(255,255,255,.10); --glass-line:rgba(255,255,255,.15);
   --shadow:0 16px 40px -22px rgba(0,0,0,.8); --glow:0 16px 40px -16px rgba(43,204,142,.45);
   --sans:'FirstFruit Numerals','Hanken Grotesk',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  /* Font angka nominal: dipakai untuk setiap tampilan uang (termasuk "Rp"/"$" di depannya),
+     bukan cuma hero beranda — `--sans` tidak cukup karena 'FirstFruit Numerals' di dalamnya
+     dibatasi unicode-range ke digit, jadi huruf "Rp"/"$" jatuh ke Hanken Grotesk dan
+     kelihatan tidak senada dengan angkanya. */
+  --nominal:'Space Grotesk',var(--sans);
   /* Satu deklarasi (properti ini diwariskan) sudah cukup untuk membuat kontrol bawaan
      browser — scrollbar, dropdown select, date picker — mengikuti tema. */
   color-scheme:dark;
@@ -157,8 +162,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    Langganan. Tanpa kartu: angkanya adalah isi halaman, bukan isi sebuah widget. */
 .shero{text-align:center;padding:14px 0 20px}
 .shero .sl{font-size:10px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-soft)}
-.shero .sa{font-size:clamp(36px,10.5vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.04;margin-top:9px;font-variant-numeric:tabular-nums}
-.home-hero .sa{font-family:'Space Grotesk',var(--sans)}
+/* Bukan cuma beranda — pola "shero" ini juga dipakai Anggaran, Piutang, Langganan,
+   jadi font nominalnya otomatis ikut semua tanpa selector per-layar. */
+.shero .sa{font-size:clamp(36px,10.5vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.04;margin-top:9px;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .shero .sa-wrap{display:inline-flex;align-items:center;justify-content:center;gap:10px}
 .shero .sa .cur{font-size:18px;color:var(--ink-soft);margin-right:3px}
 .shero .sp{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;font-size:12.5px;font-weight:600;color:var(--ink-soft)}
@@ -166,6 +172,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .shero .sp svg{width:14px;height:14px;stroke:var(--mint);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .hero-highlights{width:max-content;max-width:100%;margin:12px auto 0}
 .hero-highlight{min-height:27px;display:flex;align-items:center;justify-content:center;gap:7px;color:var(--ink-soft);font-size:12.5px;font-weight:600;animation:highlight-in .42s cubic-bezier(.22,1,.36,1) both}
+/* Beranda: hero angka besarnya rata kiri, bukan tengah seperti Anggaran/Piutang/Langganan —
+   di sini ia memimpin sebuah kolom konten, bukan berdiri sendiri sebagai satu blok. */
+.home-hero{text-align:left}
+.home-hero .sa-wrap{justify-content:flex-start}
+.home-hero .hero-highlights{margin:12px 0 0}
+.home-hero .hero-highlight{justify-content:flex-start}
 .hero-highlight-icon{width:25px;height:25px;display:grid;place-items:center;border:1px solid var(--glass-line);border-radius:50%;background:var(--glass);color:var(--ink-soft)}
 .hero-highlight-icon svg{width:13px;height:13px}
 .hero-highlight.up .hero-highlight-icon{color:var(--pos)}
@@ -181,7 +193,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .hero-eye svg{width:17px;height:17px}
 /* Pil kaca di sub-baris, untuk angka delta/metrik. */
 .sbadge{padding:4px 10px;border-radius:99px;background:var(--glass);border:1px solid var(--glass-line);
-  font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink)}
+  font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);color:var(--ink)}
 .sbadge.up{color:var(--pos)} .sbadge.down{color:var(--neg)}
 
 /* Footer dua nada — komponen bersama, dipakai kartu mana pun yang punya baris meta di
@@ -225,10 +237,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .mini-cal{background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden}
 .mini-cal-head{display:flex;align-items:center;justify-content:space-between;padding:14px 15px 10px}
 .mini-cal-head b{font-size:13.5px;font-weight:800;text-transform:capitalize}
-.mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;padding:0 11px 12px}
-.mini-cal-dow{font-size:9px;font-weight:800;letter-spacing:.06em;color:var(--ink-faint);text-align:center;padding-bottom:4px;text-transform:uppercase}
+.mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;padding:0 13px 14px}
+.mini-cal-dow{font-size:9px;font-weight:800;letter-spacing:.06em;color:var(--ink-faint);text-align:center;padding-bottom:6px;text-transform:uppercase}
 .mini-cal-day{position:relative;aspect-ratio:1;display:grid;place-items:center;border:0;background:none;
-  font-family:var(--sans);font-size:11.5px;font-weight:600;color:var(--ink);border-radius:9px;cursor:pointer}
+  font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--ink);border-radius:10px;cursor:pointer}
 .mini-cal-day:hover{background:var(--surface-2)}
 /* Hari milik bulan sebelah tetap digambar supaya kisi 6×7 tidak berlubang, tapi diredupkan. */
 .mini-cal-day.out{color:var(--ink-faint);opacity:.45}
@@ -243,12 +255,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   padding:9px 15px;cursor:pointer;font-family:var(--sans);color:var(--ink);transition:background .14s}
 .agenda-item:hover{background:var(--surface-2)}
 .agenda-date{flex:0 0 auto;width:38px;text-align:center;line-height:1.1}
-.agenda-date b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.agenda-date b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .agenda-date span{display:block;font-size:9px;font-weight:700;color:var(--ink-faint);text-transform:uppercase}
 .agenda-copy{flex:1;min-width:0}
 .agenda-copy b{display:block;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .agenda-copy span{display:block;font-size:10.5px;color:var(--ink-soft);margin-top:2px}
-.agenda-amt{flex:0 0 auto;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink-soft);white-space:nowrap}
+.agenda-amt{flex:0 0 auto;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);color:var(--ink-soft);white-space:nowrap}
 .agenda-empty{padding:14px 15px 18px;font-size:12px;color:var(--ink-soft);line-height:1.5}
 
 /* Derivasi angka besar: total lalu apa saja yang dipotong. Footer memuat progres periode
@@ -261,7 +273,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .brk-cells>div{min-width:0}
 .brk-cells>div+div{padding-left:14px;border-left:1px solid var(--line)}
 .brk-cells span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);white-space:nowrap;margin-bottom:4px}
-.brk-cells b{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.brk-cells b{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
 .brk-bar{height:5px;border-radius:99px;background:var(--surface-3);overflow:hidden}
 .brk-bar i{display:block;height:100%;border-radius:99px;background:var(--grad)}
 .card-foot .brk-bar+span{display:block;margin-top:7px;font-size:10.5px;font-weight:700}
@@ -276,7 +288,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .row .t1{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .t2{font-size:12px;color:var(--ink-soft);margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .row .r{text-align:right;flex:0 0 auto}
-.row .val{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .val{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
 .row .val.in{color:var(--pos)} .row .val.out{color:var(--neg)}
 .row .subt{font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:2px}
 .chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft)}
@@ -286,7 +298,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .card{background:var(--surface);border-radius:22px;padding:6px 16px}
 .bline{padding:13px 0;border-bottom:1px solid var(--line)}.bline:last-child{border-bottom:0}
 .bline .brow{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
-.bline .nm{font-weight:700;font-size:14px}.bline .amt{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.bline .nm{font-weight:700;font-size:14px}.bline .amt{font-size:12px;color:var(--ink-soft);font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .bar{height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}.bar i{display:block;height:100%;border-radius:99px;background:var(--grad)}
 .bar.over i{background:linear-gradient(90deg,#EF8676,#c25646)}
 .tag-over{font-size:11px;font-weight:700;color:var(--neg);margin-left:7px}
@@ -295,7 +307,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .mini-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px}
 .mini-metrics>div{background:var(--surface);border-radius:16px;padding:13px 12px;min-width:0}
 .mini-metrics span{display:block;color:var(--ink-faint);font-size:10px;font-weight:700;margin-bottom:5px}
-.mini-metrics b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mini-metrics b{display:block;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .positive{color:var(--pos)!important}.negative{color:var(--neg)!important}
 
 /* Metrik anggaran: tiap kartu punya warna sendiri supaya terpakai / tersisa / progres
@@ -355,11 +367,28 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .paycard.credit .pchip{background:rgba(255,255,255,.18)}
 .paycard .pbal{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px;position:relative;z-index:1}
 .paycard .pbal span{font-size:11px;font-weight:700;opacity:.75}
-.paycard .pbal b{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums}
+.paycard .pbal b{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .paycard::before{content:"";position:absolute;right:-30px;top:-50px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.15)}
 .paycard .pt{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
 .paycard .pb{font-weight:800;font-size:15px}.paycard .pchip{width:34px;height:26px;border-radius:6px;background:rgba(4,38,26,.22)}
-.paycard .pn{font-size:18px;font-weight:700;letter-spacing:.14em;margin-top:28px;position:relative;z-index:1;font-variant-numeric:tabular-nums}
+.paycard .pt-actions{display:flex;align-items:center;gap:10px}
+/* Kapsul ikut memakan lebar baris judul, jadi nama panjang kini perlu dipotong elipsis —
+   tanpa ini ia mendorong chip & tombol edit keluar dari kartu. */
+.paycard .pt-name{display:flex;align-items:center;gap:8px;min-width:0}
+.paycard .pb{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+/* Penanda dompet default. Di daftar ia pil mint seperti lencana status lain; di atas
+   kartu berwarna pil mint nyaris tak terlihat, jadi di sana ia jadi lapisan putih
+   transparan yang mewarisi warna teks kartunya (gelap di debit, terang di kredit). */
+.tag-default{display:inline-block;vertical-align:1px;margin-left:7px;padding:2px 7px;border-radius:99px;background:rgba(91,233,170,.14);color:var(--mint);font-size:9.5px;font-weight:800;letter-spacing:.04em}
+.paycard .tag-default{flex:0 0 auto;margin-left:0;vertical-align:0;background:rgba(255,255,255,.22);color:inherit}
+/* Warna diambil dari kartunya (currentColor + lapisan putih transparan), bukan dipatok:
+   kartu debit bertulisan gelap di atas mint, kartu kredit bertulisan terang di atas
+   arang — satu nilai tetap akan hilang di salah satunya. */
+.pcard-edit{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;padding:0;border:1px solid rgba(255,255,255,.3);border-radius:50%;background:rgba(255,255,255,.16);color:inherit;cursor:pointer;transition:background .15s,transform .15s}
+.pcard-edit:hover{background:rgba(255,255,255,.28)}
+.pcard-edit:active{transform:scale(.88)}
+.pcard-edit svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.paycard .pn{font-size:18px;font-weight:700;letter-spacing:.14em;margin-top:28px;position:relative;z-index:1;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .paycard .pf{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px;position:relative;z-index:1}
 .paycard .pname{font-size:12px;font-weight:700;opacity:.85}.paycard .pbrand{font-weight:800;font-style:italic;font-size:17px}
 .manage .mrow{display:flex;align-items:center;gap:13px;padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer}
@@ -376,7 +405,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 .chart-card{background:var(--surface);border-radius:22px;padding:18px 14px 10px;margin-top:6px}
 .chart-card .ct{display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px}
-.chart-card .cv{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.chart-card .cv{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .chart-card .cd{font-size:12px;font-weight:700;color:var(--pos)}
 .chart svg{width:100%;height:auto;display:block}
 
@@ -386,14 +415,15 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .donut .c b{font-size:20px;font-weight:800}.donut .c span{font-size:10px;color:var(--ink-soft);font-weight:600}
 .legend{flex:1;display:flex;flex-direction:column;gap:13px}
 .lg{display:flex;align-items:center;gap:10px}.lg .sw{width:11px;height:11px;border-radius:4px}
-.lg .lt{font-size:13px;font-weight:600;flex:1}.lg .lv{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums}
+.lg .lt{font-size:13px;font-weight:600;flex:1}.lg .lv{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cat-card{background:var(--surface);border-radius:22px;padding:8px 16px;margin-top:12px}
 .cb{padding:11px 0;border-bottom:1px solid var(--line)}.cb:last-child{border-bottom:0}
 .cb .crow{display:flex;justify-content:space-between;font-size:13px;margin-bottom:8px}
-.cb .cn{font-weight:700}.cb .cv2{color:var(--ink-soft);font-size:12px;font-variant-numeric:tabular-nums}
+.cb .cn{font-weight:700}.cb .cv2{color:var(--ink-soft);font-size:12px;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cat-level{margin-top:12px;width:fit-content}
 .cshare{font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:6px}
 .cb .cbar{height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}.cb .cbar i{display:block;height:100%;background:var(--mint)}
+.cb .cbar i.over{background:var(--neg)}
 
 .alert{display:flex;gap:13px;align-items:center;padding:15px;border-radius:18px;margin-bottom:9px;background:var(--surface)}
 .alert .ai{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;flex:0 0 auto;background:var(--surface-2)}
@@ -410,14 +440,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .plan .pt{font-weight:700;font-size:15px}.plan .pmeta{font-size:12px;color:var(--ink-soft);margin-top:3px}
 .pstatus{font-size:10px;font-weight:800;padding:3px 9px;border-radius:99px;letter-spacing:.04em}
 .pstatus.draft{background:var(--surface-3);color:var(--ink-soft)}.pstatus.active{background:rgba(91,233,170,.13);color:var(--mint)}
-.plan .ptg{font-size:21px;font-weight:800;margin-top:12px;font-variant-numeric:tabular-nums}
+.plan .ptg{font-size:21px;font-weight:800;margin-top:12px;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .plan .ptg small{font-size:12px;color:var(--ink-soft);font-weight:600}
 .plan .pbar{height:7px;border-radius:99px;background:var(--surface-2);margin-top:11px;overflow:hidden}.plan .pbar i{display:block;height:100%;background:var(--grad)}
 .plan .pfoot{display:flex;justify-content:space-between;font-size:11.5px;color:var(--ink-faint);margin-top:8px}
 .planning-overview{display:grid;grid-template-columns:1fr 1fr 76px;gap:8px;background:var(--surface);border-radius:22px;padding:17px;margin-top:14px;align-items:center}
 .planning-overview>div:not(.planning-ring){min-width:0}
 .planning-overview span{display:block;font-size:10px;color:var(--ink-faint);font-weight:700;margin-bottom:5px}
-.planning-overview b{font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.planning-overview b{font-size:13px;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .planning-ring{width:66px;height:66px;border-radius:50%;display:grid;place-items:center;text-align:center;background:radial-gradient(circle at center,var(--surface) 56%,transparent 57%),conic-gradient(var(--mint) 0 44%,var(--surface-3) 44% 100%)}
 /* Teks di dalam cincin: leading dirapatkan supaya angka & label tidak renggang. */
 .planning-ring{display:flex;flex-direction:column;justify-content:center;gap:2px;line-height:1}
@@ -446,13 +476,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .cal-day.muted{opacity:.38}
 .cal-day.today .cal-date{background:var(--surface-3);border-radius:99px}
 .cal-day.selected{border-color:rgba(91,233,170,.55);background:rgba(91,233,170,.09)}
-.cal-date{font-size:12px;font-weight:700;width:22px;height:20px;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.cal-date{font-size:12px;font-weight:700;width:22px;height:20px;display:grid;place-items:center;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cal-marks{display:flex;gap:3px;min-height:5px}
 .cal-marks .mk{width:5px;height:5px;border-radius:50%}
 .mk.todo{background:var(--info)}.mk.bill{background:var(--warn)}.mk.out{background:var(--neg)}.mk.in{background:var(--pos)}
 .cal-grid.week .cal-day{min-height:86px}
 .cal-amt{display:flex;flex-direction:column;gap:1px;margin-top:2px}
-.cal-amt em{font-style:normal;font-size:9px;font-weight:700;font-variant-numeric:tabular-nums}
+.cal-amt em{font-style:normal;font-size:9px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cal-amt em.in{color:var(--pos)}.cal-amt em.out{color:var(--neg)}
 .cal-check{width:26px;height:26px;flex:0 0 auto;border:2px solid var(--surface-3);border-radius:9px;background:transparent;color:var(--on-grad);display:grid;place-items:center;cursor:pointer;margin-left:8px}
 .cal-check.on{background:var(--emerald);border-color:var(--emerald)}
@@ -464,7 +494,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .pace-row{display:flex;gap:10px}
 .pace-row>div{flex:1;min-width:0;background:var(--surface-2);border-radius:14px;padding:12px 13px}
 .pace-row span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);margin-bottom:5px}
-.pace-row b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.pace-row b{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .pace-note{font-size:11.5px;line-height:1.45;margin-top:12px;padding-left:11px;border-left:3px solid var(--surface-3);color:var(--ink-soft)}
 .pace-note.ok{border-color:var(--pos)}
 .pace-note.warn{border-color:var(--warn)}
@@ -474,7 +504,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .plan-context>div{background:var(--surface);border-radius:16px;padding:12px 13px;min-width:0}
 .plan-context>div.wide{grid-column:1/-1;background:linear-gradient(135deg,rgba(91,233,170,.13),rgba(35,199,136,.03));border:1px solid rgba(91,233,170,.14)}
 .plan-context span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);margin-bottom:5px}
-.plan-context b{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.plan-context b{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
 .plan-context b small{font-size:10.5px;color:var(--ink-soft);font-weight:700}
 .calc-card{background:var(--surface);border-radius:22px;padding:18px}
 .calc-lead{font-size:12px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px}
@@ -483,12 +513,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .calc-toggle{margin-top:12px}
 .calc-breakdown{margin-top:14px;background:var(--surface-2);border-radius:14px;padding:12px 14px}
 .calc-breakdown>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;font-size:12px;color:var(--ink-soft)}
-.calc-breakdown>div b{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap}
+.calc-breakdown>div b{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
 .calc-breakdown>div.total{border-top:1px solid var(--line);margin-top:5px;padding-top:9px;color:var(--ink);font-weight:700}
 .calc-result{margin-top:14px}
 .cr-main{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .cr-main span{font-size:11px;font-weight:700;color:var(--ink-faint)}
-.cr-main b{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.cr-main b{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cr-verdict{font-size:12.5px;line-height:1.5;font-weight:600;margin-top:10px;padding:11px 13px;border-radius:13px}
 .cr-verdict.ok{background:rgba(91,233,170,.11);color:var(--pos)}
 .cr-verdict.warn{background:rgba(245,194,107,.12);color:var(--warn)}
@@ -496,7 +526,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .cr-note{font-size:11.5px;color:var(--ink-soft);line-height:1.5;margin-top:9px;padding-left:2px}
 .cr-alt{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .cr-alt span{font-size:11.5px;color:var(--ink-soft);font-weight:600}
-.cr-alt b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;margin-left:auto}
+.cr-alt b{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);margin-left:auto}
 .cr-alt b small{font-size:10.5px;color:var(--ink-soft)}
 .cr-alt em{font-style:normal;font-size:10.5px;font-weight:800;padding:3px 9px;border-radius:99px}
 .cr-alt em.ok{background:rgba(91,233,170,.13);color:var(--pos)}
@@ -504,7 +534,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .whatif-grid{display:flex;align-items:center;gap:10px}
 .whatif-grid>div:not(.arrow){flex:1;min-width:0;background:var(--surface-2);border-radius:14px;padding:12px}
 .whatif-grid span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);margin-bottom:4px}
-.whatif-grid b{display:block;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.whatif-grid b{display:block;font-size:16px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .whatif-grid small{display:block;font-size:10.5px;color:var(--ink-soft);font-weight:600;margin-top:2px}
 .whatif-grid .arrow{flex:0 0 auto;color:var(--ink-faint);font-weight:800}
 .cut-list{margin-top:12px}
@@ -512,17 +542,17 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .cut-row:last-child{border-bottom:0}
 .cut-name{flex:1 1 40%;min-width:0}
 .cut-name b{display:block;font-size:12.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cut-name small{display:block;font-size:10.5px;color:var(--ink-faint);font-weight:600}
+.cut-name small{display:block;font-size:10.5px;color:var(--ink-faint);font-weight:600;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cut-bar{flex:1 1 25%;height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .cut-bar i{display:block;height:100%;border-radius:99px;background:var(--warn)}
 .cut-num{flex:0 0 auto;text-align:right}
-.cut-num b{display:block;font-size:12.5px;font-weight:800;color:var(--warn);font-variant-numeric:tabular-nums}
+.cut-num b{display:block;font-size:12.5px;font-weight:800;color:var(--warn);font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cut-num small{display:block;font-size:10px;color:var(--ink-faint);font-weight:700}
 
 .wbreak{display:flex;gap:9px;margin:12px 0 2px}
 .wbreak>div{flex:1;background:var(--surface);border-radius:16px;padding:12px 14px;min-width:0}
 .wbreak .k{font-size:10px;color:var(--ink-faint);font-weight:700;margin-bottom:5px}
-.wbreak .v{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wbreak .v{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wbreak .v.lock{color:var(--mint)}
 .saving-empty{background:var(--surface);border-radius:18px;padding:16px;font-size:12.5px;color:var(--ink-soft);line-height:1.5}
 
@@ -532,7 +562,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .note svg{width:16px;height:16px;flex:0 0 auto;stroke:var(--mint);fill:none;stroke-width:1.8;margin-top:1px}
 .bill-total{background:var(--surface);border-radius:22px;padding:22px}
 .bill-total .lbl{font-size:11px;letter-spacing:.07em;color:var(--ink-faint);font-weight:700}
-.bill-total .amt{font-size:32px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums}
+.bill-total .amt{font-size:32px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .bill-meta{display:flex;gap:7px;flex-wrap:wrap;font-size:11.5px;color:var(--ink-soft);font-weight:600;margin-top:8px}
 
 /* ===== Split bill per nota ===== */
@@ -547,7 +577,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .receipt-name{flex:1;min-width:0;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-weight:700;font-size:14.5px;outline:0;padding:2px 0}
 .receipt-name:focus{border-bottom:1px solid var(--surface-3)}
 .receipt-sum{text-align:right;flex:0 0 auto}
-.receipt-sum b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums}
+.receipt-sum b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .receipt-sum small{font-size:10.5px;color:var(--ink-faint);font-weight:600}
 .receipt-payer{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:11px}
 .receipt-payer>span{font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--ink-faint);text-transform:uppercase}
@@ -556,21 +586,21 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .payer-pills button.on,.si-share button.on{background:rgba(91,233,170,.14);border-color:rgba(91,233,170,.32);color:var(--mint);font-weight:700}
 .receipt-tax{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:10px}
 .receipt-tax>span{font-size:10px;font-weight:800;letter-spacing:.04em;color:var(--ink-faint);text-transform:uppercase}
-.receipt-tax em{margin-left:auto;font-style:normal;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;color:var(--ink-soft)}
+.receipt-tax em{margin-left:auto;font-style:normal;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);color:var(--ink-soft)}
 .receipt-toggle{width:100%;margin-top:11px;border:0;border-radius:12px;background:var(--surface-2);color:var(--ink-soft);font-family:var(--sans);font-size:11.5px;font-weight:600;padding:9px;cursor:pointer}
 .split-item{background:var(--surface-2);border-radius:14px;padding:11px;margin-top:9px}
 .split-item-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .si-name{flex:1 1 120px;min-width:0;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-size:13px;font-weight:600;outline:0}
-.si-price,.si-tax{display:inline-flex;align-items:center;gap:4px;background:var(--surface);border-radius:10px;padding:5px 9px;font-size:11.5px;color:var(--ink-soft);font-weight:600}
-.si-price input{width:78px;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700;outline:0;text-align:right;font-variant-numeric:tabular-nums}
+.si-price,.si-tax{display:inline-flex;align-items:center;gap:4px;background:var(--surface);border-radius:10px;padding:5px 9px;font-size:11.5px;color:var(--ink-soft);font-weight:600;font-family:var(--nominal)}
+.si-price input{width:78px;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700;outline:0;text-align:right;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .si-tax input{width:34px;border:0;background:transparent;color:var(--ink);font-family:var(--sans);font-size:12.5px;font-weight:700;outline:0;text-align:right}
 .si-share{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:9px}
-.si-total{margin-left:auto;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums}
+.si-total{margin-left:auto;font-size:12px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .receipt-add-item{margin-top:10px}
 .receipt-breakdown{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}
 .receipt-breakdown>div{flex:1 1 96px;background:var(--surface-2);border-radius:12px;padding:8px 10px;min-width:0}
 .receipt-breakdown span{display:block;font-size:10px;color:var(--ink-faint);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.receipt-breakdown b{font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums}
+.receipt-breakdown b{font-size:12.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .bline .amt.positive{color:var(--pos)}.bline .amt.negative{color:var(--neg)}
 
 .editable-total{display:grid;grid-template-columns:auto 1fr;align-items:end}
@@ -589,6 +619,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .row-delete svg{width:15px;height:15px}
 .cta{width:100%;margin-top:14px;padding:16px;border:0;border-radius:18px;background:var(--grad);color:var(--on-grad);font-family:var(--sans);font-weight:800;font-size:15px;cursor:pointer;transition:transform .15s;box-shadow:var(--glow)}
 .cta:active{transform:scale(.98)}
+/* Ikon opsional di dalam CTA — dipasang inline supaya tombol tanpa ikon tak berubah. */
+.cta svg{width:16px;height:16px;vertical-align:-3px;margin-right:8px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 
 .ptop{display:flex;flex-direction:column;align-items:center;text-align:center;padding:18px 0 8px}
 .pav{width:84px;height:84px;border-radius:50%;background:var(--grad);display:grid;place-items:center;color:var(--on-grad);font-size:30px;font-weight:800;box-shadow:var(--glow)}
@@ -622,7 +654,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px}
 .metric-card{background:var(--surface);border-radius:18px;padding:15px;min-width:0}
 .metric-card>span,.metric-card>small{display:block;font-size:10.5px;color:var(--ink-faint);font-weight:700}
-.metric-card>b{display:block;font-size:15px;margin:7px 0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.metric-card>b{display:block;font-size:15px;margin:7px 0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 /* Pemasukan / pengeluaran / arus kas bersih dibedakan warnanya. */
 .metric-card[class*="m-"]{position:relative;overflow:hidden;padding-left:17px}
 .metric-card[class*="m-"]::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;border-radius:0 3px 3px 0}
@@ -645,25 +677,25 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .daily-row{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line)}
 .daily-row:last-child{border-bottom:0}
 .dr-date{width:38px;flex:0 0 auto;text-align:center}
-.dr-date b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+.dr-date b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);line-height:1.1}
 .dr-date span{display:block;font-size:9px;color:var(--ink-faint);font-weight:700;text-transform:capitalize}
 .dr-bars{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .dr-bar{height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .dr-bar i{display:block;height:100%;border-radius:99px}
 .dr-bar i.in{background:var(--pos)}.dr-bar i.out{background:var(--neg)}
 .dr-nums{flex:0 0 auto;text-align:right;display:flex;flex-direction:column;gap:1px}
-.dr-nums span{font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums}
+.dr-nums span{font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .dr-nums span.in{color:var(--pos)}.dr-nums span.out{color:var(--neg)}
-.dr-nums em{font-style:normal;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums}
+.dr-nums em{font-style:normal;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .chart-card .cd{display:flex;align-items:center;gap:4px}.chart-card .cd svg{width:13px}
 .chart-caption{font-size:10px;color:var(--ink-faint);font-weight:600}
 .chart-axis{display:flex;justify-content:space-between;color:var(--ink-faint);font-size:9px;padding:3px 2px 0}
 .report-columns{display:grid;grid-template-columns:1fr;gap:0}
 
-.closing-hero{display:flex;gap:16px;align-items:center;background:linear-gradient(135deg,rgba(91,233,170,.15),rgba(43,204,142,.04));border:1px solid rgba(91,233,170,.13);padding:22px;border-radius:24px}
+.closing-hero{display:flex;flex-wrap:wrap;gap:16px;align-items:center;background:linear-gradient(135deg,rgba(91,233,170,.15),rgba(43,204,142,.04));border:1px solid rgba(91,233,170,.13);padding:22px;border-radius:24px}
 .closing-icon{width:54px;height:54px;border-radius:17px;display:grid;place-items:center;background:var(--grad);color:var(--on-grad);flex:0 0 auto}
 .closing-icon svg{width:24px}
-.closing-hero>div:last-child{min-width:0}.closing-hero span{font-size:9.5px;color:var(--mint);font-weight:800;letter-spacing:.07em}.closing-hero strong{display:block;font-size:25px;margin:5px 0}.closing-hero small{display:flex;align-items:center;gap:5px;color:var(--ink-soft);font-size:10.5px}.closing-hero small svg{width:12px;color:var(--mint)}
+.closing-hero>div:not(.closing-icon){min-width:0}.closing-hero span{font-size:9.5px;color:var(--mint);font-weight:800;letter-spacing:.07em}.closing-hero strong{display:block;font-size:25px;margin:5px 0;font-variant-numeric:tabular-nums;font-family:var(--nominal)}.closing-hero small{display:flex;align-items:center;gap:5px;color:var(--ink-soft);font-size:10.5px}.closing-hero small svg{width:12px;color:var(--mint)}
 /* Transisi periode: yang ditutup di kiri, yang dibuka di kanan. */
 .period-switch{display:flex;align-items:stretch;gap:9px}
 .ps-card{flex:1;min-width:0;background:var(--surface);border-radius:18px;padding:14px}
@@ -675,21 +707,63 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .ps-card.opening{box-shadow:inset 3px 0 0 var(--pos)}
 .ps-card.opening span{color:var(--pos)}
 .ps-arrow{align-self:center;color:var(--ink-faint);font-size:16px;font-weight:800;flex:0 0 auto}
-.period-list{padding:4px 16px}
-.period-row{display:flex;align-items:center;gap:12px;padding:13px 0;border-bottom:1px solid var(--line);cursor:pointer}
+/* Daftar periode di dalam sheet: barisnya tombol, karena memilih periode langsung
+   membuka laporannya. Tombol pensil di ujung memisahkan "baca" dari "ubah". */
+.period-picker{background:var(--surface);border-radius:22px;padding:2px 14px;margin-bottom:6px}
+.period-row{display:flex;align-items:center;gap:6px;border-bottom:1px solid var(--line)}
 .period-row:last-child{border-bottom:0}
-.pr-main{flex:1;min-width:0}
+.pr-main{flex:1;min-width:0;display:block;padding:13px 2px;border:0;background:none;text-align:left;
+  font-family:var(--sans);color:var(--ink);cursor:pointer}
 .pr-name{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700}
-.pr-range{font-size:11px;color:var(--ink-soft);font-weight:600;margin-top:3px}
-.pr-days{font-size:11px;color:var(--ink-faint);font-weight:700;flex:0 0 auto;white-space:nowrap}
+.pr-range{display:block;font-size:11px;color:var(--ink-soft);font-weight:600;margin-top:3px}
+.period-row.current .pr-name{color:var(--mint)}
+.pr-edit{flex:0 0 auto;width:32px;height:32px;border-radius:10px;border:0;background:var(--surface-2);
+  color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;transition:.18s}
+.pr-edit:hover{color:var(--ink)}
+.pr-edit svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+/* Pindah periode dari dalam hero laporan — tidak perlu balik ke sidebar dulu. */
+.period-switch-btn{margin-left:auto;flex:0 0 auto;display:flex;align-items:center;gap:6px;padding:8px 12px;
+  border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--ink-soft);
+  font-family:var(--sans);font-size:11.5px;font-weight:700;cursor:pointer;transition:.18s}
+.period-switch-btn:hover{color:var(--ink);border-color:var(--glass-line)}
+.period-switch-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.period-empty-cta{margin-top:16px}
+/* Blok keputusan tutup buku: dua ujung yang setara, jadi yang kedua tampil sebagai
+   tombol datar — bukan CTA gradien kedua yang saling berebut perhatian. */
+.close-choice{display:flex;flex-direction:column}
+.close-question{font-size:13px;font-weight:700;margin:18px 0 10px}
+.ghost-cta{width:100%;margin-top:9px;padding:15px;border:1px solid var(--line);border-radius:18px;
+  background:var(--surface);color:var(--ink);font-family:var(--sans);font-weight:700;font-size:14px;cursor:pointer;transition:.18s}
+.ghost-cta:hover:not(:disabled){border-color:var(--glass-line);background:var(--surface-2)}
+.ghost-cta:disabled{opacity:.5;cursor:not-allowed}
+.ghost-cta.subtle{border-color:transparent;background:none;color:var(--ink-soft);font-size:13px;padding:11px}
 .closing-steps{background:var(--surface);border-radius:22px;padding:4px 16px}
 .closing-steps>div{display:grid;grid-template-columns:34px 1fr auto;gap:11px;align-items:center;padding:15px 0;border-bottom:1px solid var(--line)}
 .closing-steps>div:last-child{border:0}
 .step-number{width:30px;height:30px;border-radius:10px;background:var(--surface-2);color:var(--mint);display:grid;place-items:center;font-size:11px;font-weight:800}.step-number svg{width:15px}
 .closing-steps p b{display:block;font-size:13px}.closing-steps p small{display:block;font-size:10.5px;color:var(--ink-faint);margin-top:2px}
-.closing-steps>div>strong{font-size:10.5px;color:var(--ink-soft)}
+.closing-steps>div>strong{font-size:10.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .confirm-box{display:flex;align-items:flex-start;gap:10px;color:var(--ink-soft);font-size:11.5px;line-height:1.4;margin-top:14px;padding:0 4px;cursor:pointer}
 .confirm-box input{margin-top:2px;accent-color:var(--emerald)}
+
+/* Radius kartu dibuat lebih tenang dan konsisten. Kartu showcase tetap sedikit lebih
+   membulat, tetapi tidak lagi terasa seperti kapsul besar. */
+.card,.plan,.chart-card,.donut-card,.cat-card,.planning-overview,.calc-card,.bill-total,
+.setg,.closing-steps,.brk-card,.period-picker{border-radius:16px}
+.row,.metric-card,.ps-card,.receipt-card,.pace-card,.profile-edit,.mini-metrics>div,
+.wbreak>div,.plan-context>div,.note,.saving-empty,.inline-add{border-radius:14px}
+.profile-card,.closing-hero{border-radius:18px}
+
+/* Track carousel memang harus scrollable, jadi shadow diberi ruang di DALAM area scroll.
+   Ini mencegah glow terpotong tanpa melepas clipping dekorasi internal kartu. */
+.card-slide{padding:12px 14px 28px}
+.paycard{border-radius:18px}
+/* Satu kartu tidak membutuhkan carousel. Melepas overflow + mask di mode ini membuat
+   shadow dirender utuh; padding slide menjaga kartunya tetap tidak terlalu lebar. */
+.card-track.single{overflow:visible;-webkit-mask-image:none;mask-image:none}
+.card-track.single .card-slide{padding:12px 14px 28px}
+.paycard{box-shadow:0 14px 30px -16px rgba(43,204,142,.48)}
+.paycard.credit{box-shadow:0 14px 30px -18px rgba(0,0,0,.72)}
 
 /* Bilah diposisikan di atas viewport, bukan mengambil baris putih tersendiri di bawahnya.
    Karena lapisan pembungkus transparan dan pointer-events dimatikan, hanya kapsul navbar
@@ -795,6 +869,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .mint-text{color:var(--mint)!important}
 
 .form-grid{display:grid;gap:10px}
+.form-section{min-width:0;margin:0;padding:0;border:0}
+.form-section+.form-section{margin-top:8px;padding-top:18px;border-top:1px solid var(--line)}
+.form-section>legend{float:left;width:100%;margin:0 0 11px;padding:0 3px;color:var(--mint);
+  font-size:11px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}
+.form-section>legend+*{clear:both}
+.form-section-fields{display:grid;grid-template-columns:1fr;gap:10px}
 .input-field{display:flex;flex-direction:column;gap:7px}
 .input-field>span{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);padding-left:3px;text-transform:uppercase}
 .input-field input,.input-field select{width:100%;min-height:48px;border:1px solid transparent;border-radius:15px;background:var(--surface-2);color:var(--ink);padding:0 15px;outline:0}
@@ -813,8 +893,48 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .suggest-list button{display:block;width:100%;text-align:left;border:0;border-radius:11px;background:transparent;
   color:var(--ink);font-family:var(--sans);font-size:13px;font-weight:600;padding:10px 12px;cursor:pointer}
 .suggest-list button:hover{background:var(--surface-3)}
+.custom-select{position:relative;width:100%}
+.custom-select-trigger{width:100%;min-height:48px;border:1px solid transparent;border-radius:15px;
+  background:var(--surface-2);color:var(--ink);padding:0 14px 0 15px;display:flex;align-items:center;
+  justify-content:space-between;gap:12px;text-align:left;font-family:var(--sans);font-size:13.333px;
+  cursor:pointer;outline:0}
+.custom-select-trigger:hover{background:var(--surface-3)}
+.custom-select.open .custom-select-trigger,.custom-select-trigger:focus-visible{
+  border-color:rgba(91,233,170,.5);box-shadow:0 0 0 3px rgba(91,233,170,.08)}
+.custom-select-trigger.placeholder{color:var(--ink-faint)}
+.custom-select-trigger>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.custom-select-trigger>svg{width:17px;height:17px;flex:0 0 auto;stroke:var(--ink-soft);fill:none;
+  stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
+.custom-select.open .custom-select-trigger>svg{transform:rotate(180deg)}
+.custom-select-list{z-index:20}
+.custom-select-group+.custom-select-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
+.custom-select-group-label{padding:8px 12px 5px;color:var(--ink-faint);font-size:10px;font-weight:800;
+  letter-spacing:.06em;text-transform:uppercase}
+.custom-select-list button{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.custom-select-list button.on{background:rgba(91,233,170,.12);color:var(--mint)}
+.custom-select-list button>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.custom-select-list button>svg{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;fill:none;
+  stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+.form-segmented{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:5px;padding:4px;
+  border-radius:15px;background:var(--surface-2)}
+.form-segmented.two{grid-template-columns:repeat(2,minmax(0,1fr))}
+.form-segmented button{min-width:0;min-height:42px;border:0;border-radius:11px;background:transparent;
+  color:var(--ink-soft);font-family:var(--sans);font-size:11.5px;font-weight:700;cursor:pointer;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px}
+.form-segmented button:hover{color:var(--ink);background:var(--surface-3)}
+.form-segmented button.on{background:var(--surface);color:var(--mint);box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.optional-fields-toggle{width:100%;margin:14px 0 4px;padding:12px 14px;border:1px dashed var(--line);
+  border-radius:15px;background:transparent;color:var(--ink-soft);display:flex;align-items:center;
+  justify-content:space-between;gap:12px;text-align:left;font-family:var(--sans);cursor:pointer}
+.form-grid>.optional-fields-toggle{margin:8px 0 0}
+.optional-fields-toggle:hover{background:var(--surface-2);color:var(--ink)}
+.optional-fields-toggle>span{min-width:0}.optional-fields-toggle b{display:block;font-size:12.5px}
+.optional-fields-toggle small{display:block;margin-top:2px;color:var(--ink-faint);font-size:10.5px}
+.optional-fields-toggle>svg{width:17px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:2;
+  stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
+.optional-fields-toggle.open>svg{transform:rotate(180deg)}
 .money-input{position:relative;width:100%}
-.money-input .rp{position:absolute;left:15px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:700;color:var(--ink-soft);pointer-events:none}
+.money-input .rp{position:absolute;left:15px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:700;color:var(--ink-soft);pointer-events:none;font-family:var(--nominal)}
 .money-input input{padding-left:42px}
 .cta:disabled{opacity:.6;cursor:wait}
 
@@ -838,6 +958,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .empty-state>svg{width:38px;height:38px;color:var(--ink-faint);margin-bottom:13px}
 .empty-state b{font-size:15px;color:var(--ink);margin-bottom:4px}
 .empty-state span{font-size:12.5px}
+/* Empty state selayar penuh (bukan di dalam sheet): kalimatnya lebih panjang, jadi
+   lebarnya dibatasi ~46 karakter — melebihi itu mata kehilangan awal baris berikutnya. */
+.wallets-empty{min-height:min(56vh,400px);padding:20px 4px}
+.wallets-empty span{max-width:46ch;line-height:1.6}
+.wallets-empty .cta{margin-top:20px}
 
 .toast{position:fixed;left:50%;bottom:106px;transform:translate(-50%,20px);z-index:80;background:#eefcf5;color:#073522;border-radius:99px;padding:11px 18px;font-size:12.5px;font-weight:800;box-shadow:0 16px 38px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.25s;white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis}
 .toast.show{opacity:1;transform:translate(-50%,0)}
@@ -849,11 +974,39 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   /* `flex:0 0 auto` di tiap bagian: tanpa itu flexbox memampatkan tingginya
      (tombol CTA jadi gepeng) begitu daftar menu lebih tinggi dari layar. */
   .brand{flex:0 0 auto;height:64px;display:flex;align-items:center;gap:4px;border:0;background:transparent;color:var(--ink);text-align:left;padding:0 7px;cursor:pointer;margin-bottom:16px}
-  .side-period{flex:0 0 auto;display:grid;grid-template-columns:18px 1fr 14px;align-items:center;gap:9px;width:100%;height:42px;padding:0 12px;margin-bottom:8px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--ink-soft);font-family:var(--sans);font-size:12.5px;font-weight:700;text-align:left;cursor:pointer;transition:.18s}
-  .side-period:hover{border-color:var(--glass-line);background:var(--surface-2);color:var(--ink)}
-  .side-period.on{border-color:rgba(91,233,170,.28);background:rgba(91,233,170,.1);color:var(--mint)}
-  .side-period svg{width:18px;height:18px}
-  .side-period svg:last-child{width:13px;color:var(--ink-faint)}
+  /* Periode & kartu akun = kelompok konteks di dasar sidebar. Satu garis pemisah dipasang
+     di pembungkusnya, bukan di tiap tombol: .side-period sudah punya border sendiri, dan
+     dua hairline bertumpuk akan terbaca sebagai dua bagian terpisah. Pembungkus ini juga
+     yang menjaga jarak tetap rapi saat daftar menu cukup panjang untuk digulir. */
+  .side-foot{flex:0 0 auto;display:flex;flex-direction:column;gap:11px;margin-top:10px;padding-top:14px;border-top:1px solid var(--line)}
+  .side-period{flex:0 0 auto;display:flex;flex-direction:column;gap:8px;width:100%;padding:11px 12px 12px;border:1px solid var(--line);border-radius:14px;background:var(--surface);color:var(--ink-soft);font-family:var(--sans);text-align:left;cursor:pointer;transition:border-color .18s,background .18s}
+  .side-period:hover{border-color:var(--glass-line);background:var(--surface-2)}
+  .side-period.on{border-color:rgba(91,233,170,.28);background:rgba(91,233,170,.1)}
+  .sp-top{display:flex;align-items:center;gap:7px}
+  .sp-top>svg{flex:0 0 auto;width:15px;height:15px;color:var(--ink-faint)}
+  .side-period.on .sp-top>svg{color:var(--mint)}
+  .sp-eyebrow{font-size:9px;font-weight:800;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint)}
+  /* Lencana didorong ke tepi kanan, bukan diberi jarak tetap dari eyebrow: panjang
+     katanya berbeda antar bahasa & status, dan hanya tepi kanan yang tetap sejajar. */
+  .sp-status{margin-left:auto;padding:2px 7px;border-radius:99px;background:rgba(91,233,170,.14);color:var(--mint);font-size:9px;font-weight:800;letter-spacing:.04em;white-space:nowrap}
+  .sp-status.draft{background:var(--surface-3);color:var(--ink-soft)}
+  .sp-status.overdue{background:rgba(245,194,107,.16);color:var(--warn)}
+  .sp-name{display:flex;align-items:center;gap:8px}
+  /* min-width:0 wajib: tanpa itu flex item menolak menyusut dan nama periode yang panjang
+     mendorong chevron keluar kartu alih-alih terpotong elipsis. */
+  .sp-name>b{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13.5px;font-weight:800;color:var(--ink);line-height:1.3}
+  .side-period.on .sp-name>b{color:var(--mint)}
+  .sp-name>svg{flex:0 0 auto;width:13px;height:13px;color:var(--ink-faint)}
+  .sp-bar{height:4px;border-radius:99px;background:var(--surface-3);overflow:hidden}
+  .sp-bar>i{display:block;height:100%;border-radius:99px;background:var(--grad);transition:width .4s ease}
+  .sp-meta{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:10px;font-weight:700;color:var(--ink-faint)}
+  .sp-meta>span:last-child{color:var(--ink-soft);white-space:nowrap}
+  /* Periode yang tanggalnya lewat tapi belum ditutup: satu-satunya keadaan di kartu ini
+     yang menunggu tindakan, jadi ia diberi nada peringatan — bukan merah, karena tidak
+     ada yang rusak, hanya tertunda. */
+  .side-period.overdue{border-color:rgba(245,194,107,.3)}
+  .side-period.overdue .sp-bar>i{background:var(--warn)}
+  .side-period.overdue .sp-meta>span:last-child{color:var(--warn)}
   .side-cta{flex:0 0 auto;display:flex;align-items:center;justify-content:center;gap:8px;width:100%;height:46px;border:0;border-radius:14px;background:var(--grad);color:var(--on-grad);font-family:var(--sans);font-weight:800;font-size:13px;cursor:pointer;box-shadow:var(--glow);margin-bottom:22px;transition:transform .15s,filter .15s}
   /* Hanya daftar menu yang bergulir — merek di atas & kartu profil di bawah tetap terlihat. */
   /* Melebar 10px ke gutter sidebar — pas selebar track scrollbar, jadi batangnya duduk di
@@ -875,7 +1028,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .side-link:hover{background:var(--surface);color:var(--ink)}
   .side-link.on{background:rgba(91,233,170,.11);color:var(--mint)}
   .side-link svg{width:18px;height:18px;flex:0 0 auto}
-  .side-profile{flex:0 0 auto;display:grid;grid-template-columns:34px 1fr 14px;align-items:center;gap:9px;border:0;border-top:1px solid var(--line);padding:15px 8px 3px;margin-top:9px;width:100%;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:0;transition:opacity .15s}
+  .side-profile{flex:0 0 auto;display:grid;grid-template-columns:34px 1fr 14px;align-items:center;gap:9px;border:0;padding:0 8px 3px;width:100%;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:0;transition:opacity .15s}
   .side-profile:hover{opacity:.82}
   .side-profile>svg{width:13px;color:var(--ink-faint)}
   /* Kartu ini kini satu-satunya entri Profil di sidebar, jadi ia butuh penanda aktif
@@ -929,8 +1082,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .profile-card{padding:24px}
   .sheet{max-width:560px;bottom:24px;border-radius:28px;padding:12px 28px 28px;box-shadow:0 28px 90px rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.06)}
   .sheet.show{transform:translateX(-50%) translateY(0)}
-  .form-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .form-grid .input-field:first-child:nth-last-child(odd){grid-column:1/-1}
+  /* Semua form tetap satu alur vertikal di desktop; section heading memisahkan
+     fungsi field tanpa membuat pengguna membaca pola zig-zag dua kolom. */
+  .form-grid,.form-section-fields{grid-template-columns:1fr}
   .toast{bottom:44px}
 }
 
@@ -953,20 +1107,20 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 /*
  * Lockup merek: FIRSTFRUIT dengan "FINANCE" rapat di bawahnya. Satu definisi untuk ketiga
  * tempat yang merendernya (panel auth, kartu auth, sidebar) supaya tidak menyimpang lagi.
- * Fontnya Space Grotesk penuh, sama dengan angka nominal beranda — `--sans` tidak cukup
- * karena 'FirstFruit Numerals' di dalamnya dibatasi unicode-range ke angka, sehingga
+ * Fontnya sama dengan angka nominal (var(--nominal), Space Grotesk penuh) — `--sans` tidak
+ * cukup karena 'FirstFruit Numerals' di dalamnya dibatasi unicode-range ke angka, sehingga
  * hurufnya justru jatuh ke Hanken Grotesk. 700 dipakai karena Space Grotesk tidak punya
  * 800; meminta 800 hanya memicu faux-bold yang terlihat kotor.
  * Ukuran diatur lewat font-size di .wordmark saja; baris kedua ikut dalam satuan em.
  */
 .wordmark{display:flex;flex-direction:column;align-items:flex-start;line-height:1}
-.wordmark b{font-family:'Space Grotesk',var(--sans);font-size:1em;font-weight:700;
+.wordmark b{font-family:var(--nominal);font-size:1em;font-weight:700;
   letter-spacing:-.03em;line-height:1;text-transform:uppercase}
 .wordmark b span{font-weight:400}
 /* `margin-top` negatif merapatkan leading melewati kotak baris huruf kapital; tanpa itu
    masih tersisa celah dari descender yang tidak terpakai. `margin-right` negatif membatalkan
    spasi ekor dari letter-spacing, supaya "FINANCE" tetap rata kiri-kanan dengan wordmark. */
-.wordmark small{font-family:'Space Grotesk',var(--sans);font-size:.38em;font-weight:500;
+.wordmark small{font-family:var(--nominal);font-size:.48em;font-weight:500;
   letter-spacing:.26em;margin:.04em -.26em 0 0;text-transform:uppercase;
   line-height:1;color:var(--ink-soft)}
 .auth-brand .wordmark{font-size:21px}
@@ -975,6 +1129,16 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .auth-form label{display:grid;gap:7px;color:var(--ink-soft);font-size:12px;font-weight:700}
 .auth-form input{width:100%;height:48px;border:1px solid var(--line);border-radius:14px;background:var(--bg);color:var(--ink);padding:0 14px;font:inherit;outline:0}
 .auth-form input:focus{border-color:var(--mint);box-shadow:0 0 0 3px rgba(61,214,149,.12)}
+/* Tombol mata duduk DI DALAM field, jadi input butuh ruang kanan agar teks password
+   panjang tidak lewat di belakangnya. 46px = lebar tombol 36px + 6px sisi kiri-kanan. */
+.auth-password{position:relative}
+.auth-password input{padding-right:46px}
+/* Edge memasang tombol "reveal" bawaannya sendiri di setiap input password. Tanpa ini
+   pengguna Edge melihat dua ikon mata bersebelahan yang salah satunya tidak bergaya. */
+.auth-password input::-ms-reveal{display:none}
+.auth-eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:10px;background:none;color:var(--ink-faint);cursor:pointer;transition:color .15s,background .15s}
+.auth-eye:hover{color:var(--ink);background:var(--surface-2)}
+.auth-eye svg{width:18px;height:18px}
 .auth-form small{color:var(--ink-faint);font-size:10px}
 .auth-form .cta{margin-top:4px}
 .auth-links{display:flex;justify-content:space-between;gap:12px;margin-top:18px}
@@ -990,18 +1154,26 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 /*
  * Layar cukup lebar: beranda jadi dua kolom, agenda mengisi sisi kanan yang tadinya kosong.
- * Ambang 1240px adalah titik terkecil yang masih memuat sidebar 256 + gutter 96 + kolom kiri
- * ~530 + jarak 32 + kolom kanan 320. Di bawah itu .home-aside tetap tersembunyi.
+ * Layout proporsional — tidak ada max-width di grid, jadi kolom mengisi end-to-end tanpa
+ * centering. Kedua kolom tumbuh fleksibel dengan rasio 1.8:1 (kiri lebih lebar). Ambang
+ * 1240px adalah titik terkecil yang masih memuat sidebar 256 + gutter 96 + kolom minimal.
  */
 @media (min-width:1240px){
-  .home-grid{max-width:1100px;display:grid;grid-template-columns:minmax(0,560px) 320px;
-    gap:32px;align-items:start;justify-content:center}
+  .home-grid{display:grid;grid-template-columns:1.8fr 1fr;
+    gap:32px;align-items:start;max-width:none;width:100%}
   .home-aside{display:block;position:sticky;top:6px}
   /* Di dalam kolom, panel tidak boleh bleed keluar sel grid-nya. Metafora "lembar yang naik
      dari dasar layar" juga tidak berlaku lagi di sini, jadi ia jadi kolom biasa. */
   .home-panel{margin:26px 0 0;padding:0;background:none;border-radius:0;min-height:0}
   /* Kolom kiri sudah dibatasi grid, jadi batas per-elemen tidak diperlukan lagi. */
   .brk-card,.qa{max-width:none}
+}
+/*
+ * Layar sangat lebar (super-wide): center konten agar baris teks tidak terlalu panjang,
+ * tapi kolom dua-arah tetap proporsional satu sama lain.
+ */
+@media (min-width:1820px){
+  .home-grid{max-width:1440px;margin-left:auto;margin-right:auto}
 }
 
 /*

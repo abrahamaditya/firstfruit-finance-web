@@ -181,7 +181,7 @@ export default function CalendarScreen() {
           onClick={() => ui.openItem(item.note || 'Transaksi', item.type === 'transfer' ? 'transfer' : 'transaksi', item.id)}
         >
           <div className={`ic ${item.type === 'income' ? 'in' : item.type === 'transfer' ? '' : 'out'}`}>
-            {item.type === 'income' ? <Up /> : item.type === 'transfer' ? <Transfer /> : <Down />}
+            {item.type === 'income' ? <Down /> : item.type === 'transfer' ? <Transfer /> : <Up />}
           </div>
           <div className="mid">
             <div className="t1">{item.note}</div>

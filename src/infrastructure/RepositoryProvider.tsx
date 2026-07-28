@@ -9,12 +9,13 @@ const RepoContext = createContext<DataRepositories | null>(null);
 
 export function RepositoryProvider({ children }: { children: React.ReactNode }) {
   const { user, workspaceId } = useAuthWorkspace();
+  const userId = user?.id ?? null;
   const repos = useMemo<DataRepositories>(() => {
-    if (!user || !workspaceId) {
+    if (!userId || !workspaceId) {
       throw new Error('RepositoryProvider requires an authenticated Supabase workspace');
     }
-    return createSupabaseRepositories(getBrowserSupabase(), workspaceId, user.id);
-  }, [user, workspaceId]);
+    return createSupabaseRepositories(getBrowserSupabase(), workspaceId, userId);
+  }, [userId, workspaceId]);
   return <RepoContext.Provider value={repos}>{children}</RepoContext.Provider>;
 }
 

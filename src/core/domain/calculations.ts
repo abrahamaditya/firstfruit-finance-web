@@ -36,11 +36,55 @@ export function safeToSpend(liquidity: number, budgets: Budget[], reserved = 0):
   return liquidity - budgets.reduce((s, b) => s + b.allocated, 0) - reserved;
 }
 
+const DAY_MS = 86_400_000;
+/**
+ * Tengah malam lokal dari sebuah tanggal.
+ *
+ * Wajib sebelum menghitung selisih hari: tanggal periode disimpan terpaku jam 12:00
+ * (lihat `toIso` saat periode dibuat), sedangkan `today` membawa jam sekarang. Tanpa
+ * dinormalkan, selisihnya mengandung pecahan hari yang berubah-ubah sepanjang hari —
+ * itulah yang dulu membuat angka sisa hari bergeser tergantung jam berapa layar dibuka.
+ */
+const atMidnight = (value: Date | string) => {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+/**
+ * Posisi hari ini di dalam sebuah periode.
+ *
+ * Hitungannya INKLUSIF di kedua ujung: periode 1–31 Juli berisi 31 hari, dan pada
+ * tanggal 31 sisanya adalah 1 hari — bukan 0. Versi sebelumnya mengukur jarak antar
+ * ujung (30) sehingga hari terakhir terbaca "0 hari tersisa", dan pembagi "aman
+ * dibelanjakan per hari" harus diselamatkan dengan Math.max(1, …) di setiap pemakainya.
+ *
+ * `daysLeft` sengaja TIDAK dijepit di 0: nilai nol/negatif adalah satu-satunya cara
+ * memberi tahu bahwa periode sudah lewat tanggal tapi belum ditutup. Pemakai yang hanya
+ * ingin menampilkan angka wajib menjepitnya sendiri; yang memakainya sebagai pembagi
+ * tetap perlu Math.max(1, …).
+ */
 export function periodProgress(p: BudgetPeriod, today: Date = new Date()) {
-  const start = new Date(p.start), end = new Date(p.end);
-  const totalDays = Math.max(1, Math.round((+end - +start) / 86_400_000));
-  const dayOf = Math.min(totalDays, Math.max(0, Math.round((+today - +start) / 86_400_000)));
-  return { dayOf, totalDays, daysLeft: Math.max(0, totalDays - dayOf), fraction: dayOf / totalDays };
+  const start = atMidnight(p.start);
+  const end = atMidnight(p.end);
+  const now = atMidnight(today);
+  const totalDays = Math.max(1, Math.round((+end - +start) / DAY_MS) + 1);
+  // Berapa hari sudah berlalu sejak hari pertama; 0 pada hari mulai, negatif sebelumnya.
+  const elapsed = Math.round((+now - +start) / DAY_MS);
+  return {
+    /** Hari ke berapa, 1-based. 0 selama periode belum dimulai. */
+    dayOf: elapsed < 0 ? 0 : Math.min(totalDays, elapsed + 1),
+    totalDays,
+    /**
+     * Sisa hari termasuk hari ini. 1 = hari terakhir, ≤0 = sudah lewat tanggal.
+     * Dibatasi di atas oleh panjang periode: periode yang belum mulai tidak boleh
+     * mengaku bersisa lebih lama daripada durasinya sendiri.
+     */
+    daysLeft: Math.min(totalDays, totalDays - elapsed),
+    fraction: Math.min(1, Math.max(0, (elapsed + 1) / totalDays)),
+    notStarted: elapsed < 0,
+    overdue: totalDays - elapsed <= 0,
+  };
 }
 export function periodNet(liquidity: number, budgets: Budget[]): number {
   return safeToSpend(liquidity, budgets);

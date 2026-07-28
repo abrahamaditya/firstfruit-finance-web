@@ -8,9 +8,19 @@ const D: Record<string, Entry> = {
   'side.main': { id: 'UTAMA', en: 'MAIN' },
   'side.tools': { id: 'ALAT KEUANGAN', en: 'FINANCE TOOLS' },
   'side.settings': { id: 'Pengaturan', en: 'Settings' },
-  'side.mainAccount': { id: 'Akun utama', en: 'Main account' },
   'side.logCta': { id: 'Catat transaksi', en: 'Log transaction' },
   'side.switchPeriod': { id: 'Ganti periode', en: 'Switch period' },
+  // Dua keadaan kosong yang berbeda: belum pernah punya periode vs. semua sudah ditutup.
+  'side.periodEmpty': { id: 'Belum ada periode', en: 'No period yet' },
+  'side.periodAllClosed': { id: 'Semua periode ditutup', en: 'All periods closed' },
+  'side.periodLabel': { id: 'Periode', en: 'Period' },
+  // Sisa waktu periode. Hari terakhir & lewat tanggal dipisah dari hitungan biasa:
+  // "0 hari lagi" ambigu (hari ini masih terhitung atau tidak?) dan periode yang sudah
+  // lewat tanggal tapi belum ditutup adalah keadaan yang perlu ditindaklanjuti.
+  'side.periodDaysLeft': { id: '{n} hari lagi', en: '{n} days left' },
+  'side.periodLastDay': { id: 'Hari terakhir', en: 'Last day' },
+  'side.periodOverdue': { id: 'Lewat tanggal · belum ditutup', en: 'Past end date · not closed' },
+  'side.periodNotStarted': { id: 'Belum dimulai', en: 'Not started' },
   'nav.home': { id: 'Beranda', en: 'Home' },
   'nav.wallets': { id: 'Dompet', en: 'Wallets' },
   'nav.tx': { id: 'Transaksi', en: 'Transactions' },
@@ -21,7 +31,6 @@ const D: Record<string, Entry> = {
   'nav.planning': { id: 'Rencana', en: 'Planning' },
   'nav.reports': { id: 'Laporan', en: 'Reports' },
   'nav.calendar': { id: 'Kalender', en: 'Calendar' },
-  'nav.tutup': { id: 'Tutup buku', en: 'Close period' },
   'nav.people': { id: 'Pihak terkait', en: 'People' },
   'nav.more': { id: 'Lainnya', en: 'More' },
   'more.title': { id: 'Alat keuangan', en: 'Finance tools' },
@@ -50,8 +59,8 @@ const D: Record<string, Entry> = {
   'tab.calendar.title': { id: 'Kalender & pengingat', en: 'Calendar & reminders' },
   'tab.people.eyebrow': { id: 'Relasi', en: 'Relations' },
   'tab.people.title': { id: 'Pihak terkait', en: 'People & organizations' },
-  'tab.tutup.eyebrow': { id: 'Periode berjalan', en: 'Current period' },
-  'tab.tutup.title': { id: 'Tutup buku', en: 'Close the books' },
+  'tab.period.eyebrow': { id: 'Periode', en: 'Period' },
+  'tab.period.title': { id: 'Laporan periode', en: 'Period report' },
   'tab.profile.eyebrow': { id: 'Pengaturan', en: 'Settings' },
   'tab.profile.title': { id: 'Profil & preferensi', en: 'Profile & preferences' },
 
@@ -73,7 +82,7 @@ const D: Record<string, Entry> = {
   'home.liquidity': { id: 'Total likuiditas', en: 'Total liquidity' },
   'home.inSavings': { id: 'Di tabungan', en: 'In savings' },
   'home.allocated': { id: 'Dianggarkan', en: 'Budgeted' },
-  'home.safeToSpend': { id: 'Aman dibelanjakan', en: 'Safe to spend' },
+  'home.safeToSpend': { id: 'Arus Kas Bebas', en: 'Net Cash Flow' },
   'home.days': { id: 'hari', en: 'days' },
   'home.daysLeft': { id: 'hari tersisa', en: 'days left' },
   'home.log': { id: 'Catat', en: 'Log' },
@@ -105,6 +114,7 @@ const D: Record<string, Entry> = {
   'wallets.usedCredit': { id: 'Terpakai', en: 'Used' },
   'wallets.ewallet': { id: 'E-wallet', en: 'E-wallet' },
   'wallets.available': { id: 'Tersedia dipakai', en: 'Available to spend' },
+  'wallets.afterSavings': { id: 'Saldo setelah tabungan', en: 'Balance after savings' },
   'wallets.reserved': { id: 'Disimpan di tabungan', en: 'Locked in savings' },
   'wallets.manageCard': { id: 'Kelola kartu', en: 'Manage card' },
   'wallets.paymentMethod': { id: 'Metode pembayaran', en: 'Payment method' },
@@ -120,6 +130,27 @@ const D: Record<string, Entry> = {
   'wallets.target': { id: 'target', en: 'target' },
   'wallets.noTarget': { id: 'tanpa target', en: 'no target' },
   'wallets.liabilityCredit': { id: 'Liabilitas · kredit', en: 'Liabilities · credit' },
+  // Empty state. Nadanya menyebut langkah berikutnya, bukan sekadar melaporkan kosong —
+  // layar ini adalah titik awal pemakaian aplikasi, jadi ia harus memberi tahu apa
+  // yang terjadi setelah dompet pertama ada.
+  'wallets.emptyTitle': { id: 'Belum ada dompet', en: 'No wallets yet' },
+  'wallets.emptyLead': {
+    id: 'Tambahkan rekening, e-wallet, kartu kredit, atau uang tunai. Saldo semuanya dijumlahkan jadi satu angka di beranda, dan setiap transaksi dicatat dari salah satunya.',
+    en: 'Add a bank account, e-wallet, credit card, or cash. Their balances add up to the single figure on your home screen, and every transaction is logged against one of them.',
+  },
+  'wallets.emptyCta': { id: 'Tambah dompet pertama', en: 'Add your first wallet' },
+  'wallets.debitEmpty': {
+    id: 'Belum ada rekening, e-wallet, atau uang tunai. Ini yang dipakai untuk membayar dan menerima uang.',
+    en: 'No accounts, e-wallets, or cash yet. These are what you pay and receive money with.',
+  },
+  'wallets.creditEmpty': {
+    id: 'Belum ada kartu kredit. Tambahkan bila ingin memantau tagihan berjalan dan sisa limitnya.',
+    en: 'No credit cards yet. Add one to track your running bill and remaining limit.',
+  },
+  'wallets.editCard': { id: 'Ubah kartu {name}', en: 'Edit {name}' },
+  // Memakai kata yang sama dengan pengaturannya ("Dompet default" di Profil) — kapsul
+  // bertuliskan "Utama" akan terbaca sebagai status kedua yang berbeda.
+  'wallets.defaultTag': { id: 'Default', en: 'Default' },
   'wallets.limit': { id: 'limit', en: 'limit' },
   'wallets.setAside': { id: 'Sisihkan', en: 'Set aside' },
   'wallets.take': { id: 'Ambil', en: 'Withdraw' },
@@ -198,7 +229,7 @@ const D: Record<string, Entry> = {
 
   // Anggaran
   'budget.allocated': { id: 'Teralokasi', en: 'Allocated' },
-  'budget.unallocated': { id: 'belum teralokasi (aman dibelanjakan)', en: 'unallocated (safe to spend)' },
+  'budget.unallocated': { id: 'belum teralokasi (arus kas bebas)', en: 'unallocated (net cash flow)' },
   'budget.used': { id: 'Terpakai', en: 'Used' },
   'budget.remaining': { id: 'Tersisa', en: 'Remaining' },
   'budget.progress': { id: 'Progres', en: 'Progress' },
@@ -362,25 +393,45 @@ const D: Record<string, Entry> = {
   'reports.ofSpending': { id: 'dari pengeluaran', en: 'of spending' },
   'reports.exported': { id: 'Laporan CSV berhasil diunduh', en: 'CSV report downloaded' },
 
+  // Periode (daftar + laporan)
+  'period.sheetLead': {
+    id: 'Pilih periode untuk melihat laporannya. Tutup buku dilakukan dari laporan periode yang sedang berjalan.',
+    en: 'Pick a period to read its report. Closing the books happens inside the running period’s report.',
+  },
+  'period.emptyTitle': { id: 'Belum ada periode', en: 'No periods yet' },
+  'period.create': { id: 'Buat periode', en: 'Create period' },
+  'period.netCashflow': { id: 'Arus kas bersih', en: 'Net cash flow' },
+  'period.inThisPeriod': { id: 'di periode ini', en: 'in this period' },
+  'period.budgetSection': { id: 'Anggaran periode', en: 'Period budget' },
+  'period.noBudgets': { id: 'Belum ada anggaran di periode ini.', en: 'No budgets in this period yet.' },
+  'period.closeSection': { id: 'Tutup buku', en: 'Close the books' },
+  'period.closeCta': { id: 'Tutup buku {name}', en: 'Close the books for {name}' },
+  'period.askNext': {
+    id: 'Mau langsung dibuatkan periode berikutnya, atau tutup saja?',
+    en: 'Open the next period right away, or just close this one?',
+  },
+  'period.closeOnly': { id: 'Tutup saja, tanpa periode baru', en: 'Just close it, no new period' },
+  'period.closeOnlyNote': {
+    id: 'Tanpa periode baru, pencatatan berhenti sampai kamu membuat periode berikutnya — kecuali sudah ada periode draft yang menyusul, yang otomatis jadi periode berjalan.',
+    en: 'With no new period, logging pauses until you create the next one — unless a draft period follows it, which automatically becomes the running period.',
+  },
+  'period.draftNote': {
+    id: 'Periode ini masih draft — ia baru berjalan setelah periode yang sekarang ditutup, jadi belum ada transaksi yang masuk ke sini.',
+    en: 'This period is still a draft — it only starts once the running period is closed, so nothing has been logged into it yet.',
+  },
+  'period.archivedNote': {
+    id: 'Periode ini sudah ditutup. Angkanya tersimpan sebagai arsip dan tidak bisa diubah lagi.',
+    en: 'This period is closed. Its numbers are archived and can no longer change.',
+  },
+
   // Tutup buku
-  'closing.netSurplus': { id: 'NET SURPLUS', en: 'NET SURPLUS' },
-  'closing.becomesOpening': { id: 'menjadi saldo awal periode berikutnya', en: 'becomes the opening balance of the next period' },
-  'closing.summary': { id: 'Ringkasan penutupan', en: 'Closing summary' },
   'closing.lockAll': { id: 'Kunci semua transaksi', en: 'Lock all transactions' },
   'closing.lockAllDesc': { id: 'Transaksi periode ini menjadi arsip.', en: 'This period’s transactions become archived.' },
-  'closing.done': { id: 'Selesai', en: 'Done' },
   'closing.computeSurplus': { id: 'Hitung net surplus', en: 'Compute net surplus' },
   'closing.computeSurplusDesc': { id: 'Sisa dana setelah seluruh alokasi.', en: 'Funds left after all allocations.' },
-  'closing.nextPeriod': { id: 'Buat periode berikutnya', en: 'Create next period' },
-  'closing.nextPeriodDesc': { id: 'Saldo dan anggaran siap dimulai kembali.', en: 'Balance and budget ready to restart.' },
-  'closing.auto': { id: 'Otomatis', en: 'Automatic' },
   'closing.dataNote': { id: 'Data tidak dihapus. Periode yang ditutup tetap tersedia sebagai arsip laporan.', en: 'No data is deleted. Closed periods remain available as report archives.' },
   'closing.confirm': { id: 'Saya sudah memeriksa transaksi dan memahami periode ini akan dikunci.', en: 'I have reviewed the transactions and understand this period will be locked.' },
-  'closing.cta': { id: 'Tutup buku & buat periode baru', en: 'Close books & create new period' },
   'closing.closing': { id: 'Menutup periode...', en: 'Closing period...' },
-  'closing.newPeriodCreated': { id: 'Periode baru berhasil dibuat', en: 'New period created' },
-  'closing.whatHappens': { id: 'Yang akan terjadi', en: 'What will happen' },
-  'closing.periodList': { id: 'Daftar periode', en: 'Period list' },
   'closing.noPeriods': { id: 'Belum ada periode. Buat satu untuk mulai menganggarkan.', en: 'No periods yet. Create one to start budgeting.' },
   'closing.statusActive': { id: 'Berjalan', en: 'Active' },
   'closing.statusClosed': { id: 'Ditutup', en: 'Closed' },
@@ -388,6 +439,7 @@ const D: Record<string, Entry> = {
   'closing.periodClosed': { id: 'PERIODE YANG DITUTUP', en: 'PERIOD BEING CLOSED' },
   'closing.periodOpened': { id: 'PERIODE BARU YANG DIBUKA', en: 'NEW PERIOD OPENING' },
   'closing.transition': { id: '{from} ditutup · {to} dibuka', en: '{from} closed · {to} opened' },
+  'closing.closedOnly': { id: '{name} ditutup tanpa periode baru', en: '{name} closed, no new period' },
   'closing.ctaNamed': { id: 'Tutup {from} & buka {to}', en: 'Close {from} & open {to}' },
   'closing.periodPrefix': { id: 'Periode', en: 'Period' },
 
@@ -414,7 +466,7 @@ const D: Record<string, Entry> = {
   'profile.notifications': { id: 'Notifikasi & reminder', en: 'Notifications & reminders' },
   'profile.on': { id: 'Aktif', en: 'On' },
   'profile.off': { id: 'Mati', en: 'Off' },
-  'profile.closePeriod': { id: 'Tutup buku periode', en: 'Close the period books' },
+  'profile.closePeriod': { id: 'Periode & tutup buku', en: 'Periods & closing' },
   'profile.logout': { id: 'Keluar dari akun', en: 'Log out' },
   'profile.saved': { id: 'Preferensi disimpan', en: 'Preferences saved' },
   'profile.updated': { id: 'Profil diperbarui', en: 'Profile updated' },

@@ -15,7 +15,12 @@ import { billingDatesInRange } from '../core/domain/calendar';
 import { PlanningContext, estimateMonthlyIncome } from '../core/domain/planning';
 
 // Small helper: load a collection once.
-function useCollection<T extends { id: string }>(pick: (r: ReturnType<typeof useRepositories>) => { list(): Promise<T[]> }) {
+// `version` untuk pemanggil yang tidak ikut di-remount saat data berubah (mis. kerangka
+// aplikasi): naikkan angkanya dan koleksinya ditarik ulang.
+function useCollection<T extends { id: string }>(
+  pick: (r: ReturnType<typeof useRepositories>) => { list(): Promise<T[]> },
+  version = 0,
+) {
   const repos = useRepositories();
   const repository = pick(repos);
   const [data, setData] = useState<T[]>([]);
@@ -27,7 +32,9 @@ function useCollection<T extends { id: string }>(pick: (r: ReturnType<typeof use
     } finally {
       setLoading(false);
     }
-  }, [repository]);
+    // `version` sengaja jadi dependensi walau tidak dipakai di badan fungsi.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [repository, version]);
   useEffect(() => { reload(); }, [reload]);
   return { data, loading, reload };
 }
@@ -135,7 +142,9 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
     monthlyIncome: estimateMonthlyIncome(transactions, today),
     nextMonthBills: Math.round(subsNextMonth + remindersNextMonth),
     expectedReceivables: receivableTotal,
-    daysLeft: progress?.daysLeft ?? 0,
+    // Konteks simulasi tidak mengenal periode lewat tanggal — sisa negatif tidak punya
+    // arti untuk "kalau saya belanja segini, per hari turun berapa", jadi dijepit di sini.
+    daysLeft: Math.max(0, progress?.daysLeft ?? 0),
     totalDays: progress?.totalDays ?? 30,
   };
 }
@@ -154,10 +163,93 @@ export function useBeneficiaries() {
 }
 
 /** Daftar periode anggaran, terbaru dulu. */
-export function usePeriods() {
-  const { data, loading, reload } = useCollection<BudgetPeriod>(r => r.periods);
+export function usePeriods(version = 0) {
+  const { data, loading, reload } = useCollection<BudgetPeriod>(r => r.periods, version);
   const sorted = [...data].sort((a, b) => +new Date(b.start) - +new Date(a.start));
   return { periods: sorted, active: sorted.find(p => !p.closed), loading, reload };
+}
+
+export interface PeriodReport {
+  period?: BudgetPeriod;
+  /** Periode berjalan — hanya di sini angka kas/aman-dibelanjakan masih berarti. */
+  isActive: boolean;
+  progress: ReturnType<typeof periodProgress> | null;
+  income: number;
+  expense: number;
+  net: number;
+  txCount: number;
+  budgets: BudgetView[];
+  allocated: number;
+  spent: number;
+  /** Kategori pengeluaran terbesar di periode ini, urut menurun. */
+  categories: Array<{ name: string; total: number }>;
+  liquidity: number;
+  reserved: number;
+  safeToSpend: number;
+  loading: boolean;
+}
+
+/**
+ * Laporan satu periode. Berbeda dengan `useDashboard` yang selalu bicara "sekarang",
+ * angka di sini dibatasi rentang tanggal periode yang diminta — jadi periode yang
+ * sudah ditutup tetap bisa dibaca ulang sebagai arsip.
+ */
+export function usePeriodReport(periodId?: string | null): PeriodReport {
+  const { periods, loading: periodsLoading } = usePeriods();
+  const { data: transactions, loading: txLoading } = useTransactions();
+  const { raw: budgets, loading: budgetsLoading } = useBudgets();
+  const { liquidity } = useWallets();
+  const { reserved } = useSavings();
+
+  const period = periods.find(item => item.id === periodId)
+    ?? periods.find(item => !item.closed)
+    ?? periods[0];
+  const isActive = Boolean(period && !period.closed);
+
+  const from = period ? +new Date(period.start) : 0;
+  const to = period ? +new Date(period.end) : 0;
+  // Penyesuaian saldo bukan belanja nyata, transfer cuma memindahkan uang — keduanya
+  // dikecualikan supaya pemasukan/pengeluaran periode mencerminkan arus kas sebenarnya.
+  const inPeriod = period
+    ? transactions.filter(tx => {
+      const at = +new Date(tx.date);
+      return !tx.adjustment && tx.type !== 'transfer' && at >= from && at <= to;
+    })
+    : [];
+  const income = inPeriod.filter(tx => tx.type === 'income').reduce((sum, tx) => sum + tx.amount, 0);
+  const expense = inPeriod.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
+
+  // Anggaran tanpa `periodId` hanya bisa berasal dari periode berjalan (data lama).
+  const periodBudgets = budgets.filter(b => (b.periodId ? b.periodId === period?.id : isActive));
+
+  const totals = new Map<string, number>();
+  inPeriod
+    .filter(tx => tx.type === 'expense')
+    .forEach(tx => {
+      const label = tx.labels[0];
+      if (label) totals.set(label, (totals.get(label) ?? 0) + tx.amount);
+    });
+
+  return {
+    period,
+    isActive,
+    progress: period ? periodProgress(period) : null,
+    income,
+    expense,
+    net: income - expense,
+    txCount: inPeriod.length,
+    budgets: periodBudgets.map(budgetView),
+    allocated: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),
+    spent: periodBudgets.reduce((sum, b) => sum + b.spent, 0),
+    categories: [...totals.entries()]
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 6),
+    liquidity,
+    reserved,
+    safeToSpend: safeToSpend(liquidity, periodBudgets, reserved),
+    loading: periodsLoading || txLoading || budgetsLoading,
+  };
 }
 
 export function useReminders() {

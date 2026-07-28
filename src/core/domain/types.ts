@@ -18,6 +18,7 @@ export interface Wallet {
   phone?: string;            // e-wallet: identitas akun bukan no. rekening tapi no. HP
   balance: number;           // cached, maintained incrementally
   creditLimit?: number;
+  showAdjustmentInTransactions?: boolean; // opsi command saat saldo diedit
 }
 export interface Transaction {
   id: string; type: TxType; nature: TxNature; amount: number;
@@ -36,7 +37,9 @@ export interface Transaction {
   owedAmount?: number;          // porsi yang ditagih balik (lent = penuh, shared = sebagian)
   subscriptionId?: string; date: string;
 }
-export interface Budget { id: string; category: string; allocated: number; spent: number; }
+// `periodId` menempelkan anggaran pada satu periode — dipakai laporan periode agar
+// anggaran periode lama tidak tercampur dengan yang berjalan.
+export interface Budget { id: string; category: string; allocated: number; spent: number; periodId?: string; }
 export interface BudgetPeriod {
   id: string;
   alias: string;

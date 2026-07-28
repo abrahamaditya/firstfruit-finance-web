@@ -18,6 +18,7 @@ import {
 } from '../infrastructure/supabase/AuthProvider';
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
+import { periodProgress } from '../core/domain/calculations';
 import { BeneficiaryKind, TxBeneficiary, WalletMedium } from '../core/domain/types';
 import {
   CATEGORY_CUSTOM,
@@ -58,7 +59,6 @@ import {
   Grid,
   Home,
   ListIcon,
-  Lock,
   Pencil,
   Plus,
   Receivable,
@@ -82,7 +82,7 @@ import PlanningScreen from '../features/PlanningScreen';
 import ReportsScreen from '../features/ReportsScreen';
 import CalendarScreen from '../features/CalendarScreen';
 import PeopleScreen from '../features/PeopleScreen';
-import ClosingScreen from '../features/ClosingScreen';
+import PeriodScreen from '../features/PeriodScreen';
 import ProfileScreen from '../features/ProfileScreen';
 import { usePeriods } from '../application/hooks';
 
@@ -97,7 +97,7 @@ export type Tab =
   | 'planning'
   | 'reports'
   | 'calendar'
-  | 'tutup'
+  | 'period'
   | 'people'
   | 'profile';
 export type CreateType =
@@ -116,19 +116,51 @@ export type CreateType =
   | 'reminder'
   | 'beneficiary';
 
+interface CreateDescriptor {
+  type: CreateType;
+  isEdit: boolean;
+  name?: string;
+  id?: string;
+  duplicate?: boolean;
+}
+
 export type { Preferences } from '../core/preferences';
 
 const PREFS_KEY = 'abraham.prefs';
+const ACTIVE_FORM_KEY = 'firstfruit.active-form';
+const FORM_DRAFT_KEY = 'firstfruit.form-draft';
+const CREATE_TYPES = new Set<CreateType>([
+  'wallet', 'subscription', 'planning', 'piutang', 'budget', 'periode',
+  'orang', 'transfer', 'transaksi', 'tabungan', 'sisihkan', 'ambil',
+  'reminder', 'beneficiary',
+]);
+
+const formStorageKeys = (
+  userId: string,
+  workspaceId: string,
+  descriptor: CreateDescriptor,
+) => {
+  const scope = `${userId}:${workspaceId}`;
+  const form = `${descriptor.type}:${descriptor.id ?? 'new'}:${descriptor.duplicate ? 'copy' : 'normal'}`;
+  return {
+    active: `${ACTIVE_FORM_KEY}:${scope}`,
+    draft: `${FORM_DRAFT_KEY}:${scope}:${form}`,
+  };
+};
 
 interface UI {
   go: (tab: Tab) => void;
   openNotif: () => void;
   openAdd: () => void;
   openTools: () => void;
+  openPeriods: () => void;
   openItem: (name: string, type: CreateType, id?: string) => void;
   openCreate: (type: CreateType, isEdit?: boolean, name?: string, id?: string) => void;
   notify: (message: string) => void;
   refresh: () => void;
+  /** Periode yang sedang dibaca laporannya; null = ikut periode berjalan. */
+  periodId: string | null;
+  selectPeriod: (periodId: string | null) => void;
   prefs: Preferences;
   setPref: <K extends keyof Preferences>(key: K, value: Preferences[K]) => void;
   saveProfile: (name: string, email: string) => Promise<void>;
@@ -166,7 +198,7 @@ export function useMoney() {
 interface FieldDefinition {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'select';
+  type?: 'text' | 'number' | 'date' | 'select' | 'segmented';
   options?: CategoryOption[];
   optionsOf?: (form: Record<string, string>) => CategoryOption[];  // pilihan dinamis
   placeholder?: string;
@@ -174,6 +206,7 @@ interface FieldDefinition {
   suggestions?: string[];                              // datalist untuk input teks bebas
   showIf?: (form: Record<string, string>) => boolean;  // field kondisional
   labelOf?: (form: Record<string, string>) => string;  // label dinamis
+  advanced?: boolean;                                 // ditaruh di detail opsional
 }
 
 interface FormConfig {
@@ -182,6 +215,102 @@ interface FormConfig {
   fields: FieldDefinition[];
   defaults: Record<string, string>;
 }
+
+interface FormSectionDefinition {
+  title: string;
+  keys: string[];
+}
+
+const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
+  { title: 'Informasi transaksi', keys: ['txType', 'amount', 'date'] },
+  { title: 'Aliran dana', keys: ['walletId', 'toWalletId'] },
+  { title: 'Kategori', keys: ['category', 'catCustom'] },
+  {
+    title: 'Detail opsional',
+    keys: [
+      'savingId', 'merchant', 'note', 'budgetId', 'incomeNature', 'nature',
+      'beneficiaryId', 'beneficiaryName', 'beneficiaryKind', 'beneficiary',
+      'recipient', 'owed', 'settlesReceivableId',
+    ],
+  },
+];
+
+/** Urutan section sekaligus menentukan urutan field yang terlihat di form. */
+const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
+  transaksi: TRANSACTION_FORM_SECTIONS,
+  transfer: TRANSACTION_FORM_SECTIONS,
+  wallet: [
+    { title: 'Identitas dompet', keys: ['name', 'medium'] },
+    { title: 'Nilai keuangan', keys: ['balance', 'creditLimit', 'showInTransactions'] },
+    { title: 'Detail rekening', keys: ['bank', 'last4', 'phone'] },
+  ],
+  subscription: [
+    { title: 'Informasi langganan', keys: ['name', 'amount', 'cycle'] },
+    { title: 'Pembayaran & kategori', keys: ['walletId', 'catL1', 'catL2', 'catL3', 'catCustom'] },
+    { title: 'Jadwal tagihan', keys: ['nextBillingDate', 'endDate', 'reminderDaysBefore'] },
+  ],
+  planning: [
+    { title: 'Informasi rencana', keys: ['title', 'status'] },
+    { title: 'Target & progres', keys: ['target', 'saved', 'targetDate'] },
+  ],
+  piutang: [
+    { title: 'Pihak peminjam', keys: ['person', 'source'] },
+    { title: 'Nilai & waktu', keys: ['amount', 'date'] },
+  ],
+  budget: [
+    { title: 'Kategori anggaran', keys: ['catL1', 'catL2', 'catL3', 'catCustom'] },
+    { title: 'Nilai anggaran', keys: ['allocated', 'spent'] },
+  ],
+  periode: [
+    { title: 'Identitas periode', keys: ['alias'] },
+    { title: 'Rentang periode', keys: ['start', 'end'] },
+  ],
+  orang: [
+    { title: 'Identitas peserta', keys: ['name'] },
+    { title: 'Pembagian', keys: ['share'] },
+  ],
+  tabungan: [
+    { title: 'Tujuan tabungan', keys: ['emoji', 'name'] },
+    { title: 'Sumber dana', keys: ['walletId', 'balance'] },
+    { title: 'Target tabungan', keys: ['target', 'targetDate'] },
+  ],
+  sisihkan: [{ title: 'Dana yang disisihkan', keys: ['amount'] }],
+  ambil: [{ title: 'Dana yang diambil', keys: ['amount'] }],
+  beneficiary: [
+    { title: 'Identitas pihak', keys: ['name', 'kind'] },
+    { title: 'Detail tambahan', keys: ['note'] },
+  ],
+  reminder: [
+    { title: 'Informasi pengingat', keys: ['title', 'date'] },
+    { title: 'Detail tambahan', keys: ['amount', 'note'] },
+  ],
+};
+
+const groupFormFields = (type: CreateType, fields: FieldDefinition[]) => {
+  const used = new Set<string>();
+  const sections = FORM_SECTIONS[type].map((section) => {
+    const sectionFields = section.keys
+      .map((key) => fields.find((field) => field.key === key))
+      .filter((field): field is FieldDefinition => Boolean(field));
+    sectionFields.forEach((field) => used.add(field.key));
+    return { title: section.title, fields: sectionFields };
+  }).filter((section) => section.fields.length > 0);
+  const remaining = fields.filter((field) => !used.has(field.key));
+  if (remaining.length > 0) sections.push({ title: 'Detail lainnya', fields: remaining });
+  return sections;
+};
+
+const fieldIsRequired = (field: FieldDefinition) => {
+  if (field.optional) return false;
+  if (field.type === 'select' || field.type === 'segmented') return true;
+  if (MONEY_FIELDS.has(field.key)) {
+    return !['creditLimit', 'target', 'owed'].includes(field.key);
+  }
+  return ![
+    'bank', 'last4', 'creditLimit', 'endDate', 'targetDate',
+    'emoji', 'target', 'owed',
+  ].includes(field.key);
+};
 
 const UICtx = createContext<UI | null>(null);
 
@@ -205,7 +334,6 @@ const toolNavigation: Array<{ tab: Tab; label: string; icon: React.ReactNode }> 
   { tab: 'planning', label: 'nav.planning', icon: <Target /> },
   { tab: 'reports', label: 'nav.reports', icon: <Chart /> },
   { tab: 'calendar', label: 'nav.calendar', icon: <Calendar /> },
-  { tab: 'tutup', label: 'nav.tutup', icon: <Lock /> },
 ];
 
 // Layar yang tidak punya tombol sendiri di bilah bawah — diwakili tombol "Lainnya".
@@ -217,7 +345,26 @@ const MORE_TABS: Tab[] = [
   ...mainNavigation.map((entry) => entry.tab).filter((tab) => tab !== 'home'),
   ...toolNavigation.map((entry) => entry.tab),
   ...extraNavigation.map((entry) => entry.tab),
+  // Laporan periode tidak punya tombol nav sendiri; di layar kecil jalan masuknya
+  // lewat sheet "Lainnya", jadi tombol itu yang harus menyala saat berada di sana.
+  'period' as Tab,
 ].filter((tab) => tab !== 'wallets' && tab !== 'tx');
+
+/**
+ * Label periode untuk tombol sempit (sheet "Lainnya" di layar kecil): bulan + tahun saja,
+ * mis. "Juli 2026". Diturunkan dari tanggalnya, bukan dari `alias`, karena di sana ia
+ * berdiri sendiri sebagai satu baris tanpa ruang untuk keterangan tanggal.
+ * Periode yang melintasi bulan disebut sebagai rentang, karena satu nama bulan saja
+ * akan menyesatkan.
+ */
+const periodShortLabel = (period: { start: string; end: string }, locale: string) => {
+  const start = new Date(period.start);
+  const end = new Date(period.end);
+  return start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth()
+    ? start.toLocaleDateString(locale, { month: 'long', year: 'numeric' })
+    : `${start.toLocaleDateString(locale, { month: 'short' })} – ${end.toLocaleDateString(locale, { month: 'short', year: 'numeric' })}`;
+};
+
 
 /**
  * Pintasan yang boleh dipasang pengguna di deret aksi beranda. Dua jenis dalam satu daftar:
@@ -280,6 +427,11 @@ const CATEGORY_KEYS = { l1: 'catL1', l2: 'catL2', l3: 'catL3', custom: 'catCusto
 
 /** Kategori yang disimpan = tingkat terdalam yang dipilih (atau ketikan sendiri). */
 const pickCategory = (form: Record<string, string>): string => {
+  if (form.category) {
+    return form.category === CATEGORY_CUSTOM
+      ? form[CATEGORY_KEYS.custom]?.trim() || 'Lainnya'
+      : form.category.trim();
+  }
   if (form[CATEGORY_KEYS.l1] === CATEGORY_CUSTOM || form[CATEGORY_KEYS.l3] === CATEGORY_CUSTOM) {
     return form[CATEGORY_KEYS.custom]?.trim() || 'Lainnya';
   }
@@ -295,17 +447,33 @@ const spreadCategory = (label?: string) => {
   if (path.length <= 1) {
     // Kategori bebas (di luar taksonomi) tetap bisa diedit lewat opsi "kategori lain".
     return path.length === 1
-      ? { catL1: CATEGORY_CUSTOM, catL2: '', catL3: '', catCustom: path[0] }
+      ? { category: path[0], catL1: CATEGORY_CUSTOM, catL2: '', catL3: '', catCustom: path[0] }
       : null;
   }
-  return { catL1: path[0], catL2: path[1] ?? '', catL3: path[2] ?? '', catCustom: '' };
+  return {
+    category: label ?? '',
+    catL1: path[0],
+    catL2: path[1] ?? '',
+    catL3: path[2] ?? '',
+    catCustom: '',
+  };
 };
 
 /** Perubahan satu field kadang membatalkan pilihan di bawahnya. */
 const applyFieldChange = (form: Record<string, string>, key: string, value: string) => {
-  const cleared = { catL1: '', catL2: '', catL3: '', catCustom: '' };
+  const cleared = { category: '', catL1: '', catL2: '', catL3: '', catCustom: '' };
   if (key === 'txType' && value !== form.txType) {
-    return { ...form, ...cleared, txType: value, beneficiary: '', recipient: '', owed: '', nature: '', payer: '', incomeNature: '' };
+    return {
+      ...form,
+      ...cleared,
+      txType: value,
+      beneficiary: 'self',
+      recipient: '',
+      owed: '',
+      nature: 'fixed',
+      payer: '',
+      incomeNature: 'fixed',
+    };
   }
   if (key === CATEGORY_KEYS.l1) return { ...form, catL1: value, catL2: '', catL3: '', catCustom: '' };
   if (key === CATEGORY_KEYS.l2) return { ...form, catL2: value, catL3: '' };
@@ -315,24 +483,23 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
 function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const repos = useRepositories();
   const auth = useAuthWorkspace();
-  const { active: activePeriod } = usePeriods();
+  // Kerangka aplikasi tidak ikut di-remount saat data berubah — daftar periodenya
+  // disegarkan lewat dataVersion, sama seperti layar yang di-remount lewat key.
+  const [dataVersion, setDataVersion] = useState(0);
+  const { periods, active: activePeriod } = usePeriods(dataVersion);
   const [tab, setTab] = useState<Tab>('home');
   const [tabHistory, setTabHistory] = useState<Tab[]>([]);
-  const [sheet, setSheet] = useState<null | 'notif' | 'item' | 'create' | 'more' | 'tools'>(null);
+  const [sheet, setSheet] = useState<null | 'notif' | 'item' | 'create' | 'more' | 'tools' | 'period'>(null);
+  const [periodId, setPeriodId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotifEntry[]>([]);
   const [readNotifs, setReadNotifs] = useState<string[]>([]);
   const [item, setItem] = useState<{ name: string; type: CreateType; id?: string }>({
     name: '',
     type: 'wallet',
   });
-  const [create, setCreate] = useState<{
-    type: CreateType;
-    isEdit: boolean;
-    name?: string;
-    id?: string;
-    duplicate?: boolean;
-  }>({ type: 'wallet', isEdit: false });
+  const [create, setCreate] = useState<CreateDescriptor>({ type: 'wallet', isEdit: false });
   const [form, setForm] = useState<Record<string, string>>({});
+  const [formDraftReady, setFormDraftReady] = useState(false);
   const [walletOptions, setWalletOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [debitWalletOptions, setDebitWalletOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [categoryOptions, setCategoryOptions] = useState<CategoryOption[]>([]);
@@ -341,8 +508,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [receivableOptions, setReceivableOptions] = useState<CategoryOption[]>([]);
   const [beneficiaryOptions, setBeneficiaryOptions] = useState<CategoryOption[]>([]);
   const [merchantSuggestions, setMerchantSuggestions] = useState<string[]>(MERCHANT_SUGGESTIONS);
-  const [dataVersion, setDataVersion] = useState(0);
   const [openSuggest, setOpenSuggest] = useState<string | null>(null);
+  const [showTransactionDetails, setShowTransactionDetails] = useState(false);
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
   const [prefs, setPrefs] = useState<Preferences>(() => initialPreferences ?? ({
@@ -511,7 +678,53 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     return digits ? Number(digits).toLocaleString(numLocale) : '';
   };
 
+  // Tombol periode punya tiga keadaan, bukan dua: tidak ada periode sama sekali berbeda
+  // dari "ada, tapi semuanya sudah ditutup" — yang kedua butuh periode baru dibuka,
+  // bukan periode pertama dibuat, jadi keduanya tidak boleh berbagi satu kalimat.
+  const periodEmptyLabel = t(periods.length === 0 ? 'side.periodEmpty' : 'side.periodAllClosed');
+  const periodLabel = activePeriod ? periodShortLabel(activePeriod, numLocale) : periodEmptyLabel;
+
+  // Isi kartu periode di dasar sidebar. Dikumpulkan di satu tempat, bukan dihitung di
+  // dalam JSX, supaya urutan keadaannya (belum mulai → lewat tanggal → hari terakhir →
+  // hitungan biasa) terbaca sebagai satu keputusan.
+  const periodCard = (() => {
+    if (!activePeriod) return null;
+    const { fraction, daysLeft, notStarted, overdue } = periodProgress(activePeriod);
+    const day = { day: 'numeric', month: 'short' } as const;
+    return {
+      // Nama yang ditulis pengguna adalah yang paling dikenalinya. Alias kosong (data
+      // lama / hasil impor) jatuh kembali ke bulan+tahun dari tanggalnya.
+      name: activePeriod.alias?.trim() || periodShortLabel(activePeriod, numLocale),
+      range: `${new Date(activePeriod.start).toLocaleDateString(numLocale, day)} – ${new Date(activePeriod.end).toLocaleDateString(numLocale, day)}`,
+      status: activePeriod.status === 'draft' ? t('planning.draft') : t('closing.statusActive'),
+      draft: activePeriod.status === 'draft',
+      overdue,
+      progress: fraction,
+      // daysLeft sudah termasuk hari ini, jadi 1 berarti hari terakhir — bukan besok.
+      remaining: notStarted
+        ? t('side.periodNotStarted')
+        : overdue
+          ? t('side.periodOverdue')
+          : daysLeft === 1
+            ? t('side.periodLastDay')
+            : t('side.periodDaysLeft', { n: daysLeft }),
+    };
+  })();
+
+  const clearCurrentFormDraft = useCallback(() => {
+    if (!auth.user || !auth.workspaceId) return;
+    const keys = formStorageKeys(auth.user.id, auth.workspaceId, create);
+    try {
+      sessionStorage.removeItem(keys.active);
+      sessionStorage.removeItem(keys.draft);
+    } catch {
+      /* sessionStorage diblokir — state React tetap menjadi fallback. */
+    }
+    setFormDraftReady(false);
+  }, [auth.user, auth.workspaceId, create]);
+
   const go = useCallback((next: Tab) => {
+    if (sheet === 'create') clearCurrentFormDraft();
     if (next === tab) {
       setSheet(null);
       return;
@@ -519,30 +732,41 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     setTabHistory((history) => [...history, tab].slice(-12));
     setTab(next);
     setSheet(null);
-  }, [tab]);
+  }, [clearCurrentFormDraft, sheet, tab]);
 
   const goBack = useCallback(() => {
+    if (sheet === 'create') clearCurrentFormDraft();
     setTabHistory((history) => {
       const previous = history.at(-1) ?? 'home';
       setTab(previous);
       return history.slice(0, -1);
     });
     setSheet(null);
-  }, []);
+  }, [clearCurrentFormDraft, sheet]);
 
   const openCreate = useCallback(
     (type: CreateType, isEdit = false, name?: string, id?: string) => {
+      setFormDraftReady(false);
+      setShowTransactionDetails(isEdit && (type === 'transaksi' || type === 'transfer'));
       setCreate({ type, isEdit, name, id, duplicate: !isEdit && Boolean(id) });
       setSheet('create');
     },
     [],
   );
 
+  // Memilih periode selalu berujung di layar laporannya — itu satu-satunya alasan
+  // daftar periode dibuka, jadi tidak ada langkah "pilih lalu tekan lihat".
+  const selectPeriod = useCallback((next: string | null) => {
+    setPeriodId(next);
+    if (next) go('period');
+  }, [go]);
+
   const ui: UI = {
     go,
     openNotif: () => setSheet('notif'),
     openAdd: () => openCreate('transaksi'),
     openTools: () => setSheet('tools'),
+    openPeriods: () => setSheet('period'),
     openItem: (name, type, id) => {
       setItem({ name, type, id });
       setSheet('item');
@@ -550,6 +774,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     openCreate,
     notify,
     refresh: () => setDataVersion((version) => version + 1),
+    periodId,
+    selectPeriod,
     prefs,
     setPref,
     saveProfile: async (name, email) => {
@@ -595,7 +821,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         email: authData.user.email ?? nextEmail,
       }));
     },
-    signOut: auth.signOut,
+    signOut: async () => {
+      clearCurrentFormDraft();
+      await auth.signOut();
+    },
     rate,
     rateUpdated,
   };
@@ -700,6 +929,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const nextMonth = new Date();
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       const nextMonthValue = nextMonth.toISOString().slice(0, 10);
+      const transactionCategories = (tree: CategoryTree): CategoryOption[] => [
+        ...Object.entries(tree).flatMap(([top, mids]) =>
+          Object.keys(mids).map((mid) => ({ value: mid, label: mid, group: top })),
+        ),
+        ...categoryOptions,
+        CUSTOM,
+      ];
 
       // Satu definisi dipakai dua kali: 'transaksi' dan alias 'transfer'.
       const transaksiConfig: FormConfig = {
@@ -710,10 +946,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             {
               key: 'txType',
               label: 'Jenis transaksi',
-              type: 'select',
+              type: 'segmented',
               options: [
-                { value: 'expense', label: '↓ Pengeluaran' },
-                { value: 'income', label: '↑ Pemasukan' },
+                { value: 'expense', label: '↑ Pengeluaran' },
+                { value: 'income', label: '↓ Pemasukan' },
                 { value: 'transfer', label: '⇄ Transfer antar-dompet' },
               ],
             },
@@ -734,14 +970,29 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               optional: true,
               optionsOf: (f) => [{ value: 'none', label: '— Tidak disisihkan' }, ...savingsFor(f.toWalletId)],
               showIf: (f) => isTransfer(f) && savingsFor(f.toWalletId).length > 0,
+              advanced: true,
+            },
+            {
+              key: 'category',
+              label: 'Kategori',
+              type: 'select',
+              optionsOf: (f) => transactionCategories(isIncome(f) ? INCOME_TREE : EXPENSE_TREE),
+              showIf: (f) => !isTransfer(f),
+            },
+            {
+              key: 'catCustom',
+              label: 'Nama kategori baru',
+              placeholder: 'Ketik kategori sendiri',
+              showIf: (f) => !isTransfer(f) && f.category === CATEGORY_CUSTOM,
             },
             {
               key: 'note',
-              label: 'Catatan',
-              labelOf: (f) => (isIncome(f) ? 'Keterangan' : 'Catatan'),
+              label: 'Catatan (opsional)',
+              labelOf: (f) => (isIncome(f) ? 'Keterangan (opsional)' : 'Catatan (opsional)'),
               placeholder: 'Contoh: Makan siang',
+              optional: true,
+              advanced: true,
             },
-            ...catFields((f) => (isIncome(f) ? INCOME_TREE : EXPENSE_TREE), '', (f) => !isTransfer(f)),
             // Pihak terkait diambil dari daftar penerima supaya penamaannya konsisten.
             {
               key: 'beneficiaryId',
@@ -755,12 +1006,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 { value: CATEGORY_CUSTOM, label: '➕ Tambah pihak baru…' },
               ],
               showIf: (f) => !isTransfer(f),
+              advanced: true,
             },
             {
               key: 'beneficiaryName',
               label: 'Nama pihak baru',
               placeholder: 'Contoh: Gereja, Keluarga, Budi',
               showIf: (f) => !isTransfer(f) && f.beneficiaryId === CATEGORY_CUSTOM,
+              advanced: true,
             },
             {
               key: 'beneficiaryKind',
@@ -768,6 +1021,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               type: 'select',
               options: BENEFICIARY_KINDS,
               showIf: (f) => !isTransfer(f) && f.beneficiaryId === CATEGORY_CUSTOM,
+              advanced: true,
             },
             {
               key: 'merchant',
@@ -776,6 +1030,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               placeholder: 'Contoh: Indomaret, Shopee, kaki lima',
               optional: true,
               suggestions: merchantSuggestions,
+              advanced: true,
             },
             // Menghubungkan pengeluaran ke pos anggaran — realisasi anggaran ikut bertambah.
             {
@@ -785,6 +1040,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               optional: true,
               options: [{ value: 'none', label: '— Tidak dibebankan ke anggaran' }, ...budgetOptions],
               showIf: (f) => isExpense(f) && budgetOptions.length > 0,
+              advanced: true,
             },
             // ==== khusus pemasukan ====
             // Pemasukan bisa langsung menutup piutang — piutangnya otomatis jadi lunas.
@@ -795,6 +1051,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               optional: true,
               options: [{ value: 'none', label: '— Bukan pelunasan piutang' }, ...receivableOptions],
               showIf: (f) => isIncome(f) && receivableOptions.length > 0,
+              advanced: true,
             },
             {
               key: 'incomeNature',
@@ -805,22 +1062,26 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 { value: 'unexpected', label: 'Tidak rutin / sekali ini' },
               ],
               showIf: isIncome,
+              optional: true,
+              advanced: true,
             },
             // ==== khusus pengeluaran ====
             {
               key: 'beneficiary',
-              label: 'Untuk siapa?',
+              label: 'Perlakuan pengeluaran',
               type: 'select',
               options: [
-                { value: 'self', label: 'Diri sendiri' },
-                { value: 'gift', label: 'Orang lain — memberi 🎁' },
-                { value: 'lent', label: 'Orang lain — ditalangin (piutang)' },
-                { value: 'shared', label: 'Patungan / setengah²' },
+                { value: 'self', label: 'Pengeluaran pribadi' },
+                { value: 'gift', label: 'Pemberian — tidak dikembalikan' },
+                { value: 'lent', label: 'Talangan — ditagih penuh' },
+                { value: 'shared', label: 'Patungan — ditagih sebagian' },
               ],
               showIf: isExpense,
+              optional: true,
+              advanced: true,
             },
-            { key: 'recipient', label: 'Nama orang', placeholder: 'Contoh: Budi', showIf: (f) => isExpense(f) && owesBack(f.beneficiary) },
-            { key: 'owed', label: 'Ditagih balik (piutang)', type: 'number', placeholder: 'Default: separuh', showIf: (f) => isExpense(f) && f.beneficiary === 'shared' },
+            { key: 'recipient', label: 'Nama orang (opsional)', placeholder: 'Contoh: Budi', optional: true, advanced: true, showIf: (f) => isExpense(f) && owesBack(f.beneficiary) },
+            { key: 'owed', label: 'Ditagih balik (piutang)', type: 'number', placeholder: 'Default: separuh', advanced: true, showIf: (f) => isExpense(f) && f.beneficiary === 'shared' },
             {
               key: 'nature',
               label: 'Sifat pengeluaran',
@@ -830,16 +1091,19 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 { value: 'unexpected', label: 'Tak terduga' },
               ],
               showIf: isExpense,
+              optional: true,
+              advanced: true,
             },
             { key: 'date', label: 'Tanggal', type: 'date' },
           ],
           defaults: {
-            txType: '',
+            txType: 'expense',
             amount: '',
             walletId: defaultWalletId,
             toWalletId: '',
             savingId: 'none',
             note: '',
+            category: '',
             catL1: '',
             catL2: '',
             catL3: '',
@@ -850,11 +1114,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             beneficiaryName: '',
             beneficiaryKind: 'person',
             settlesReceivableId: 'none',
-            incomeNature: '',
-            beneficiary: '',
+            incomeNature: 'fixed',
+            beneficiary: 'self',
             recipient: '',
             owed: '',
-            nature: '',
+            nature: 'fixed',
             date: today,
           },
         };
@@ -867,7 +1131,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'name', label: 'Nama dompet', placeholder: 'Contoh: BCA' },
             {
               key: 'medium',
-              label: 'Sifat dompet',
+              label: 'Jenis dompet',
               type: 'select',
               options: [
                 { value: 'bank', label: 'Rekening / kartu debit' },
@@ -876,7 +1140,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 { value: 'cash', label: 'Uang tunai' },
               ],
             },
-            { key: 'balance', label: 'Saldo saat ini', type: 'number' },
+            {
+              key: 'balance',
+              label: 'Saldo saat ini',
+              type: 'number',
+              showIf: (f) => f.medium !== 'credit',
+            },
             {
               key: 'bank',
               label: 'Bank / penerbit',
@@ -889,8 +1158,27 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'last4', label: '4 digit terakhir', placeholder: '0000', optional: true, showIf: (f) => f.medium === 'bank' || f.medium === 'credit' },
             { key: 'phone', label: 'Nomor HP', placeholder: '08xxxxxxxxxx', optional: true, showIf: (f) => f.medium === 'ewallet' },
             { key: 'creditLimit', label: 'Limit kredit', type: 'number', showIf: (f) => f.medium === 'credit' },
+            ...(create.isEdit ? [{
+              key: 'showInTransactions',
+              label: 'Penyesuaian saldo',
+              type: 'segmented' as const,
+              options: [
+                { value: 'yes', label: 'Tampilkan di Transaksi' },
+                { value: 'no', label: 'Jurnal internal saja' },
+              ],
+              showIf: (f: Record<string, string>) => f.medium !== 'credit',
+            }] : []),
           ],
-          defaults: { name: '', medium: '', balance: '', bank: '', last4: '', phone: '', creditLimit: '' },
+          defaults: {
+            name: '',
+            medium: '',
+            balance: '',
+            bank: '',
+            last4: '',
+            phone: '',
+            creditLimit: '',
+            showInTransactions: 'yes',
+          },
         },
         transaksi: transaksiConfig,
         // Transfer memakai form transaksi yang sama; hanya jenisnya sudah terpilih.
@@ -1000,7 +1288,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'emoji', label: 'Ikon (emoji)', placeholder: '🎓' },
             { key: 'name', label: 'Nama tabungan', placeholder: 'Contoh: Uang Kuliah Jeje' },
             { key: 'walletId', label: 'Disimpan di dompet', type: 'select', options: debitWallets },
-            { key: 'balance', label: 'Sisihkan sekarang', type: 'number' },
+            { key: 'balance', label: 'Sisihkan sekarang', type: 'number', showIf: () => !create.isEdit },
             { key: 'target', label: 'Target (opsional)', type: 'number' },
             { key: 'targetDate', label: 'Target tanggal (opsional)', type: 'date' },
           ],
@@ -1043,7 +1331,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       return configs[type];
     },
     [walletOptions, debitWalletOptions, categoryOptions, savingOptions, budgetOptions, receivableOptions,
-      beneficiaryOptions, merchantSuggestions, prefs.defaultWalletId],
+      beneficiaryOptions, merchantSuggestions, prefs.defaultWalletId, create.isEdit],
   );
 
   // Notifikasi dan status bacanya tersimpan per akun di PostgreSQL.
@@ -1175,6 +1463,43 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     });
   }, [repos, dataVersion]);
 
+  // Pulihkan form aktif bila browser mobile membuang lalu memuat ulang tab.
+  useEffect(() => {
+    const userId = auth.user?.id;
+    const workspaceId = auth.workspaceId;
+    if (!userId || !workspaceId) return;
+    try {
+      const raw = sessionStorage.getItem(`${ACTIVE_FORM_KEY}:${userId}:${workspaceId}`);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as Partial<CreateDescriptor>;
+      if (!saved.type || !CREATE_TYPES.has(saved.type) || typeof saved.isEdit !== 'boolean') {
+        sessionStorage.removeItem(`${ACTIVE_FORM_KEY}:${userId}:${workspaceId}`);
+        return;
+      }
+      setFormDraftReady(false);
+      setCreate({
+        type: saved.type,
+        isEdit: saved.isEdit,
+        name: typeof saved.name === 'string' ? saved.name : undefined,
+        id: typeof saved.id === 'string' ? saved.id : undefined,
+        duplicate: Boolean(saved.duplicate),
+      });
+      setSheet('create');
+    } catch {
+      try { sessionStorage.removeItem(`${ACTIVE_FORM_KEY}:${userId}:${workspaceId}`); } catch { /* blocked */ }
+    }
+  }, [auth.user?.id, auth.workspaceId]);
+
+  useEffect(() => {
+    if (sheet !== 'create' || !auth.user || !auth.workspaceId) return;
+    const keys = formStorageKeys(auth.user.id, auth.workspaceId, create);
+    try {
+      sessionStorage.setItem(keys.active, JSON.stringify(create));
+    } catch {
+      /* sessionStorage diblokir — form tetap berfungsi dengan state React. */
+    }
+  }, [auth.user?.id, auth.workspaceId, create, sheet]);
+
   useEffect(() => {
     if (sheet !== 'create') return;
     const config = formConfig(create.type);
@@ -1182,7 +1507,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     const presetDate = create.type === 'reminder' && !create.id && /^\d{4}-\d{2}-\d{2}$/.test(create.name || '')
       ? { date: create.name as string }
       : null;
-    setForm({ ...config.defaults, ...presetDate });
+    let savedDraft: Record<string, string> = {};
+    if (auth.user && auth.workspaceId) {
+      const keys = formStorageKeys(auth.user.id, auth.workspaceId, create);
+      try {
+        const raw = sessionStorage.getItem(keys.draft);
+        const parsed = raw ? JSON.parse(raw) as Record<string, unknown> : {};
+        savedDraft = Object.fromEntries(
+          Object.entries(parsed).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+        );
+      } catch {
+        try { sessionStorage.removeItem(keys.draft); } catch { /* blocked */ }
+      }
+    }
+    setForm({ ...config.defaults, ...presetDate, ...savedDraft });
+    setFormDraftReady(true);
     if (!create.id) return;
 
     const load = async () => {
@@ -1224,15 +1563,42 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       // Kategori tersimpan cuma satu string — dipecah kembali jadi tiga tingkat pilihan.
       const storedCategory = (record.labels as string[] | undefined)?.[0] ?? (record.category as string | undefined);
       const spread = spreadCategory(storedCategory);
-      setForm({ ...config.defaults, ...loaded, ...(spread ?? {}) });
+      setForm({ ...config.defaults, ...loaded, ...(spread ?? {}), ...savedDraft });
     };
     void load();
-  }, [create, formConfig, repos, sheet]);
+    // `repos` dan `formConfig` sengaja bukan dependency: keduanya dapat memperoleh
+    // identitas baru saat token/options disegarkan. Form hanya boleh diinisialisasi
+    // ulang ketika pengguna membuka descriptor form baru atau sheet berubah.
+  }, [create, sheet]);
 
-  const close = () => setSheet(null);
+  useEffect(() => {
+    if (sheet !== 'create' || !formDraftReady || !auth.user || !auth.workspaceId) return;
+    const keys = formStorageKeys(auth.user.id, auth.workspaceId, create);
+    try {
+      sessionStorage.setItem(keys.draft, JSON.stringify(form));
+    } catch {
+      /* sessionStorage diblokir — state React tetap menjadi fallback. */
+    }
+  }, [auth.user?.id, auth.workspaceId, create, form, formDraftReady, sheet]);
+
+  const close = () => {
+    if (sheet === 'create') clearCurrentFormDraft();
+    setSheet(null);
+  };
 
   const saveForm = async (event: FormEvent) => {
     event.preventDefault();
+    const isTransactionForm = create.type === 'transaksi' || create.type === 'transfer';
+    const missingField = formConfig(create.type).fields.find((field) =>
+      (!field.showIf || field.showIf(form))
+      && (!isTransactionForm || showTransactionDetails || !field.advanced)
+      && fieldIsRequired(field)
+      && !form[field.key]?.trim(),
+    );
+    if (missingField) {
+      notify(`${missingField.labelOf ? missingField.labelOf(form) : missingField.label} wajib diisi`);
+      return;
+    }
     setSaving(true);
     const id = create.id;
     const shouldUpdate = create.isEdit && Boolean(id);
@@ -1241,19 +1607,22 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     try {
       if (create.type === 'wallet') {
         const medium = (form.medium || 'bank') as WalletMedium;
+        const before = shouldUpdate ? await repos.wallets.get(id!) : null;
         const payload = {
           name: form.name.trim(),
           // Akuntansi cuma mengenal aset vs liabilitas — e-wallet & tunai tetap 'debit'.
           kind: (medium === 'credit' ? 'credit' : 'debit') as 'debit' | 'credit',
           medium,
-          balance: toNumber(form.balance),
+          // Tagihan kartu kredit berasal dari transaksi, bukan input saldo manual.
+          // Saat diedit nilainya dipertahankan; kartu baru/duplikat mulai dari nol.
+          balance: medium === 'credit' ? (before?.balance ?? 0) : toNumber(form.balance),
           bank: medium === 'cash' ? undefined : form.bank.trim() || undefined,
           last4: medium === 'bank' || medium === 'credit' ? form.last4.trim().slice(-4) || undefined : undefined,
           phone: medium === 'ewallet' ? form.phone.trim() || undefined : undefined,
           creditLimit: medium === 'credit' ? toNumber(form.creditLimit) : undefined,
+          showAdjustmentInTransactions: form.showInTransactions !== 'no',
         };
         if (shouldUpdate) {
-          const before = await repos.wallets.get(id!);
           await repos.wallets.update(id!, payload);
           const delta = payload.balance - (before?.balance ?? 0);
           if (before && delta !== 0) {
@@ -1555,6 +1924,27 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   };
 
   const currentConfig = formConfig(create.type);
+  const isTransactionForm = create.type === 'transaksi' || create.type === 'transfer';
+  const visibleFormSections = groupFormFields(
+    create.type,
+    currentConfig.fields.filter((field) =>
+      (!field.showIf || field.showIf(form))
+      && (!isTransactionForm || showTransactionDetails || !field.advanced),
+    ),
+  );
+  const transactionDetailsToggle = isTransactionForm ? (
+    <button
+      type="button"
+      className={`optional-fields-toggle${showTransactionDetails ? ' open' : ''}`}
+      onClick={() => setShowTransactionDetails((shown) => !shown)}
+    >
+      <span>
+        <b>{showTransactionDetails ? 'Sembunyikan detail opsional' : 'Tambahkan detail opsional'}</b>
+        <small>Catatan, tempat, anggaran, atau pihak terkait</small>
+      </span>
+      <Chevron />
+    </button>
+  ) : null;
   const showBack = !(['home', 'wallets', 'tx', 'subs'] as Tab[]).includes(tab);
   const screens: Record<Tab, React.ReactNode> = {
     home: <HomeScreen />,
@@ -1568,7 +1958,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     reports: <ReportsScreen />,
     calendar: <CalendarScreen />,
     people: <PeopleScreen />,
-    tutup: <ClosingScreen />,
+    // Key per periode: berpindah periode harus memulai layarnya bersih, termasuk
+    // membatalkan panel tutup buku yang mungkin sedang terbuka.
+    period: <PeriodScreen key={periodId ?? 'active'} />,
     profile: <ProfileScreen />,
   };
 
@@ -1600,37 +1992,77 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               <small>Finance</small>
             </span>
           </button>
-          <button
-            className={`side-period${tab === 'tutup' ? ' on' : ''}`}
-            onClick={() => go('tutup')}
-            aria-label={t('side.switchPeriod')}
-          >
-            <Calendar />
-            <span>{activePeriod?.alias ?? t('side.switchPeriod')}</span>
-            <ChevronR />
-          </button>
+          {/* Aksi utama duduk langsung di bawah merek: mencatat transaksi adalah alasan
+              paling sering aplikasi ini dibuka, jadi tidak boleh didahului kontrol lain. */}
           <button className="side-cta" onClick={ui.openAdd} aria-label={t('side.logCta')}>
             <Plus /><span>{t('side.logCta')}</span>
           </button>
-          {/* Daftar menu digulir sendiri; merek, CTA, dan kartu profil tetap di tempatnya. */}
+          {/* Daftar menu digulir sendiri; merek, CTA, dan footer tetap di tempatnya. */}
           <div className="side-scroll">
             <div className="side-label">{t('side.main')}</div>
             <nav>{mainNavigation.map(navButton)}</nav>
             <div className="side-label">{t('side.tools')}</div>
             <nav>{toolNavigation.map(navButton)}</nav>
           </div>
-          {/* Satu-satunya jalan ke Profil & preferensi dari sidebar — kartu ini sekaligus
-              menunjukkan sedang masuk sebagai siapa, jadi link "Pengaturan" terpisah cuma
-              menduplikasi tujuan yang sama. */}
-          <button
-            className={`side-profile${tab === 'profile' ? ' on' : ''}`}
-            onClick={() => go('profile')}
-            aria-label={t('side.settings')}
-          >
-            <span className="side-avatar">{prefs.name.trim()[0]?.toUpperCase() || 'A'}</span>
-            <span><b>{prefs.name}</b><small>{t('side.mainAccount')}</small></span>
-            <Chevron />
-          </button>
+          {/* Footer sidebar = konteks, bukan aksi: periode yang sedang dibaca dan akun yang
+              sedang dipakai. Keduanya dikelompokkan di sini supaya kepala sidebar bersih
+              untuk merek + satu aksi utama saja. */}
+          <div className="side-foot">
+            {/* Kartu ini menjawab "periode apa yang sedang saya baca, dan tinggal berapa
+                lama" sekaligus jadi pemicu penggantinya. Isinya sengaja lebih dari sekadar
+                nama: tanpa bar dan sisa hari, tombol ini hanya berguna saat ditekan —
+                padahal ia permanen di layar dan bisa memberi kabar tanpa diminta.
+                aria-label memuat nama + sisa waktu karena pembaca layar tidak menerima
+                apa pun dari bar progres. */}
+            <button
+              className={`side-period${tab === 'period' ? ' on' : ''}${periodCard?.overdue ? ' overdue' : ''}`}
+              onClick={() => setSheet('period')}
+              aria-label={`${t('side.switchPeriod')} — ${periodCard ? `${periodCard.name}, ${periodCard.remaining}` : periodEmptyLabel}`}
+            >
+              <span className="sp-top">
+                <Calendar />
+                <span className="sp-eyebrow">{t('side.periodLabel')}</span>
+                {periodCard && (
+                  <span className={`sp-status${periodCard.draft ? ' draft' : ''}${periodCard.overdue ? ' overdue' : ''}`}>
+                    {periodCard.status}
+                  </span>
+                )}
+              </span>
+              <span className="sp-name">
+                <b>{periodCard ? periodCard.name : periodEmptyLabel}</b>
+                {/* Chevron ke bawah, bukan ke kanan: tombol ini tidak memindahkan layar,
+                    ia membuka daftar pilihan periode di atas halaman yang sedang dibuka —
+                    afordans yang sama dengan pemilih/dropdown. */}
+                <Chevron />
+              </span>
+              {periodCard && (
+                <>
+                  {/* aria-hidden: angkanya sudah disuarakan lewat aria-label tombol. */}
+                  <span className="sp-bar" aria-hidden="true">
+                    <i style={{ width: `${Math.round(periodCard.progress * 100)}%` }} />
+                  </span>
+                  <span className="sp-meta">
+                    <span>{periodCard.range}</span>
+                    <span>{periodCard.remaining}</span>
+                  </span>
+                </>
+              )}
+            </button>
+            {/* Satu-satunya jalan ke Profil & preferensi dari sidebar — kartu ini sekaligus
+                menunjukkan sedang masuk sebagai siapa, jadi link "Pengaturan" terpisah cuma
+                menduplikasi tujuan yang sama. */}
+            <button
+              className={`side-profile${tab === 'profile' ? ' on' : ''}`}
+              onClick={() => go('profile')}
+              aria-label={t('side.settings')}
+            >
+              <span className="side-avatar">{prefs.name.trim()[0]?.toUpperCase() || 'A'}</span>
+              <span><b>{prefs.name}</b><small>{prefs.email}</small></span>
+              {/* Chevron ke kanan: kartu ini benar-benar berpindah ke layar Profil,
+                  sama seperti baris navigasi lain di aplikasi. */}
+              <ChevronR />
+            </button>
+          </div>
         </aside>
 
         {/* Wash gradien beranda dilukis di .workspace, bukan di dalam layar, supaya ia bisa
@@ -1686,6 +2118,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           <button className="sheet-close" onClick={close} aria-label="Tutup"><Close /></button>
           <div className="grab" /><h3>{t('more.title')}</h3>
           <p className="lead">{t('more.lead')}</p>
+          {/* Sidebar tidak ada di layar kecil, jadi ini satu-satunya jalan ke daftar periode. */}
+          <button className="act" onClick={() => setSheet('period')}>
+            <span className="ax"><Calendar /></span> {periodLabel}
+          </button>
           <div className="more-grid">
             {[...mainNavigation.filter((entry) => entry.tab !== 'home'), ...toolNavigation, ...extraNavigation].map((entry) => (
               <button
@@ -1698,6 +2134,60 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               </button>
             ))}
           </div>
+        </section>
+
+        {/* Daftar periode. Ini pintu masuk seluruh alur periode: memilih salah satunya
+            membuka laporannya, dan dari laporan itulah tutup buku dilakukan. */}
+        <section className={`sheet${sheet === 'period' ? ' show' : ''}`} aria-label={t('side.switchPeriod')}>
+          <button className="sheet-close" onClick={close} aria-label="Tutup"><Close /></button>
+          <div className="grab" /><h3>{t('side.switchPeriod')}</h3>
+          <p className="lead">{t('period.sheetLead')}</p>
+          {periods.length === 0 ? (
+            <div className="empty-state">
+              <Calendar />
+              <b>{t('period.emptyTitle')}</b>
+              <span>{t('closing.noPeriods')}</span>
+            </div>
+          ) : (
+            <div className="period-picker">
+              {periods.map((entry) => {
+                const days = Math.max(
+                  1,
+                  Math.round((+new Date(entry.end) - +new Date(entry.start)) / 86_400_000),
+                );
+                const dateRange = `${new Date(entry.start).toLocaleDateString(numLocale, { day: 'numeric', month: 'short' })} – ${new Date(entry.end).toLocaleDateString(numLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`;
+                return (
+                  <div className={`period-row${entry.id === activePeriod?.id ? ' current' : ''}`} key={entry.id}>
+                    <button
+                      className="pr-main"
+                      onClick={() => { setSheet(null); selectPeriod(entry.id); }}
+                    >
+                      <span className="pr-name">
+                        {entry.alias}
+                        <span className={`pstatus ${entry.status === 'open' || !entry.closed ? 'active' : 'draft'}`}>
+                          {entry.status === 'draft'
+                            ? t('planning.draft')
+                            : entry.closed ? t('closing.statusClosed') : t('closing.statusActive')}
+                        </span>
+                      </span>
+                      <span className="pr-range">{dateRange} · {days} {t('closing.daysUnit')}</span>
+                    </button>
+                    <button
+                      className="pr-edit"
+                      onClick={() => ui.openItem(entry.alias, 'periode', entry.id)}
+                      aria-label={t('common.edit')}
+                      title={t('common.edit')}
+                    >
+                      <Pencil />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <button className="cta" onClick={() => openCreate('periode')}>
+            <Plus />{t('period.create')}
+          </button>
         </section>
 
         {/* Pemilih pintasan beranda. Memakai grid yang sama dengan sheet "Lainnya" —
@@ -1767,7 +2257,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             item.type === 'piutang' ? 'piutang' :
             item.type === 'budget' ? 'budget' :
             item.type === 'reminder' ? 'calendar' :
-            item.type === 'periode' ? 'tutup' : 'wallets'
+            item.type === 'periode' ? 'period' : 'wallets'
           }.title`)}</p>
           {item.type === 'tabungan' && (
             <>
@@ -1808,32 +2298,88 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           <p className="lead">{currentConfig.description}</p>
           <form onSubmit={(event) => void saveForm(event)}>
             <div className="form-grid">
-              {currentConfig.fields.filter((field) => !field.showIf || field.showIf(form)).map((field) => (
+              {visibleFormSections.map((section) => (
+                <React.Fragment key={section.title}>
+                  {section.title === 'Detail opsional' && transactionDetailsToggle}
+                  <fieldset className="form-section">
+                  <legend>{section.title}</legend>
+                  <div className="form-section-fields">
+                    {section.fields.map((field) => (
                 <label className="input-field" key={field.key}>
                   <span>{field.labelOf ? field.labelOf(form) : field.label}</span>
-                  {field.type === 'select' ? (
-                    <select
-                      value={form[field.key] || ''}
-                      onChange={(event) => setForm(applyFieldChange(form, field.key, event.target.value))}
-                      required={!field.optional}
-                    >
-                      <option value="" disabled>{t('common.choose')}</option>
-                      {groupOptions(field.optionsOf ? field.optionsOf(form) : field.options).map(
-                        ([group, options]) =>
-                          group ? (
-                            <optgroup label={group} key={group}>
-                              {options.map((option) => (
-                                <option value={option.value} key={option.value}>{option.label}</option>
-                              ))}
-                            </optgroup>
-                          ) : (
-                            options.map((option) => (
-                              <option value={option.value} key={option.value}>{option.label}</option>
-                            ))
-                          ),
-                      )}
-                    </select>
-                  ) : MONEY_FIELDS.has(field.key) ? (
+                  {field.type === 'segmented' ? (
+                    <div className={`form-segmented${field.options?.length === 2 ? ' two' : ''}`} role="radiogroup">
+                      {(field.options ?? []).map((option) => (
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={form[field.key] === option.value}
+                          className={form[field.key] === option.value ? 'on' : ''}
+                          key={option.value}
+                          onClick={() => setForm(applyFieldChange(form, field.key, option.value))}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : field.type === 'select' ? (() => {
+                    const options = field.optionsOf ? field.optionsOf(form) : field.options ?? [];
+                    const selected = options.find((option) => option.value === (form[field.key] || ''));
+                    const expanded = openSuggest === field.key;
+                    return (
+                      <div
+                        className={`custom-select${expanded ? ' open' : ''}`}
+                        onBlur={(event) => {
+                          if (!event.currentTarget.contains(event.relatedTarget)) {
+                            setOpenSuggest((current) => (current === field.key ? null : current));
+                          }
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Escape') {
+                            event.preventDefault();
+                            setOpenSuggest(null);
+                          }
+                        }}
+                      >
+                        <button
+                          type="button"
+                          className={`custom-select-trigger${selected ? '' : ' placeholder'}`}
+                          aria-haspopup="listbox"
+                          aria-expanded={expanded}
+                          onClick={() => setOpenSuggest((current) => current === field.key ? null : field.key)}
+                        >
+                          <span>{(selected?.label ?? form[field.key]) || t('common.choose')}</span>
+                          <Chevron />
+                        </button>
+                        {expanded && (
+                          <div className="suggest-list custom-select-list" role="listbox">
+                            {groupOptions(options).map(([group, groupedOptions], groupIndex) => (
+                              <div className="custom-select-group" key={`${group ?? 'options'}-${groupIndex}`}>
+                                {group && <div className="custom-select-group-label">{group}</div>}
+                                {groupedOptions.map((option) => (
+                                  <button
+                                    type="button"
+                                    role="option"
+                                    aria-selected={option.value === (form[field.key] || '')}
+                                    className={option.value === (form[field.key] || '') ? 'on' : ''}
+                                    key={option.value || `${field.key}-empty`}
+                                    onClick={() => {
+                                      setForm(applyFieldChange(form, field.key, option.value));
+                                      setOpenSuggest(null);
+                                    }}
+                                  >
+                                    <span>{option.label}</span>
+                                    {option.value === (form[field.key] || '') && <Check />}
+                                  </button>
+                                ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()
+                  : MONEY_FIELDS.has(field.key) ? (
                     <div className="money-input">
                       <span className="rp">Rp</span>
                       <input
@@ -1842,7 +2388,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         value={groupThousands(form[field.key])}
                         placeholder={field.placeholder || '0'}
                         onChange={(event) => setForm({ ...form, [field.key]: event.target.value.replace(/\D/g, '') })}
-                        required={!field.optional && !['creditLimit', 'target', 'owed'].includes(field.key)}
+                        required={fieldIsRequired(field)}
                       />
                     </div>
                   ) : (
@@ -1859,7 +2405,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         onBlur={() => field.suggestions && setOpenSuggest((current) => (current === field.key ? null : current))}
                         onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}
                         min={field.type === 'number' ? 0 : undefined}
-                        required={!field.optional && !['bank', 'last4', 'creditLimit', 'endDate', 'targetDate', 'emoji', 'target', 'owed'].includes(field.key)}
+                        required={fieldIsRequired(field)}
                       />
                       {field.suggestions && openSuggest === field.key && (() => {
                         const typed = (form[field.key] || '').trim().toLowerCase();
@@ -1889,8 +2435,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     </div>
                   )}
                 </label>
+                    ))}
+                  </div>
+                </fieldset>
+                </React.Fragment>
               ))}
             </div>
+            {isTransactionForm && !showTransactionDetails && transactionDetailsToggle}
             <button className="cta" disabled={saving}>
               {saving
                 ? 'Menyimpan...'

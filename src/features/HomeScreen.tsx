@@ -94,7 +94,7 @@ export default function HomeScreen() {
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .slice(0, 4);
 
-  const txIcon = (type: string) => (type === 'income' ? <Up /> : type === 'transfer' ? <Transfer /> : <Down />);
+  const txIcon = (type: string) => (type === 'income' ? <Down /> : type === 'transfer' ? <Transfer /> : <Up />);
   const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
   const moneyOrHidden = (value: number, compact = false) =>
     hidden ? '••••••' : compact ? money.fmtCompact(value) : money.fmt(value);
@@ -118,7 +118,9 @@ export default function HomeScreen() {
       icon: <Down />,
     },
     {
-      value: String(d.progress?.daysLeft ?? 0),
+      // Dijepit di 0: periodProgress sengaja mengembalikan nilai negatif untuk periode
+      // yang lewat tanggal, tapi kapsul ini hanya memajang angka tanpa konteks.
+      value: String(Math.max(0, d.progress?.daysLeft ?? 0)),
       label: tr('home.daysLeft'),
       tone: 'info',
       icon: <Calendar />,
@@ -164,20 +166,20 @@ export default function HomeScreen() {
           "−Rp 0" membingungkan sedangkan "Rp 0" jelas. */}
       <div className="brk-card">
         <div className="brk-cells">
-          <div><span>{tr('home.liquidity')}</span><b>{moneyOrHidden(d.liquidity, true)}</b></div>
+          <div><span>{tr('home.liquidity')}</span><b>{moneyOrHidden(d.liquidity)}</b></div>
           <div>
             <span>{tr('home.inSavings')}</span>
-            <b>{hidden ? '••••' : `${d.reserved > 0 ? '−' : ''}${money.fmtCompact(d.reserved)}`}</b>
+            <b>{hidden ? '••••' : `${d.reserved > 0 ? '−' : ''}${money.fmt(d.reserved)}`}</b>
           </div>
           <div>
             <span>{tr('home.allocated')}</span>
-            <b>{hidden ? '••••' : `${d.allocated > 0 ? '−' : ''}${money.fmtCompact(d.allocated)}`}</b>
+            <b>{hidden ? '••••' : `${d.allocated > 0 ? '−' : ''}${money.fmt(d.allocated)}`}</b>
           </div>
         </div>
         {d.progress && (
           <div className="card-foot">
             <div className="brk-bar"><i style={{ width: (d.progress.fraction * 100).toFixed(0) + '%' }} /></div>
-            <span>{d.progress.dayOf}/{d.progress.totalDays} {tr('home.days')} · {d.progress.daysLeft} {tr('home.daysLeft')}</span>
+            <span>{d.progress.dayOf}/{d.progress.totalDays} {tr('home.days')} · {Math.max(0, d.progress.daysLeft)} {tr('home.daysLeft')}</span>
           </div>
         )}
       </div>
