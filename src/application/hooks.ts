@@ -125,15 +125,18 @@ export function useDashboard() {
   const { reserved } = useSavings();
   const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
   const period = periods.find(item => !item.closed) ?? periods[0];
+  const periodBudgets = period
+    ? budgets.filter(budget => budget.periodId === period.id)
+    : [];
   return {
     liquidity,
     reserved,
     // Dipakai beranda untuk menjabarkan asal angka "aman dibelanjakan".
-    allocated: budgets.reduce((sum, b) => sum + b.allocated, 0),
-    safeToSpend: safeToSpend(liquidity, budgets, reserved),
+    allocated: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),
+    safeToSpend: safeToSpend(liquidity, periodBudgets, reserved),
     period,
     progress: period ? periodProgress(period) : null,
-    netSurplus: periodNet(liquidity, budgets),
+    netSurplus: periodNet(liquidity, periodBudgets),
     wallets,
   };
 }
@@ -174,6 +177,9 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
   const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
   const period = periods.find(item => !item.closed) ?? periods[0];
   const progress = period ? periodProgress(period) : null;
+  const periodBudgets = period
+    ? budgets.filter(budget => budget.periodId === period.id)
+    : [];
 
   const today = new Date();
   const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
@@ -186,10 +192,10 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
     .reduce((sum, r) => sum + (r.amount ?? 0), 0);
 
   return {
-    budgets,
+    budgets: periodBudgets,
     available: liquidity - reserved,
-    allocatedTotal: budgets.reduce((sum, b) => sum + b.allocated, 0),
-    spentTotal: budgets.reduce((sum, b) => sum + b.spent, 0),
+    allocatedTotal: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),
+    spentTotal: periodBudgets.reduce((sum, b) => sum + b.spent, 0),
     monthlyIncome: estimateMonthlyIncome(transactions, today),
     nextMonthBills: Math.round(subsNextMonth + remindersNextMonth),
     expectedReceivables: receivableTotal,

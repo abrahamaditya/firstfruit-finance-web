@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
 import './globals.css';
 
 const siteUrl =
@@ -70,11 +71,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Tema dipasang sebelum paint pertama, kalau tidak layar sempat berkedip gelap
             dulu bagi pengguna tema terang. `suppressHydrationWarning` di <html> karena
             skrip ini mengubah atribut yang dirender server. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `try{var p=JSON.parse(localStorage.getItem('abraham.prefs')||'{}');document.documentElement.dataset.theme=p.theme==='light'?'light':'dark'}catch(e){}`,
-          }}
-        />
+        <Script id="firstfruit-theme" strategy="beforeInteractive">
+          {`try{var p=JSON.parse(localStorage.getItem('abraham.prefs')||'{}');document.documentElement.dataset.theme=p.theme==='light'?'light':'dark'}catch(e){}`}
+        </Script>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         {/* Space Grotesk dimuat sampai bobot 400 karena wordmark "FirstFruit" memakainya

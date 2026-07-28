@@ -272,7 +272,7 @@ export function createSupabaseRepositories(
       destination_wallet_id: item.toWalletId ?? null,
       category_name: item.labels[0] ?? null,
       merchant: item.merchant ?? null,
-      budget_id: item.budgetId ?? null,
+      budget_id: item.type === 'expense' ? item.budgetId ?? null : null,
       beneficiary_id: item.beneficiaryId ?? null,
       beneficiary_name: item.recipient ?? null,
       beneficiary_mode: item.beneficiary ?? 'self',
@@ -433,9 +433,10 @@ export function createSupabaseRepositories(
     },
     async create(item) {
       const categoryId = await ensureCategory(item.category, 'expense');
+      const periodId = await activePeriodId();
       const { data, error } = await supabase.from('budgets').insert({
         workspace_id: workspaceId,
-        period_id: await activePeriodId(),
+        period_id: periodId,
         category_id: categoryId,
         allocated_minor: item.allocated,
         created_by: userId,

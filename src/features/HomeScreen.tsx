@@ -11,7 +11,7 @@ export default function HomeScreen() {
   const tr = useT();
   const d = useDashboard();
   const { data: txs } = useTransactions();
-  const { all: savings } = useSavings();
+  const { all: savings, reservedIn } = useSavings();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();
   const recent = txs.slice(0, 4);
@@ -99,6 +99,64 @@ export default function HomeScreen() {
   const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
   const walletName = (id?: string) => d.wallets.find((wallet) => wallet.id === id)?.name;
   const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
+  const walletCategoryRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
+  const walletBalances = [...d.wallets].sort((a, b) => {
+    const aPrimary = a.id === ui.prefs.defaultWalletId ? 0 : 1;
+    const bPrimary = b.id === ui.prefs.defaultWalletId ? 0 : 1;
+    if (aPrimary !== bPrimary) return aPrimary - bPrimary;
+    const aMedium = a.medium ?? (a.kind === 'credit' ? 'credit' : 'bank');
+    const bMedium = b.medium ?? (b.kind === 'credit' ? 'credit' : 'bank');
+    return (walletCategoryRank[aMedium] ?? 99) - (walletCategoryRank[bMedium] ?? 99)
+      || a.name.localeCompare(b.name, locale);
+  });
+  const walletLogo = (wallet: typeof walletBalances[number]) => {
+    if (wallet.medium === 'cash') return '/brand/dompet-logo.png';
+    if (wallet.cardNetwork === 'visa') return '/brand/visa-logo.png';
+    if (wallet.cardNetwork === 'mastercard') return '/brand/martercard-logo.png';
+    if (wallet.cardNetwork === 'gpn') return '/brand/gpn-logo.png';
+    const identity = `${wallet.name} ${wallet.bank ?? ''}`.toLowerCase();
+    const known = [
+      { names: ['blu'], src: '/brand/blu-logo.png' },
+      { names: ['gopay'], src: '/brand/gopay-logo.png' },
+      { names: ['ovo'], src: '/brand/ovo-logo.png' },
+      { names: ['dana'], src: '/brand/dana-logo.png' },
+      { names: ['shopeepay', 'shopee pay'], src: '/brand/shopeepay-logo.png' },
+      { names: ['flazz'], src: '/brand/flazz-logo.png' },
+      { names: ['livin', 'mandiri'], src: '/brand/livin-mandiri-logo.png' },
+    ];
+    return known.find((logo) => logo.names.some((name) => identity.includes(name)))?.src;
+  };
+  const walletTicker = (duplicate = false) => (
+    <div className="home-wallet-set" aria-hidden={duplicate || undefined}>
+      {walletBalances.map((wallet) => {
+        const logo = walletLogo(wallet);
+        const displayBalance = wallet.kind === 'credit'
+          ? wallet.balance
+          : wallet.balance - reservedIn(wallet.id);
+        const amount = hidden
+          ? '••••'
+          : `${wallet.kind === 'credit' && displayBalance > 0 ? '−' : ''}${money.fmt(displayBalance)}`;
+        return (
+          <span
+            className="home-wallet-item"
+            key={`${duplicate ? 'copy-' : ''}${wallet.id}`}
+            title={`${wallet.name} · ${amount}`}
+            aria-label={`${wallet.name} · ${amount}`}
+          >
+            <span className={`home-wallet-mark${logo ? ' has-image' : ''}`}>
+              {logo
+                ? <img src={logo} alt="" aria-hidden="true" />
+                : wallet.name.trim().slice(0, 3).toUpperCase()}
+            </span>
+            <span className="home-wallet-copy">
+              <small>{wallet.name}</small>
+              <b className="home-wallet-nominal">{amount}</b>
+            </span>
+          </span>
+        );
+      })}
+    </div>
+  );
   const transactionTitle = (transaction: typeof txs[number]) => {
     if (transaction.type === 'transfer') {
       return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
@@ -173,24 +231,38 @@ export default function HomeScreen() {
       {/* Kartu total: menjabarkan asal angka besar di atas. Ketiga sel selalu tampil supaya
           struktur kartu tetap; tanda minus hanya dipasang saat nilainya ada, karena
           "−Rp 0" membingungkan sedangkan "Rp 0" jelas. */}
-      <div className="brk-card">
-        <div className="brk-cells">
-          <div><span>{tr('home.liquidity')}</span><b>{moneyOrHidden(d.liquidity)}</b></div>
-          <div>
-            <span>{tr('home.inSavings')}</span>
-            <b>{hidden ? '••••' : `${d.reserved > 0 ? '−' : ''}${money.fmt(d.reserved)}`}</b>
+      <div className="home-summary-row">
+        <div className="brk-card">
+          <div className="brk-cells">
+            <div><span>{tr('home.liquidity')}</span><b>{moneyOrHidden(d.liquidity)}</b></div>
+            <div>
+              <span>{tr('home.inSavings')}</span>
+              <b>{hidden ? '••••' : `${d.reserved > 0 ? '−' : ''}${money.fmt(d.reserved)}`}</b>
+            </div>
+            <div>
+              <span>{tr('home.allocated')}</span>
+              <b>{hidden ? '••••' : `${d.allocated > 0 ? '−' : ''}${money.fmt(d.allocated)}`}</b>
+            </div>
           </div>
-          <div>
-            <span>{tr('home.allocated')}</span>
-            <b>{hidden ? '••••' : `${d.allocated > 0 ? '−' : ''}${money.fmt(d.allocated)}`}</b>
-          </div>
+          {d.progress && (
+            <div className="card-foot">
+              <div className="brk-bar"><i style={{ width: (d.progress.fraction * 100).toFixed(0) + '%' }} /></div>
+              <span>{d.progress.dayOf}/{d.progress.totalDays} {tr('home.days')} · {Math.max(0, d.progress.daysLeft)} {tr('home.daysLeft')}</span>
+            </div>
+          )}
         </div>
-        {d.progress && (
-          <div className="card-foot">
-            <div className="brk-bar"><i style={{ width: (d.progress.fraction * 100).toFixed(0) + '%' }} /></div>
-            <span>{d.progress.dayOf}/{d.progress.totalDays} {tr('home.days')} · {Math.max(0, d.progress.daysLeft)} {tr('home.daysLeft')}</span>
-          </div>
-        )}
+        <div className="home-wallet-card">
+          {walletBalances.length > 0 ? (
+            <div className="home-wallet-marquee" aria-label={tr('home.walletBalances')}>
+              <div className="home-wallet-track">
+                {walletTicker()}
+                {walletTicker(true)}
+              </div>
+            </div>
+          ) : (
+            <div className="home-wallet-empty">{tr('home.noWalletBalances')}</div>
+          )}
+        </div>
       </div>
 
       {/* Deret aksi = pintasan pilihan pengguna. Tombol putus-putus di ujung membuka

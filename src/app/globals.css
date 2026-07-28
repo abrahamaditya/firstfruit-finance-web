@@ -174,10 +174,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .hero-highlight{min-height:27px;display:flex;align-items:center;justify-content:center;gap:7px;color:var(--ink-soft);font-size:12.5px;font-weight:600;animation:highlight-in .42s cubic-bezier(.22,1,.36,1) both}
 /* Beranda: hero angka besarnya rata kiri, bukan tengah seperti Anggaran/Piutang/Langganan —
    di sini ia memimpin sebuah kolom konten, bukan berdiri sendiri sebagai satu blok. */
-.home-hero{text-align:left}
-.home-hero .sa-wrap{justify-content:flex-start}
-.home-hero .hero-highlights{margin:12px 0 0}
-.home-hero .hero-highlight{justify-content:flex-start}
 .hero-highlight-icon{width:25px;height:25px;display:grid;place-items:center;border:1px solid var(--glass-line);border-radius:50%;background:var(--glass);color:var(--ink-soft)}
 .hero-highlight-icon svg{width:13px;height:13px}
 .hero-highlight.up .hero-highlight-icon{color:var(--pos)}
@@ -281,6 +277,24 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .brk-bar{height:5px;border-radius:99px;background:var(--surface-3);overflow:hidden}
 .brk-bar i{display:block;height:100%;border-radius:99px;background:var(--grad)}
 .card-foot .brk-bar+span{display:block;margin-top:7px;font-size:10.5px;font-weight:700}
+.home-summary-row{display:grid;grid-template-columns:1fr;gap:10px;align-items:stretch}
+.home-summary-row .brk-card{max-width:none;min-width:0}
+.home-wallet-card{min-width:0;display:flex;align-items:center;overflow:hidden}
+.home-wallet-marquee{width:100%;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.home-wallet-track{display:flex;width:max-content;will-change:transform;animation:home-wallet-marquee 20s linear infinite}
+.home-wallet-set{display:flex;align-items:center;gap:16px;flex:0 0 auto;padding:12px 16px 12px 0}
+.home-wallet-item{display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap}
+.home-wallet-mark{width:30px;height:30px;display:grid;place-items:center;overflow:hidden;border-radius:9px;background:var(--surface-2);color:var(--ink);font-size:8px;font-weight:800}
+.home-wallet-mark.has-image{background:#fff}
+.home-wallet-mark img{width:100%;height:100%;display:block;object-fit:cover}
+.home-wallet-copy{display:flex;flex-direction:column;align-items:flex-start;gap:1px}
+.home-wallet-copy small{max-width:120px;overflow:hidden;text-overflow:ellipsis;color:var(--ink-faint);font-size:9px;font-weight:700;line-height:1.2}
+.home-wallet-copy .home-wallet-nominal{font-family:var(--nominal);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
+.home-wallet-empty{display:grid;place-items:center;width:100%;min-height:64px;padding:12px;color:var(--ink-faint);font-size:11px;text-align:center}
+@keyframes home-wallet-marquee{to{transform:translateX(-50%)}}
+@media (min-width:700px){
+  .home-summary-row{grid-template-columns:minmax(0,1.55fr) minmax(180px,.8fr)}
+}
 
 .row{display:flex;align-items:center;gap:13px;padding:13px 15px;background:var(--surface);border-radius:18px;margin-bottom:8px;cursor:pointer;transition:transform .14s}
 .row:active{transform:scale(.99)}
@@ -309,6 +323,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .bar.over i{background:linear-gradient(90deg,#EF8676,#c25646)}
 .tag-over{font-size:11px;font-weight:700;color:var(--neg);margin-left:7px}
 .budget-foot{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:7px}
+.budget-empty-screen{min-height:min(62vh,480px);padding:28px}
+.budget-empty-screen>span{max-width:38ch;line-height:1.55}
+.budget-empty-screen .cta.compact{margin-top:20px}
 
 .mini-metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:18px}
 .mini-metrics>div{background:var(--surface);border-radius:16px;padding:13px 12px;min-width:0}
@@ -1091,6 +1108,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .shero .sp{justify-content:flex-start;margin-top:14px;font-size:13px}
   .hero-highlights{margin-inline:0}
   .hero-highlight{justify-content:flex-start;font-size:13px}
+  .home-hero .sa-wrap{justify-content:flex-start}
+  .home-hero .hero-highlights{margin:12px 0 0}
   .brk-card{max-width:560px}
   .qa{max-width:560px;margin-top:24px}
   .qa.center{justify-content:flex-start}

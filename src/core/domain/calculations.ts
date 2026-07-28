@@ -19,6 +19,7 @@ export function availableBalance(wallet: Wallet, savings: Saving[]): number {
   return wallet.balance - reservedInWallet(wallet.id, savings);
 }
 export function balanceDelta(tx: Transaction, walletId: string): number {
+  if (tx.type === 'transfer' && tx.walletId === walletId && tx.toWalletId === walletId) return 0;
   if (tx.walletId === walletId) return tx.type === 'income' ? tx.amount : -tx.amount;
   if (tx.type === 'transfer' && tx.toWalletId === walletId) return tx.amount;
   return 0;

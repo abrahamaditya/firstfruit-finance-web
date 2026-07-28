@@ -8,8 +8,12 @@ export default function BudgetScreen() {
   const ui = useUI();
   const money = useMoney();
   const t = useT();
-  const { budgets } = useBudgets();
+  const { budgets: allBudgets } = useBudgets();
   const d = useDashboard();
+  const activePeriodId = d.period?.id;
+  const budgets = activePeriodId
+    ? allBudgets.filter(budget => budget.periodId === activePeriodId)
+    : [];
   const allocated = budgets.reduce((s, b) => s + b.allocated, 0);
   const spent = budgets.reduce((s, b) => s + b.spent, 0);
   const remaining = allocated - spent;
@@ -25,6 +29,24 @@ export default function BudgetScreen() {
   const idealSpent = totalDays ? allocated * (dayOf / totalDays) : 0;
   const paceDiff = spent - idealSpent;
   const onTrack = paceDiff <= 0;
+
+  if (budgets.length === 0) {
+    return (
+      <>
+        <div className="shero">
+          <div className="sl">{t('budget.allocated')} · {d.period?.alias}</div>
+          <div className="sa">{money.fmt(0)}</div>
+        </div>
+        <div className="empty-state budget-empty-screen">
+          <b>{t('budget.emptyTitle')}</b>
+          <span>{t('budget.emptyBody')}</span>
+          <button className="cta compact" onClick={() => ui.openCreate('budget')}>
+            <Plus />{t('common.add')}
+          </button>
+        </div>
+      </>
+    );
+  }
 
   return (
     <>

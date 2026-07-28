@@ -28,15 +28,25 @@ export default function WalletsScreen() {
   const t = useT();
   const { wallets } = useWallets();
   const { savings, reservedIn } = useSavings();
-  const debit = wallets.filter(w => w.kind === 'debit');
-  const credit = wallets.filter(w => w.kind === 'credit');
+  const mediumRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
+  const byCategoryThenName = (a: typeof wallets[number], b: typeof wallets[number]) =>
+    (mediumRank[mediumOf(a)] ?? 99) - (mediumRank[mediumOf(b)] ?? 99)
+    || a.name.localeCompare(b.name, 'id-ID');
+  const debit = wallets.filter(w => w.kind === 'debit').sort(byCategoryThenName);
+  const credit = wallets.filter(w => w.kind === 'credit').sort(byCategoryThenName);
   const walletName = (id: string) => wallets.find(w => w.id === id)?.name ?? 'dompet';
   const [hidden, setHidden] = useState(false);
   const [active, setActive] = useState(0);
   const trackRef = useRef<HTMLDivElement>(null);
 
-  // Kartu diurutkan: kredit dulu (paling sering dilihat nomornya), lalu debit & e-wallet.
-  const cards = [...credit, ...debit];
+  // Carousel selalu berangkat dari dompet debit Utama. Sisanya mengikuti kategori:
+  // rekening/debit → e-wallet → tunai → kredit.
+  const primaryDebit =
+    debit.find((wallet) => wallet.id === ui.prefs.defaultWalletId)
+    ?? debit[0];
+  const cards = primaryDebit
+    ? [primaryDebit, ...debit.filter((wallet) => wallet.id !== primaryDebit.id), ...credit]
+    : [...credit];
   const current = cards[Math.min(active, cards.length - 1)];
   const currentReserved = current ? reservedIn(current.id) : 0;
 

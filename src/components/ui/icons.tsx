@@ -49,6 +49,7 @@ export const Eye = S(<><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z
 export const EyeOff = S(<><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z" /><circle cx="12" cy="12" r="2.5" /><path d="M4 4l16 16" /></>);
 export const Lock = S(<><rect x="4" y="10" width="16" height="11" rx="3" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>);
 export const Download = S(<><path d="M12 3v12M7 10l5 5 5-5M4 21h16" /></>);
+export const ArrowUp = S(<path d="M12 20V5M6 11l6-6 6 6" />);
 export const ArrowLeft = S(<path d="M19 12H5M11 18l-6-6 6-6" />);
 export const Grid = S(<><rect x="3" y="3" width="7.5" height="7.5" rx="2" /><rect x="13.5" y="3" width="7.5" height="7.5" rx="2" /><rect x="3" y="13.5" width="7.5" height="7.5" rx="2" /><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2" /></>);
 export const Vault = S(<><rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="12" cy="12" r="4" /><path d="M12 10v4M10 12h4M18 20v1M6 20v1" /></>);
