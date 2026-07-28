@@ -26,7 +26,6 @@ import {
   CategoryTree,
   EXPENSE_TREE,
   INCOME_TREE,
-  MERCHANT_SUGGESTIONS,
   PILLAR_EXPENSE_TREE,
   categoryPath,
   customCategories,
@@ -554,7 +553,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [budgetOptions, setBudgetOptions] = useState<CategoryOption[]>([]);
   const [receivableOptions, setReceivableOptions] = useState<CategoryOption[]>([]);
   const [beneficiaryOptions, setBeneficiaryOptions] = useState<CategoryOption[]>([]);
-  const [merchantSuggestions, setMerchantSuggestions] = useState<string[]>(MERCHANT_SUGGESTIONS);
+  const [noteSuggestions, setNoteSuggestions] = useState<string[]>([]);
   const [openSuggest, setOpenSuggest] = useState<string | null>(null);
   const [showTransactionDetails, setShowTransactionDetails] = useState(false);
   const [toast, setToast] = useState('');
@@ -1095,8 +1094,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           {
             key: 'note',
             label: 'Catatan',
-            placeholder: 'Contoh: Makan malam bersama keluarga di Resto X',
+            placeholder: 'Tambahkan catatan',
             optional: true,
+            suggestions: noteSuggestions,
           },
         ],
         defaults: {
@@ -1280,7 +1280,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           description: 'Buat tujuan tabungan. Saldo awal selalu Rp0 dan dananya ditambahkan melalui transaksi Transfer.',
           fields: [
             { key: 'emoji', label: 'Ikon (emoji)', placeholder: '🎓' },
-            { key: 'name', label: 'Nama tabungan', placeholder: 'Contoh: Uang Kuliah Jeje' },
+            { key: 'name', label: 'Nama tabungan', placeholder: 'Masukkan nama tabungan' },
             { key: 'walletId', label: 'Disimpan di dompet', type: 'select', options: debitWallets },
             { key: 'target', label: 'Target', type: 'number' },
             { key: 'targetDate', label: 'Target tanggal', type: 'date' },
@@ -1324,7 +1324,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       return configs[type];
     },
     [walletOptions, debitWalletOptions, categoryOptions, savingOptions, budgetOptions, receivableOptions,
-      beneficiaryOptions, merchantSuggestions, prefs.defaultWalletId, create.isEdit],
+      beneficiaryOptions, noteSuggestions, prefs.defaultWalletId, create.isEdit],
   );
 
   // Notifikasi dan status bacanya tersimpan per akun di PostgreSQL.
@@ -1449,10 +1449,19 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         customCategories([...budgets.map((b) => b.category), ...txs.flatMap((t) => t.labels)]),
       );
       setBudgetOptions(budgets.map((b) => ({ value: b.id, label: b.category })));
-      // Tempat yang pernah dipakai naik jadi saran teratas.
-      const used = txs.map((t) => t.merchant?.trim()).filter((m): m is string => Boolean(m));
-      const seen = new Set(used.map((m) => m.toLowerCase()));
-      setMerchantSuggestions([...new Set(used), ...MERCHANT_SUGGESTIONS.filter((m) => !seen.has(m.toLowerCase()))]);
+      // Catatan transaksi menjadi suggestion milik workspace ini. Urutan repository
+      // sudah terbaru lebih dahulu; deduplikasi mempertahankan penulisan terbaru.
+      const seenNotes = new Set<string>();
+      setNoteSuggestions(
+        txs.flatMap((transaction) => {
+          const note = transaction.note?.trim();
+          if (!note) return [];
+          const identity = note.toLocaleLowerCase('id-ID');
+          if (seenNotes.has(identity)) return [];
+          seenNotes.add(identity);
+          return [note];
+        }),
+      );
     });
   }, [repos, dataVersion]);
 
@@ -2367,6 +2376,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         min={field.type === 'number' ? 0 : undefined}
                         required={fieldIsRequired(field)}
                       />
+                      {field.suggestions && field.suggestions.length > 0 && (
+                        <Chevron className="suggest-chevron" />
+                      )}
                       {field.type === 'date' && form[field.key] && (
                         <span className="date-field-value" aria-hidden="true">
                           {new Date(`${form[field.key]}T00:00:00`).toLocaleDateString(
@@ -2378,8 +2390,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       {field.suggestions && openSuggest === field.key && (() => {
                         const typed = (form[field.key] || '').trim().toLowerCase();
                         const matches = field.suggestions
-                          .filter((suggestion) => suggestion.toLowerCase().includes(typed))
-                          .slice(0, 8);
+                          .filter((suggestion) => suggestion.toLowerCase().includes(typed));
                         if (matches.length === 0) return null;
                         return (
                           <div className="suggest-list">

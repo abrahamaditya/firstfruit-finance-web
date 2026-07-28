@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
-import { useDashboard, useTransactions, useSubscriptions, useReminders } from '../application/hooks';
+import { useDashboard, useTransactions, useSubscriptions, useReminders, useSavings } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
 
@@ -11,6 +11,7 @@ export default function HomeScreen() {
   const tr = useT();
   const d = useDashboard();
   const { data: txs } = useTransactions();
+  const { all: savings } = useSavings();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();
   const recent = txs.slice(0, 4);
@@ -97,6 +98,7 @@ export default function HomeScreen() {
   const txIcon = (type: string) => (type === 'income' ? <Down /> : type === 'transfer' ? <TransferCard /> : <Up />);
   const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
   const walletName = (id?: string) => d.wallets.find((wallet) => wallet.id === id)?.name;
+  const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
   const transactionTitle = (transaction: typeof txs[number]) => {
     if (transaction.type === 'transfer') {
       return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
@@ -222,6 +224,9 @@ export default function HomeScreen() {
               <div className="t2">
                 {(t.note ? t.labels : t.labels.slice(0, -1))
                   .map((label) => <span className="chip" key={label}>{label}</span>)}
+                {t.type === 'transfer' && t.savingId && (
+                  <span className="chip saving-destination">Tabungan · {savingName(t.savingId) ?? 'Tabungan'}</span>
+                )}
                 {dateLabel(t.date)}
               </div>
             </div>

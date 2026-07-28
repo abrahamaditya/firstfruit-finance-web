@@ -92,6 +92,7 @@ export const INCOME_TREE: CategoryTree = {
 /** Taksonomi ringkas untuk pencatatan pengeluaran sehari-hari. */
 export const PILLAR_EXPENSE_TREE: CategoryTree = {
   Needs: {
+    Food: [],
     Housing: [],
     Utilities: [],
     Groceries: [],
@@ -108,7 +109,6 @@ export const PILLAR_EXPENSE_TREE: CategoryTree = {
     Social: [
       'Traktir Keluarga',
       'Kado / Hadiah',
-      'Sumbangan / Donasi Sosial',
       'Traktir Teman',
     ],
   },
@@ -116,6 +116,7 @@ export const PILLAR_EXPENSE_TREE: CategoryTree = {
     Persepuluhan: [],
     Persembahan: [],
     Taburan: [],
+    'Memberi Keluarga': [],
   },
   Savings: {
     'Emergency Fund': [],
@@ -177,7 +178,7 @@ export const categoryMid = (label: string) => {
 /** Nama untuk ditampilkan lengkap, mis. "Kebutuhan Pokok › Makanan & Minuman › Kopi & Kafe". */
 export const categoryLabel = (label: string) => categoryPath(label).join(' › ');
 
-const knownNames = new Set([...EXPENSE_INDEX.keys(), ...INCOME_INDEX.keys()]);
+const knownNames = new Set([...PILLAR_EXPENSE_INDEX.keys(), ...EXPENSE_INDEX.keys(), ...INCOME_INDEX.keys()]);
 export const isKnownCategory = (label: string) => knownNames.has(label?.trim().toLowerCase());
 
 /** Saran tempat transaksi — dipakai sebagai datalist, tetap boleh diisi bebas. */

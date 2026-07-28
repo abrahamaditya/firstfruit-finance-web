@@ -2,7 +2,7 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBeneficiaries, useTransactions, useWallets } from '../application/hooks';
+import { useBeneficiaries, useSavings, useTransactions, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 
 export default function TransactionsScreen() {
@@ -12,8 +12,10 @@ export default function TransactionsScreen() {
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const { data } = useTransactions();
   const { wallets } = useWallets();
+  const { all: savings } = useSavings();
   const { nameOf: beneficiaryName } = useBeneficiaries();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
+  const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
   const transactionTitle = (transaction: typeof data[number]) => {
     if (transaction.type === 'transfer') {
       return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
@@ -53,7 +55,8 @@ export default function TransactionsScreen() {
   const visible = data.filter((transaction) =>
     matchesType(transaction) &&
     (activeCategory === 'all' || transaction.labels.includes(activeCategory)) &&
-    `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')}`.toLowerCase().includes(deferredQuery),
+    `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${savingName(transaction.savingId) || ''}`
+      .toLowerCase().includes(deferredQuery),
   );
   const groups: Record<string, typeof data> = {};
   visible.forEach((transaction) => {
@@ -133,6 +136,11 @@ export default function TransactionsScreen() {
                   {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
                   {transaction.beneficiaryId && beneficiaryName(transaction.beneficiaryId) && (
                     <span className="chip">👤 {beneficiaryName(transaction.beneficiaryId)}</span>
+                  )}
+                  {transaction.type === 'transfer' && transaction.savingId && (
+                    <span className="chip saving-destination">
+                      Tabungan · {savingName(transaction.savingId) ?? 'Tabungan'}
+                    </span>
                   )}
                   {benefChip(transaction)}
                   {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
