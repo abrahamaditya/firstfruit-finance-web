@@ -153,7 +153,7 @@ const D: Record<string, Entry> = {
   'wallets.editCard': { id: 'Ubah kartu {name}', en: 'Edit {name}' },
   // Memakai kata yang sama dengan pengaturannya ("Dompet default" di Profil) — kapsul
   // bertuliskan "Utama" akan terbaca sebagai status kedua yang berbeda.
-  'wallets.defaultTag': { id: 'Default', en: 'Default' },
+  'wallets.defaultTag': { id: 'Utama', en: 'Primary' },
   'wallets.limit': { id: 'limit', en: 'limit' },
   'wallets.setAside': { id: 'Sisihkan', en: 'Set aside' },
   'wallets.take': { id: 'Ambil', en: 'Withdraw' },
@@ -461,9 +461,9 @@ const D: Record<string, Entry> = {
   'profile.fxNote': { id: 'Kurs live: 1 USD = Rp {rate}{updated}. Nilai disimpan dalam Rupiah; USD hanya tampilan.', en: 'Live rate: 1 USD = Rp {rate}{updated}. Values are stored in Rupiah; USD is display-only.' },
   'profile.fxUpdated': { id: ' · diperbarui {date}', en: ' · updated {date}' },
   'profile.money': { id: 'Uang & pihak terkait', en: 'Money & people' },
-  'profile.defaultWallet': { id: 'Dompet default', en: 'Default wallet' },
-  'profile.noDefaultWallet': { id: 'Belum dipilih', en: 'Not set' },
-  'profile.defaultWalletNote': { id: 'Dompet default dipakai sebagai isian awal form transaksi, dan menjadi tujuan pemindahan saldo saat sebuah dompet dihapus.', en: 'The default wallet prefills transaction forms and receives the balance when another wallet is deleted.' },
+  'profile.defaultWallet': { id: 'Dompet utama', en: 'Primary wallet' },
+  'profile.noDefaultWallet': { id: 'Belum ada dompet utama', en: 'No primary wallet' },
+  'profile.defaultWalletNote': { id: 'Dompet utama dipakai sebagai isian awal form transaksi dan tujuan pemindahan saldo saat dompet lain dihapus. Kartu kredit tidak dapat dijadikan dompet utama.', en: 'The primary wallet prefills transaction forms and receives balances when another wallet is deleted. Credit cards cannot be selected as the primary wallet.' },
   'profile.people': { id: 'Daftar pihak terkait', en: 'People & organizations' },
   'profile.accountPeriod': { id: 'Akun & periode', en: 'Account & period' },
   'profile.notifications': { id: 'Notifikasi & reminder', en: 'Notifications & reminders' },

@@ -43,6 +43,7 @@ function mapWallet(row: DbRow): Wallet {
     bank: row.institution_name ?? undefined,
     last4: row.last4 ?? undefined,
     phone: row.phone_masked ?? undefined,
+    cardNetwork: row.card_network ?? undefined,
     balance: amount(row.current_balance_minor),
     creditLimit: row.credit_limit_minor == null ? undefined : amount(row.credit_limit_minor),
   };
@@ -312,7 +313,12 @@ export function createSupabaseRepositories(
         credit_limit_minor: item.creditLimit ?? null,
         opening_balance_minor: item.balance,
       };
-      const { data, error } = await supabase.rpc('create_wallet', { p_payload: payload });
+      const { data, error } = await supabase.rpc('create_wallet_with_network', {
+        p_payload: {
+          ...payload,
+          card_network: item.cardNetwork ?? null,
+        },
+      });
       throwIfError(error, 'Gagal membuat wallet');
       return (await wallets.get(data as string))!;
     },
@@ -327,12 +333,13 @@ export function createSupabaseRepositories(
         institution_name: patch.bank ?? before.bank ?? null,
         last4: patch.last4 ?? before.last4 ?? null,
         phone_masked: patch.phone ?? before.phone ?? null,
+        card_network: patch.cardNetwork ?? before.cardNetwork ?? null,
         credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
         target_balance_minor: patch.balance ?? before.balance,
         visible_in_feed: false,
         reason: `Penyesuaian saldo ${patch.name ?? before.name}`,
       };
-      const { error } = await supabase.rpc('update_wallet', { p_payload: payload });
+      const { error } = await supabase.rpc('update_wallet_with_network', { p_payload: payload });
       throwIfError(error, 'Gagal memperbarui wallet');
       return (await wallets.get(id))!;
     },

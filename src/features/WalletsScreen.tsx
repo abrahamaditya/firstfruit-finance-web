@@ -7,6 +7,20 @@ import { Eye, EyeOff, Pencil, Plus, WalletIcon } from '../components/ui/icons';
 const color: Record<string, string> = { BCA: '#1a4ea3', 'blu by BCA': '#0a8cd4', GoPay: '#00aa13', OVO: '#4c2a86', Tunai: 'var(--emerald)', 'Kartu Kredit BCA': '#2F4858' };
 const initials = (n: string) => n.split(' ')[0].slice(0, 3);
 const mediumOf = (w: { medium?: string; kind: string }) => w.medium ?? (w.kind === 'credit' ? 'credit' : 'bank');
+const networkLogos = {
+  visa: { src: '/brand/visa-logo.png', alt: 'Visa' },
+  mastercard: { src: '/brand/martercard-logo.png', alt: 'Mastercard' },
+  gpn: { src: '/brand/gpn-logo.png', alt: 'GPN' },
+} as const;
+const walletLogos = [
+  { names: ['blu'], src: '/brand/blu-logo.png', alt: 'blu' },
+  { names: ['gopay'], src: '/brand/gopay-logo.png', alt: 'GoPay' },
+  { names: ['ovo'], src: '/brand/ovo-logo.png', alt: 'OVO' },
+  { names: ['dana'], src: '/brand/dana-logo.png', alt: 'DANA' },
+  { names: ['shopeepay', 'shopee pay'], src: '/brand/shopeepay-logo.png', alt: 'ShopeePay' },
+  { names: ['flazz'], src: '/brand/flazz-logo.png', alt: 'Flazz' },
+  { names: ['livin', 'mandiri'], src: '/brand/livin-mandiri-logo.png', alt: 'Livin’ by Mandiri' },
+] as const;
 
 export default function WalletsScreen() {
   const ui = useUI();
@@ -49,9 +63,27 @@ export default function WalletsScreen() {
     if (medium === 'cash') return t('wallets.physicalWallet');
     return `•••• •••• •••• ${hidden ? '••••' : w.last4 || '••••'}`;
   };
+  const brandLogo = (w: typeof cards[number]) => {
+    if (mediumOf(w) === 'cash') {
+      return { src: '/brand/dompet-logo.png', alt: 'Uang Tunai' } as const;
+    }
+    const network = w.cardNetwork ? networkLogos[w.cardNetwork] : undefined;
+    if (network) return network;
+    const identity = `${w.name} ${w.bank ?? ''}`.toLowerCase();
+    return walletLogos.find(logo => logo.names.some(name => identity.includes(name)));
+  };
+  const walletListIcon = (w: typeof cards[number], fallback: string, background: string) => {
+    const logo = brandLogo(w);
+    return (
+      <div className={`lg${logo ? ' has-logo' : ''}`} style={logo ? undefined : { background }}>
+        {logo ? <img src={logo.src} alt={logo.alt} /> : fallback}
+      </div>
+    );
+  };
   const cardBrand = (w: typeof cards[number]) => {
     const medium = mediumOf(w);
-    return medium === 'credit' ? 'VISA' : medium === 'ewallet' ? 'E-WALLET' : medium === 'cash' ? 'CASH' : 'DEBIT';
+    if (w.cardNetwork) return w.cardNetwork.toUpperCase();
+    return medium === 'credit' ? 'CARD' : medium === 'ewallet' ? 'E-WALLET' : medium === 'cash' ? 'CASH' : 'DEBIT';
   };
 
   // Dompet default hanya bisa berupa dompet debit (lihat pemilihnya di layar Profil),
@@ -177,7 +209,7 @@ export default function WalletsScreen() {
         const medium = mediumOf(w);
         return (
           <div className="row" key={w.id} onClick={() => ui.openItem(w.name, 'wallet', w.id)}>
-            <div className="lg" style={{ background: color[w.name] || '#444' }}>{initials(w.name)}</div>
+            {walletListIcon(w, initials(w.name), color[w.name] || '#444')}
             <div className="mid">
               <div className="t1">{w.name}{defaultTag(w.id)}</div>
               <div className="t2">
@@ -223,7 +255,7 @@ export default function WalletsScreen() {
       )}
       {credit.map(w => (
         <div className="row" key={w.id} onClick={() => ui.openItem(w.name, 'wallet', w.id)}>
-          <div className="lg" style={{ background: color[w.name] || '#2F4858' }}>CC</div>
+          {walletListIcon(w, 'CC', color[w.name] || '#2F4858')}
           <div className="mid"><div className="t1">{w.name}</div><div className="t2">•••• {w.last4}</div></div>
           <div className="r"><div className="val out">−{money.fmt(w.balance)}</div><div className="subt">{t('wallets.limit')} {money.fmtCompact(w.creditLimit!)}</div></div>
         </div>

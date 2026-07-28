@@ -3,6 +3,7 @@
 // bentuk fisiknya — dipakai untuk memilih field yang relevan (no. rekening vs no. HP).
 export type WalletKind = 'debit' | 'credit';
 export type WalletMedium = 'bank' | 'ewallet' | 'cash' | 'credit';
+export type CardNetwork = 'visa' | 'mastercard' | 'gpn';
 export type TxType = 'expense' | 'income' | 'transfer';
 export type TxNature = 'fixed' | 'unexpected';
 // Untuk siapa pengeluaran ini: diri sendiri, memberi (hadiah, tak kembali),
@@ -16,6 +17,7 @@ export interface Wallet {
   id: string; name: string; kind: WalletKind; medium?: WalletMedium; bank?: string;
   last4?: string;            // display only; full PAN encrypted server-side (arch §4.1)
   phone?: string;            // e-wallet: identitas akun bukan no. rekening tapi no. HP
+  cardNetwork?: CardNetwork;
   balance: number;           // cached, maintained incrementally
   creditLimit?: number;
 }

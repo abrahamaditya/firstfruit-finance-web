@@ -19,7 +19,7 @@ import {
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { periodProgress } from '../core/domain/calculations';
-import { BeneficiaryKind, TxBeneficiary, WalletMedium } from '../core/domain/types';
+import { BeneficiaryKind, CardNetwork, TxBeneficiary, WalletMedium } from '../core/domain/types';
 import {
   CATEGORY_CUSTOM,
   CategoryOption,
@@ -240,7 +240,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   wallet: [
     { title: 'Identitas dompet', keys: ['name', 'medium'] },
     { title: 'Nilai keuangan', keys: ['balance', 'creditLimit'] },
-    { title: 'Detail rekening', keys: ['bank', 'last4', 'phone'] },
+    { title: 'Detail rekening', keys: ['bank', 'cardNetwork', 'last4', 'phone'] },
   ],
   subscription: [
     { title: 'Informasi langganan', keys: ['name', 'amount', 'cycle'] },
@@ -519,6 +519,9 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
   if (key === 'toWalletId') {
     return { ...form, toWalletId: value, savingId: 'none' };
   }
+  if (key === 'medium') {
+    return { ...form, medium: value, cardNetwork: '' };
+  }
   if (key === CATEGORY_KEYS.l1) return { ...form, catL1: value, catL2: '', catL3: '', catCustom: '' };
   if (key === CATEGORY_KEYS.l2) return { ...form, catL2: value, catL3: '' };
   return { ...form, [key]: value };
@@ -790,12 +793,38 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
 
   const openCreate = useCallback(
     (type: CreateType, isEdit = false, name?: string, id?: string) => {
-      setFormDraftReady(false);
-      setShowTransactionDetails(isEdit && (type === 'transaksi' || type === 'transfer'));
-      setCreate({ type, isEdit, name, id, duplicate: !isEdit && Boolean(id) });
-      setSheet('create');
+      const showForm = (nextType: CreateType) => {
+        setFormDraftReady(false);
+        setShowTransactionDetails(isEdit && (nextType === 'transaksi' || nextType === 'transfer'));
+        setCreate({
+          type: nextType,
+          isEdit: nextType === type ? isEdit : false,
+          name: nextType === type ? name : undefined,
+          id: nextType === type ? id : undefined,
+          duplicate: nextType === type && !isEdit && Boolean(id),
+        });
+        setSheet('create');
+      };
+
+      if (!isEdit && (type === 'transaksi' || type === 'transfer')) {
+        void repos.wallets.list()
+          .then((wallets) => {
+            if (wallets.length === 0) {
+              notify('Buat dompet terlebih dahulu sebelum mencatat transaksi');
+              showForm('wallet');
+              return;
+            }
+            showForm(type);
+          })
+          .catch((caught) => {
+            notify(caught instanceof Error ? caught.message : 'Gagal memeriksa dompet');
+          });
+        return;
+      }
+
+      showForm(type);
     },
-    [],
+    [notify, repos],
   );
 
   // Memilih periode selalu berujung di layar laporannya — itu satu-satunya alasan
@@ -1118,6 +1147,17 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               optional: true,
               showIf: (f) => f.medium !== 'cash',
             },
+            {
+              key: 'cardNetwork',
+              label: 'Jaringan kartu',
+              type: 'select',
+              optionsOf: (f) => [
+                { value: 'visa', label: 'Visa' },
+                { value: 'mastercard', label: 'Mastercard' },
+                ...(f.medium === 'bank' ? [{ value: 'gpn', label: 'GPN' }] : []),
+              ],
+              showIf: (f) => f.medium === 'bank' || f.medium === 'credit',
+            },
             // Rekening & kartu diidentifikasi 4 digit terakhir; e-wallet pakai nomor HP.
             { key: 'last4', label: '4 digit terakhir', placeholder: '0000', optional: true, showIf: (f) => f.medium === 'bank' || f.medium === 'credit' },
             { key: 'phone', label: 'Nomor HP', placeholder: '08xxxxxxxxxx', optional: true, showIf: (f) => f.medium === 'ewallet' },
@@ -1130,6 +1170,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             bank: '',
             last4: '',
             phone: '',
+            cardNetwork: '',
             creditLimit: '',
           },
         },
@@ -1575,6 +1616,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           bank: medium === 'cash' ? undefined : form.bank.trim() || undefined,
           last4: medium === 'bank' || medium === 'credit' ? form.last4.trim().slice(-4) || undefined : undefined,
           phone: medium === 'ewallet' ? form.phone.trim() || undefined : undefined,
+          cardNetwork: medium === 'bank' || medium === 'credit'
+            ? form.cardNetwork as CardNetwork
+            : undefined,
           creditLimit: medium === 'credit' ? toNumber(form.creditLimit) : undefined,
         };
         if (shouldUpdate) {
@@ -1584,7 +1628,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             extraNote = ` · selisih ${formatIDR(Math.abs(delta))} diperbarui di jurnal internal`;
           }
         } else {
-          await repos.wallets.create(payload);
+          const existingWallets = await repos.wallets.list();
+          const createdWallet = await repos.wallets.create(payload);
+          const isFirstNonCreditWallet =
+            medium !== 'credit'
+            && existingWallets.every((wallet) => wallet.kind === 'credit');
+          if (isFirstNonCreditWallet) {
+            setPref('defaultWalletId', createdWallet.id);
+          }
         }
       }
 
