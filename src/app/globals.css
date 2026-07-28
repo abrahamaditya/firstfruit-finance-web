@@ -226,6 +226,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    Padding ditaruh di panel (bukan seluruhnya di grabber) supaya di desktop, tempat grabber
    disembunyikan, header seksi tetap dapat ruang dari tepi panel. */
 .home-panel{margin:24px -20px 0;padding:10px 20px 0;background:var(--bg);border-radius:26px 26px 0 0;min-height:56vh}
+.home-recent-empty{min-height:130px;padding:24px 18px 30px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;text-align:center;color:var(--ink-soft)}
+.home-recent-empty b{color:var(--ink);font-size:14px}
+.home-recent-empty p{max-width:280px;margin-top:5px;font-size:11.5px;line-height:1.5}
 /* Ukuran mengikuti .grab di sheet — komponen yang sama, jadi bentuknya pun sama. */
 .panel-grab{width:40px;height:5px;border-radius:99px;background:var(--surface-3);margin:6px auto 4px}
 
@@ -800,6 +804,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    persen saja menyisakan pucuk sheet terlihat begitu `bottom` bukan 0 (lihat desktop). */
 .sheet{position:fixed;left:50%;transform:translateX(-50%) translateY(calc(100% + 48px));bottom:0;width:100%;max-width:430px;background:var(--surface);border-radius:28px 28px 0 0;padding:10px 22px 30px;transition:transform .4s cubic-bezier(.22,1,.36,1),visibility .4s;z-index:50;max-height:82dvh;overflow-y:auto;overscroll-behavior:contain;visibility:hidden}
 .sheet.show{transform:translateX(-50%);visibility:visible;transition:transform .4s cubic-bezier(.22,1,.36,1)}
+.sheet.form-sheet{height:min(82dvh,760px);overflow:hidden;display:flex;flex-direction:column}
+.form-sheet>form{flex:1;min-height:0;display:flex;flex-direction:column}
+.form-scroll{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:2px 5px 18px 0}
+.form-actions{flex:0 0 auto;padding-top:12px;border-top:1px solid var(--line);background:var(--surface)}
+.form-actions .cta{margin-top:0}
 
 /*
  * Satu resep scrollbar untuk area gulir yang berada DI DALAM kartu (sheet, dropdown saran,
@@ -810,12 +819,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
  * `.viewport` sengaja tidak diikutkan — itu gulir tingkat halaman yang menempel tepi
  * jendela, dan di sana bar rata tepi memang lebih tepat.
  */
-.sheet,.suggest-list,.side-scroll{scrollbar-width:thin;scrollbar-color:var(--surface-3) transparent}
-.sheet::-webkit-scrollbar,.suggest-list::-webkit-scrollbar,.side-scroll::-webkit-scrollbar{width:10px}
-.sheet::-webkit-scrollbar-track,.suggest-list::-webkit-scrollbar-track,.side-scroll::-webkit-scrollbar-track{background:transparent}
-.sheet::-webkit-scrollbar-thumb,.suggest-list::-webkit-scrollbar-thumb,.side-scroll::-webkit-scrollbar-thumb{
+.sheet,.form-scroll,.suggest-list,.side-scroll{scrollbar-width:thin;scrollbar-color:var(--surface-3) transparent}
+.sheet::-webkit-scrollbar,.form-scroll::-webkit-scrollbar,.suggest-list::-webkit-scrollbar,.side-scroll::-webkit-scrollbar{width:10px}
+.sheet::-webkit-scrollbar-track,.form-scroll::-webkit-scrollbar-track,.suggest-list::-webkit-scrollbar-track,.side-scroll::-webkit-scrollbar-track{background:transparent}
+.sheet::-webkit-scrollbar-thumb,.form-scroll::-webkit-scrollbar-thumb,.suggest-list::-webkit-scrollbar-thumb,.side-scroll::-webkit-scrollbar-thumb{
   background:var(--surface-3);border-radius:99px;border:3px solid transparent;background-clip:content-box}
-.sheet::-webkit-scrollbar-thumb:hover,.suggest-list::-webkit-scrollbar-thumb:hover,.side-scroll::-webkit-scrollbar-thumb:hover{
+.sheet::-webkit-scrollbar-thumb:hover,.form-scroll::-webkit-scrollbar-thumb:hover,.suggest-list::-webkit-scrollbar-thumb:hover,.side-scroll::-webkit-scrollbar-thumb:hover{
   background:var(--ink-faint);background-clip:content-box}
 .sheet-close{position:absolute;right:18px;top:18px;width:34px;height:34px;border-radius:50%;border:0;background:var(--surface-2);color:var(--ink-soft);display:grid;place-items:center;cursor:pointer}
 .sheet-close svg{width:16px;height:16px}
@@ -877,6 +886,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .form-section-fields{display:grid;grid-template-columns:1fr;gap:10px}
 .input-field{display:flex;flex-direction:column;gap:7px}
 .input-field>span{font-size:11px;font-weight:800;letter-spacing:.04em;color:var(--ink-soft);padding-left:3px;text-transform:uppercase}
+.required-mark{color:inherit;font-style:normal;font-weight:800}
 .input-field input,.input-field select{width:100%;min-height:48px;border:1px solid transparent;border-radius:15px;background:var(--surface-2);color:var(--ink);padding:0 15px;outline:0}
 .input-field input::placeholder{color:var(--ink-faint)}
 .input-field input:focus,.input-field select:focus{border-color:rgba(91,233,170,.5);box-shadow:0 0 0 3px rgba(91,233,170,.08)}
@@ -886,6 +896,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .input-field input[type=date]::-webkit-calendar-picker-indicator{
   opacity:.55;cursor:pointer;filter:grayscale(1) brightness(1.6)}
 .input-field input[type=date]:hover::-webkit-calendar-picker-indicator{opacity:1}
+.date-field{position:relative;width:100%}
+.date-field input[type=date]{position:relative;z-index:1;color:transparent;background-color:var(--surface-2)}
+.date-field input[type=date]::-webkit-datetime-edit{color:transparent}
+.date-field-value{position:absolute;z-index:2;left:15px;right:48px;top:50%;transform:translateY(-50%);
+  color:var(--ink);font-size:13.333px;font-weight:600;text-transform:capitalize;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;pointer-events:none}
+.date-field input[type=date]::-webkit-calendar-picker-indicator{position:relative;z-index:3}
 /* Dropdown saran (tempat transaksi) — dibuat sendiri agar seragam dengan select lain. */
 .suggest-field{position:relative;width:100%}
 .suggest-list{position:absolute;z-index:5;top:calc(100% + 6px);left:0;right:0;max-height:216px;overflow-y:auto;
@@ -923,6 +940,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 8px}
 .form-segmented button:hover{color:var(--ink);background:var(--surface-3)}
 .form-segmented button.on{background:var(--surface);color:var(--mint);box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.form-segmented.transaction-types .type-expense.on{color:var(--neg);background:rgba(239,134,118,.12)}
+.form-segmented.transaction-types .type-income.on{color:var(--pos);background:rgba(91,233,170,.12)}
+.form-segmented.transaction-types .type-transfer.on{color:var(--info);background:rgba(138,182,249,.12)}
+.form-segmented.transaction-types button.on{box-shadow:0 4px 14px rgba(0,0,0,.12)}
 .optional-fields-toggle{width:100%;margin:14px 0 4px;padding:12px 14px;border:1px dashed var(--line);
   border-radius:15px;background:transparent;color:var(--ink-soft);display:flex;align-items:center;
   justify-content:space-between;gap:12px;text-align:left;font-family:var(--sans);cursor:pointer}
@@ -936,7 +957,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .money-input{position:relative;width:100%}
 .money-input .rp{position:absolute;left:15px;top:50%;transform:translateY(-50%);font-size:13px;font-weight:700;color:var(--ink-soft);pointer-events:none;font-family:var(--nominal)}
 .money-input input{padding-left:42px}
-.cta:disabled{opacity:.6;cursor:wait}
+.cta:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
 
 .screen-toolbar{display:flex;align-items:center;gap:10px;margin:8px 0 14px}
 .screen-toolbar .addg{flex:0 0 auto;min-height:44px}

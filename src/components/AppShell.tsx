@@ -27,6 +27,7 @@ import {
   EXPENSE_TREE,
   INCOME_TREE,
   MERCHANT_SUGGESTIONS,
+  PILLAR_EXPENSE_TREE,
   categoryPath,
   customCategories,
   leafCategories,
@@ -222,17 +223,14 @@ interface FormSectionDefinition {
 }
 
 const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
-  { title: 'Informasi transaksi', keys: ['txType', 'amount', 'date'] },
-  { title: 'Aliran dana', keys: ['walletId', 'toWalletId'] },
-  { title: 'Kategori', keys: ['category', 'catCustom'] },
+  { title: 'Informasi transaksi', keys: ['txType', 'date', 'amount'] },
+  { title: 'Sumber dana', keys: ['walletId', 'toWalletId', 'savingId'] },
   {
-    title: 'Detail opsional',
-    keys: [
-      'savingId', 'merchant', 'note', 'budgetId', 'incomeNature', 'nature',
-      'beneficiaryId', 'beneficiaryName', 'beneficiaryKind', 'beneficiary',
-      'recipient', 'owed', 'settlesReceivableId',
-    ],
+    title: 'Klasifikasi',
+    keys: ['pillar', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory'],
   },
+  { title: 'Pihak yang ditalangi', keys: ['debtor'] },
+  { title: 'Keterangan', keys: ['note'] },
 ];
 
 /** Urutan section sekaligus menentukan urutan field yang terlihat di form. */
@@ -241,7 +239,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   transfer: TRANSACTION_FORM_SECTIONS,
   wallet: [
     { title: 'Identitas dompet', keys: ['name', 'medium'] },
-    { title: 'Nilai keuangan', keys: ['balance', 'creditLimit', 'showInTransactions'] },
+    { title: 'Nilai keuangan', keys: ['balance', 'creditLimit'] },
     { title: 'Detail rekening', keys: ['bank', 'last4', 'phone'] },
   ],
   subscription: [
@@ -271,7 +269,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   ],
   tabungan: [
     { title: 'Tujuan tabungan', keys: ['emoji', 'name'] },
-    { title: 'Sumber dana', keys: ['walletId', 'balance'] },
+    { title: 'Penyimpanan', keys: ['walletId'] },
     { title: 'Target tabungan', keys: ['target', 'targetDate'] },
   ],
   sisihkan: [{ title: 'Dana yang disisihkan', keys: ['amount'] }],
@@ -442,16 +440,38 @@ const pickCategory = (form: Record<string, string>): string => {
 };
 
 /** Isi ulang tiga tingkat pemilih kategori dari satu label tersimpan. */
-const spreadCategory = (label?: string) => {
-  const path = label ? categoryPath(label) : [];
+const spreadCategory = (label?: string, txType?: string) => {
+  const path = label
+    ? categoryPath(label, txType === 'income' ? 'income' : txType === 'expense' ? 'expense' : undefined)
+    : [];
   if (path.length <= 1) {
     // Kategori bebas (di luar taksonomi) tetap bisa diedit lewat opsi "kategori lain".
     return path.length === 1
-      ? { category: path[0], catL1: CATEGORY_CUSTOM, catL2: '', catL3: '', catCustom: path[0] }
+      ? {
+          category: path[0],
+          pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? path[0] : '',
+          subCategory: '',
+          categoryDetail: '',
+          incomeCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? '' : path[0],
+          incomePillar: '',
+          catL1: CATEGORY_CUSTOM,
+          catL2: '',
+          catL3: '',
+          catCustom: path[0],
+        }
       : null;
   }
   return {
     category: label ?? '',
+    pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? path[0] : '',
+    subCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? path[1] ?? '' : '',
+    categoryDetail: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0])
+      ? path[2] ?? (path[1] === 'Social' || path[1] === 'Giving' ? '' : 'none')
+      : '',
+    incomePillar: txType === 'income' ? path[0] ?? '' : '',
+    incomeCategory: txType === 'income'
+      ? path[1] ?? ''
+      : '',
     catL1: path[0],
     catL2: path[1] ?? '',
     catL3: path[2] ?? '',
@@ -461,7 +481,19 @@ const spreadCategory = (label?: string) => {
 
 /** Perubahan satu field kadang membatalkan pilihan di bawahnya. */
 const applyFieldChange = (form: Record<string, string>, key: string, value: string) => {
-  const cleared = { category: '', catL1: '', catL2: '', catL3: '', catCustom: '' };
+  const cleared = {
+    category: '',
+    pillar: '',
+    subCategory: '',
+    categoryDetail: '',
+    incomeCategory: '',
+    incomePillar: '',
+    debtor: '',
+    catL1: '',
+    catL2: '',
+    catL3: '',
+    catCustom: '',
+  };
   if (key === 'txType' && value !== form.txType) {
     return {
       ...form,
@@ -474,6 +506,18 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
       payer: '',
       incomeNature: 'fixed',
     };
+  }
+  if (key === 'pillar') {
+    return { ...form, pillar: value, subCategory: '', categoryDetail: '', debtor: '' };
+  }
+  if (key === 'subCategory') {
+    return { ...form, subCategory: value, categoryDetail: '' };
+  }
+  if (key === 'incomePillar') {
+    return { ...form, incomePillar: value, incomeCategory: '' };
+  }
+  if (key === 'toWalletId') {
+    return { ...form, toWalletId: value, savingId: 'none' };
   }
   if (key === CATEGORY_KEYS.l1) return { ...form, catL1: value, catL2: '', catL3: '', catCustom: '' };
   if (key === CATEGORY_KEYS.l2) return { ...form, catL2: value, catL3: '' };
@@ -900,7 +944,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           },
           {
             key: k('catL3'),
-            label: 'Spesifik (opsional)',
+            label: 'Spesifik',
             type: 'select',
             optional: true,
             optionsOf: (f) => [
@@ -918,210 +962,130 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           },
         ];
       };
-      const savingsFor = (walletId?: string) =>
-        savingOptions.filter((s) => s.walletId === walletId).map(({ value, label }) => ({ value, label }));
       const isExpense = (form: Record<string, string>) => form.txType === 'expense';
       const isIncome = (form: Record<string, string>) => form.txType === 'income';
       const isTransfer = (form: Record<string, string>) => form.txType === 'transfer';
       const defaultWalletId = prefs.defaultWalletId || '';
-      const owesBack = (b: string) => b === 'gift' || b === 'lent' || b === 'shared';
       const today = new Date().toISOString().slice(0, 10);
       const nextMonth = new Date();
       nextMonth.setMonth(nextMonth.getMonth() + 1);
       const nextMonthValue = nextMonth.toISOString().slice(0, 10);
-      const transactionCategories = (tree: CategoryTree): CategoryOption[] => [
-        ...Object.entries(tree).flatMap(([top, mids]) =>
-          Object.keys(mids).map((mid) => ({ value: mid, label: mid, group: top })),
-        ),
-        ...categoryOptions,
-        CUSTOM,
-      ];
-
+      const savingsFor = (walletId?: string) =>
+        savingOptions
+          .filter((saving) => saving.walletId === walletId)
+          .map(({ value, label }) => ({ value, label }));
       // Satu definisi dipakai dua kali: 'transaksi' dan alias 'transfer'.
       const transaksiConfig: FormConfig = {
-          title: 'transaksi',
-          description: 'Catat arus uang agar saldo dan laporan tetap akurat.',
-          fields: [
-            // Satu form untuk tiga jenis arus uang; sisa field menyesuaikan pilihan ini.
-            {
-              key: 'txType',
-              label: 'Jenis transaksi',
-              type: 'segmented',
-              options: [
-                { value: 'expense', label: '↑ Pengeluaran' },
-                { value: 'income', label: '↓ Pemasukan' },
-                { value: 'transfer', label: '⇄ Transfer antar-dompet' },
-              ],
-            },
-            { key: 'amount', label: 'Jumlah', type: 'number' },
-            {
-              key: 'walletId',
-              label: 'Dompet',
-              labelOf: (f) => (isIncome(f) ? 'Masuk ke dompet' : isTransfer(f) ? 'Dari dompet' : 'Dibayar dari dompet'),
-              type: 'select',
-              options: wallets,
-            },
-            // ==== khusus transfer ====
-            { key: 'toWalletId', label: 'Ke dompet', type: 'select', options: wallets, showIf: isTransfer },
-            {
-              key: 'savingId',
-              label: 'Sisihkan ke tabungan',
-              type: 'select',
-              optional: true,
-              optionsOf: (f) => [{ value: 'none', label: '— Tidak disisihkan' }, ...savingsFor(f.toWalletId)],
-              showIf: (f) => isTransfer(f) && savingsFor(f.toWalletId).length > 0,
-              advanced: true,
-            },
-            {
-              key: 'category',
-              label: 'Kategori',
-              type: 'select',
-              optionsOf: (f) => transactionCategories(isIncome(f) ? INCOME_TREE : EXPENSE_TREE),
-              showIf: (f) => !isTransfer(f),
-            },
-            {
-              key: 'catCustom',
-              label: 'Nama kategori baru',
-              placeholder: 'Ketik kategori sendiri',
-              showIf: (f) => !isTransfer(f) && f.category === CATEGORY_CUSTOM,
-            },
-            {
-              key: 'note',
-              label: 'Catatan (opsional)',
-              labelOf: (f) => (isIncome(f) ? 'Keterangan (opsional)' : 'Catatan (opsional)'),
-              placeholder: 'Contoh: Makan siang',
-              optional: true,
-              advanced: true,
-            },
-            // Pihak terkait diambil dari daftar penerima supaya penamaannya konsisten.
-            {
-              key: 'beneficiaryId',
-              label: 'Pihak terkait',
-              labelOf: (f) => (isIncome(f) ? 'Dari siapa' : 'Untuk pihak'),
-              type: 'select',
-              optional: true,
-              options: [
-                { value: 'none', label: '— Tidak ada' },
-                ...beneficiaryOptions,
-                { value: CATEGORY_CUSTOM, label: '➕ Tambah pihak baru…' },
-              ],
-              showIf: (f) => !isTransfer(f),
-              advanced: true,
-            },
-            {
-              key: 'beneficiaryName',
-              label: 'Nama pihak baru',
-              placeholder: 'Contoh: Gereja, Keluarga, Budi',
-              showIf: (f) => !isTransfer(f) && f.beneficiaryId === CATEGORY_CUSTOM,
-              advanced: true,
-            },
-            {
-              key: 'beneficiaryKind',
-              label: 'Jenis pihak',
-              type: 'select',
-              options: BENEFICIARY_KINDS,
-              showIf: (f) => !isTransfer(f) && f.beneficiaryId === CATEGORY_CUSTOM,
-              advanced: true,
-            },
-            {
-              key: 'merchant',
-              label: 'Tempat transaksi',
-              labelOf: (f) => (isIncome(f) ? 'Tempat / kanal' : 'Tempat transaksi'),
-              placeholder: 'Contoh: Indomaret, Shopee, kaki lima',
-              optional: true,
-              suggestions: merchantSuggestions,
-              advanced: true,
-            },
-            // Menghubungkan pengeluaran ke pos anggaran — realisasi anggaran ikut bertambah.
-            {
-              key: 'budgetId',
-              label: 'Masuk ke anggaran',
-              type: 'select',
-              optional: true,
-              options: [{ value: 'none', label: '— Tidak dibebankan ke anggaran' }, ...budgetOptions],
-              showIf: (f) => isExpense(f) && budgetOptions.length > 0,
-              advanced: true,
-            },
-            // ==== khusus pemasukan ====
-            // Pemasukan bisa langsung menutup piutang — piutangnya otomatis jadi lunas.
-            {
-              key: 'settlesReceivableId',
-              label: 'Pelunasan piutang',
-              type: 'select',
-              optional: true,
-              options: [{ value: 'none', label: '— Bukan pelunasan piutang' }, ...receivableOptions],
-              showIf: (f) => isIncome(f) && receivableOptions.length > 0,
-              advanced: true,
-            },
-            {
-              key: 'incomeNature',
-              label: 'Sifat pemasukan',
-              type: 'select',
-              options: [
-                { value: 'fixed', label: 'Rutin / terjadwal' },
-                { value: 'unexpected', label: 'Tidak rutin / sekali ini' },
-              ],
-              showIf: isIncome,
-              optional: true,
-              advanced: true,
-            },
-            // ==== khusus pengeluaran ====
-            {
-              key: 'beneficiary',
-              label: 'Perlakuan pengeluaran',
-              type: 'select',
-              options: [
-                { value: 'self', label: 'Pengeluaran pribadi' },
-                { value: 'gift', label: 'Pemberian — tidak dikembalikan' },
-                { value: 'lent', label: 'Talangan — ditagih penuh' },
-                { value: 'shared', label: 'Patungan — ditagih sebagian' },
-              ],
-              showIf: isExpense,
-              optional: true,
-              advanced: true,
-            },
-            { key: 'recipient', label: 'Nama orang (opsional)', placeholder: 'Contoh: Budi', optional: true, advanced: true, showIf: (f) => isExpense(f) && owesBack(f.beneficiary) },
-            { key: 'owed', label: 'Ditagih balik (piutang)', type: 'number', placeholder: 'Default: separuh', advanced: true, showIf: (f) => isExpense(f) && f.beneficiary === 'shared' },
-            {
-              key: 'nature',
-              label: 'Sifat pengeluaran',
-              type: 'select',
-              options: [
-                { value: 'fixed', label: 'Terencana' },
-                { value: 'unexpected', label: 'Tak terduga' },
-              ],
-              showIf: isExpense,
-              optional: true,
-              advanced: true,
-            },
-            { key: 'date', label: 'Tanggal', type: 'date' },
-          ],
-          defaults: {
-            txType: 'expense',
-            amount: '',
-            walletId: defaultWalletId,
-            toWalletId: '',
-            savingId: 'none',
-            note: '',
-            category: '',
-            catL1: '',
-            catL2: '',
-            catL3: '',
-            catCustom: '',
-            merchant: '',
-            budgetId: 'none',
-            beneficiaryId: 'none',
-            beneficiaryName: '',
-            beneficiaryKind: 'person',
-            settlesReceivableId: 'none',
-            incomeNature: 'fixed',
-            beneficiary: 'self',
-            recipient: '',
-            owed: '',
-            nature: 'fixed',
-            date: today,
+        title: 'transaksi',
+        description: 'Isi data utama dari atas ke bawah. Field lanjutan hanya muncul tepat di bawah pilihan yang memerlukannya.',
+        fields: [
+          {
+            key: 'txType',
+            label: 'Jenis transaksi',
+            type: 'segmented',
+            options: [
+              { value: 'expense', label: '↑ Pengeluaran' },
+              { value: 'income', label: '↓ Pemasukan' },
+              { value: 'transfer', label: '⇄ Transfer' },
+            ],
           },
-        };
+          { key: 'date', label: 'Hari/Tanggal', type: 'date' },
+          { key: 'amount', label: 'Jumlah nominal', type: 'number' },
+          {
+            key: 'walletId',
+            label: 'Dompet / sumber dana',
+            labelOf: (f) => isIncome(f) ? 'Dompet penerima' : isTransfer(f) ? 'Dompet asal' : 'Dompet / sumber dana',
+            type: 'select',
+            options: wallets,
+          },
+          { key: 'toWalletId', label: 'Dompet tujuan', type: 'select', options: wallets, showIf: isTransfer },
+          {
+            key: 'savingId',
+            label: 'Masukkan ke tabungan',
+            type: 'select',
+            optional: true,
+            optionsOf: (f) => [
+              { value: 'none', label: 'Tidak dimasukkan ke tabungan' },
+              ...savingsFor(f.toWalletId),
+            ],
+            showIf: (f) => isTransfer(f) && savingsFor(f.toWalletId).length > 0,
+          },
+          {
+            key: 'pillar',
+            label: 'Kategori 1 (Pilar utama)',
+            type: 'select',
+            options: [
+              { value: 'Needs', label: 'Needs — Kebutuhan Pokok' },
+              { value: 'Wants', label: 'Wants — Keinginan, Gaya Hidup, & Sosial' },
+              { value: 'Giving', label: 'Giving — Ibadah & Pemberian' },
+              { value: 'Savings', label: 'Savings — Tabungan & Investasi' },
+              { value: 'Piutang', label: 'Piutang — Talangan yang Harus Kembali' },
+            ],
+            showIf: isExpense,
+          },
+          {
+            key: 'subCategory',
+            label: 'Kategori 2 (Sub-kategori)',
+            type: 'select',
+            optionsOf: (f) => Object.keys(PILLAR_EXPENSE_TREE[f.pillar] ?? {})
+              .map((name) => ({ value: name, label: name })),
+            showIf: (f) => isExpense(f) && Boolean(f.pillar) && f.pillar !== 'Piutang',
+          },
+          {
+            key: 'categoryDetail',
+            label: 'Kategori 3 / Sub-Field Khusus (Level Lanjutan)',
+            type: 'select',
+            optionsOf: (f) => {
+              const details = PILLAR_EXPENSE_TREE[f.pillar]?.[f.subCategory] ?? [];
+              return details.map((name) => ({ value: name, label: name }));
+            },
+            showIf: (f) =>
+              isExpense(f)
+              && (PILLAR_EXPENSE_TREE[f.pillar]?.[f.subCategory]?.length ?? 0) > 0,
+          },
+          {
+            key: 'debtor',
+            label: 'Kategori 3 / Sub-Field Khusus — Nama Pihak (Debitur)',
+            placeholder: 'Nama orang yang berhutang / ditalangi',
+            showIf: (f) => isExpense(f) && f.pillar === 'Piutang',
+          },
+          {
+            key: 'incomePillar',
+            label: 'Kategori 1 (Pilar utama)',
+            type: 'select',
+            options: topCategories(INCOME_TREE),
+            showIf: isIncome,
+          },
+          {
+            key: 'incomeCategory',
+            label: 'Kategori 2 (Sub-kategori)',
+            type: 'select',
+            optionsOf: (f) => midCategories(INCOME_TREE, f.incomePillar),
+            showIf: isIncome,
+          },
+          {
+            key: 'note',
+            label: 'Catatan',
+            placeholder: 'Contoh: Makan malam bersama keluarga di Resto X',
+            optional: true,
+          },
+        ],
+        defaults: {
+          txType: 'expense',
+          date: today,
+          amount: '',
+          walletId: defaultWalletId,
+          toWalletId: '',
+          savingId: 'none',
+          pillar: '',
+          subCategory: '',
+          categoryDetail: '',
+          debtor: '',
+          incomeCategory: '',
+          incomePillar: '',
+          note: '',
+        },
+      };
 
       const configs: Record<CreateType, FormConfig> = {
         wallet: {
@@ -1150,7 +1114,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               key: 'bank',
               label: 'Bank / penerbit',
               labelOf: (f) => (f.medium === 'ewallet' ? 'Penyedia e-wallet' : 'Bank / penerbit'),
-              placeholder: 'Opsional',
+              placeholder: 'Contoh: BCA',
               optional: true,
               showIf: (f) => f.medium !== 'cash',
             },
@@ -1158,16 +1122,6 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'last4', label: '4 digit terakhir', placeholder: '0000', optional: true, showIf: (f) => f.medium === 'bank' || f.medium === 'credit' },
             { key: 'phone', label: 'Nomor HP', placeholder: '08xxxxxxxxxx', optional: true, showIf: (f) => f.medium === 'ewallet' },
             { key: 'creditLimit', label: 'Limit kredit', type: 'number', showIf: (f) => f.medium === 'credit' },
-            ...(create.isEdit ? [{
-              key: 'showInTransactions',
-              label: 'Penyesuaian saldo',
-              type: 'segmented' as const,
-              options: [
-                { value: 'yes', label: 'Tampilkan di Transaksi' },
-                { value: 'no', label: 'Jurnal internal saja' },
-              ],
-              showIf: (f: Record<string, string>) => f.medium !== 'credit',
-            }] : []),
           ],
           defaults: {
             name: '',
@@ -1177,12 +1131,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             last4: '',
             phone: '',
             creditLimit: '',
-            showInTransactions: 'yes',
           },
         },
         transaksi: transaksiConfig,
         // Transfer memakai form transaksi yang sama; hanya jenisnya sudah terpilih.
-        transfer: { ...transaksiConfig, defaults: { ...transaksiConfig.defaults, txType: 'transfer', note: 'Transfer internal' } },
+        transfer: { ...transaksiConfig, defaults: { ...transaksiConfig.defaults, txType: 'transfer', note: '' } },
         subscription: {
           title: 'langganan',
           description: 'Pantau pembayaran berulang dan dapatkan pengingat sebelum ditagih.',
@@ -1283,16 +1236,15 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         },
         tabungan: {
           title: 'tabungan',
-          description: 'Sisihkan uang untuk tujuan tertentu. Uang tetap di dompet yang dipilih, tapi dikunci dari "aman dibelanjakan".',
+          description: 'Buat tujuan tabungan. Saldo awal selalu Rp0 dan dananya ditambahkan melalui transaksi Transfer.',
           fields: [
             { key: 'emoji', label: 'Ikon (emoji)', placeholder: '🎓' },
             { key: 'name', label: 'Nama tabungan', placeholder: 'Contoh: Uang Kuliah Jeje' },
             { key: 'walletId', label: 'Disimpan di dompet', type: 'select', options: debitWallets },
-            { key: 'balance', label: 'Sisihkan sekarang', type: 'number', showIf: () => !create.isEdit },
-            { key: 'target', label: 'Target (opsional)', type: 'number' },
-            { key: 'targetDate', label: 'Target tanggal (opsional)', type: 'date' },
+            { key: 'target', label: 'Target', type: 'number' },
+            { key: 'targetDate', label: 'Target tanggal', type: 'date' },
           ],
-          defaults: { emoji: '🎯', name: '', walletId: '', balance: '', target: '', targetDate: '' },
+          defaults: { emoji: '🎯', name: '', walletId: '', target: '', targetDate: '' },
         },
         sisihkan: {
           title: 'sisihkan',
@@ -1312,7 +1264,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           fields: [
             { key: 'name', label: 'Nama', placeholder: 'Contoh: Gereja, Keluarga, Budi' },
             { key: 'kind', label: 'Jenis', type: 'select', options: BENEFICIARY_KINDS },
-            { key: 'note', label: 'Catatan (opsional)', placeholder: 'Mis. perpuluhan bulanan', optional: true },
+            { key: 'note', label: 'Catatan', placeholder: 'Mis. perpuluhan bulanan', optional: true },
           ],
           defaults: { name: '', kind: 'person', note: '' },
         },
@@ -1322,8 +1274,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           fields: [
             { key: 'title', label: 'Judul pengingat', placeholder: 'Contoh: Bayar SPP Jeje' },
             { key: 'date', label: 'Tanggal', type: 'date' },
-            { key: 'amount', label: 'Nominal (opsional)', type: 'number', optional: true },
-            { key: 'note', label: 'Catatan (opsional)', placeholder: 'Detail tambahan', optional: true },
+            { key: 'amount', label: 'Nominal', type: 'number', optional: true },
+            { key: 'note', label: 'Catatan', placeholder: 'Detail tambahan', optional: true },
           ],
           defaults: { title: '', date: today, amount: '', note: '' },
         },
@@ -1520,6 +1472,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         try { sessionStorage.removeItem(keys.draft); } catch { /* blocked */ }
       }
     }
+    if (savedDraft.note === 'Transaksi' || savedDraft.note === 'Transfer internal') {
+      savedDraft = { ...savedDraft, note: '' };
+    }
     setForm({ ...config.defaults, ...presetDate, ...savedDraft });
     setFormDraftReady(true);
     if (!create.id) return;
@@ -1549,6 +1504,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             // Record dompet lama belum punya `medium` — turunkan dari `kind`.
             if (field.key === 'medium') value = record.medium ?? (record.kind === 'credit' ? 'credit' : 'bank');
             if (field.key === 'payer') value = record.type === 'income' ? record.recipient : undefined;
+            if (field.key === 'debtor') value = record.recipient;
             if (field.key === 'incomeNature') value = record.type === 'income' ? record.nature : undefined;
             if (field.key === 'nature') value = record.type === 'income' ? undefined : record.nature;
             if (field.key === 'owed') value = record.owedAmount;
@@ -1561,8 +1517,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           .map(([key, value]) => [key, String(value)]),
       );
       // Kategori tersimpan cuma satu string — dipecah kembali jadi tiga tingkat pilihan.
-      const storedCategory = (record.labels as string[] | undefined)?.[0] ?? (record.category as string | undefined);
-      const spread = spreadCategory(storedCategory);
+      const storedCategory = (record.labels as string[] | undefined)?.at(-1) ?? (record.category as string | undefined);
+      const spread = spreadCategory(storedCategory, record.type as string | undefined);
       setForm({ ...config.defaults, ...loaded, ...(spread ?? {}), ...savedDraft });
     };
     void load();
@@ -1620,13 +1576,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           last4: medium === 'bank' || medium === 'credit' ? form.last4.trim().slice(-4) || undefined : undefined,
           phone: medium === 'ewallet' ? form.phone.trim() || undefined : undefined,
           creditLimit: medium === 'credit' ? toNumber(form.creditLimit) : undefined,
-          showAdjustmentInTransactions: form.showInTransactions !== 'no',
         };
         if (shouldUpdate) {
           await repos.wallets.update(id!, payload);
           const delta = payload.balance - (before?.balance ?? 0);
           if (before && delta !== 0) {
-            extraNote = ` · selisih ${formatIDR(Math.abs(delta))} dicatat sebagai penyesuaian`;
+            extraNote = ` · selisih ${formatIDR(Math.abs(delta))} diperbarui di jurnal internal`;
           }
         } else {
           await repos.wallets.create(payload);
@@ -1645,86 +1600,34 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       }
 
       if (create.type === 'transaksi' || create.type === 'transfer') {
-        // Jenis diambil dari form (satu form untuk pengeluaran / pemasukan / transfer).
         const type = (form.txType || 'expense') as 'expense' | 'income' | 'transfer';
         const isTransfer = type === 'transfer';
         const amount = toNumber(form.amount);
-        const category = isTransfer ? '' : pickCategory(form);
-        // "Untuk siapa" hanya berlaku untuk pengeluaran.
-        const beneficiary: TxBeneficiary = !isTransfer && type === 'expense'
-          ? ((form.beneficiary as TxBeneficiary) || 'self')
-          : 'self';
-        const owesBack = beneficiary === 'gift' || beneficiary === 'lent' || beneficiary === 'shared';
-        // Pihak terkait: dipilih dari daftar, atau dibuat baru di tempat.
-        let beneficiaryId: string | undefined;
-        let beneficiaryName: string | undefined;
-        if (!isTransfer && form.beneficiaryId && form.beneficiaryId !== 'none') {
-          if (form.beneficiaryId === CATEGORY_CUSTOM) {
-            const name = form.beneficiaryName.trim();
-            if (name) {
-              const created = await repos.beneficiaries.create({
-                name,
-                kind: (form.beneficiaryKind || 'person') as BeneficiaryKind,
-              });
-              beneficiaryId = created.id;
-              beneficiaryName = created.name;
-            }
-          } else {
-            beneficiaryId = form.beneficiaryId;
-            beneficiaryName = (await repos.beneficiaries.get(form.beneficiaryId))?.name;
-          }
-        }
-        // Nama orang untuk piutang: pakai isian khusus, kalau kosong pakai pihak terkait.
-        const recipient = isTransfer
-          ? undefined
+        const isPiutang = type === 'expense' && form.pillar === 'Piutang';
+        const category = isTransfer
+          ? ''
           : type === 'income'
-            ? beneficiaryName
-            : owesBack ? form.recipient.trim() || beneficiaryName : beneficiaryName;
-        // Sifat: pengeluaran pakai terencana/tak terduga, pemasukan pakai rutin/tidak rutin.
-        const nature = (type === 'income' ? form.incomeNature : form.nature) || 'fixed';
-        // Porsi yang jadi piutang: talangin = penuh, patungan = sebagian (default separuh).
-        const owedAmount =
-          beneficiary === 'lent' ? amount
-            : beneficiary === 'shared' ? Math.min(amount, toNumber(form.owed) || Math.round(amount / 2))
-              : 0;
-        const budgetId = !isTransfer && type === 'expense' && form.budgetId && form.budgetId !== 'none'
-          ? form.budgetId
-          : undefined;
-        // Pelunasan piutang: dipilih sendiri, atau ditebak dari nama pembayar + nominal
-        // yang persis sama dengan salah satu piutang aktif.
-        let settlesReceivableId: string | undefined;
-        if (!isTransfer && type === 'income') {
-          const chosen = form.settlesReceivableId;
-          if (chosen && chosen !== 'none') {
-            settlesReceivableId = chosen;
-          } else if (recipient) {
-            const open = await repos.receivables.list();
-            const match = open.find(
-              (entry) =>
-                !entry.settled &&
-                entry.person.trim().toLowerCase() === recipient.trim().toLowerCase() &&
-                entry.amount - (entry.paid ?? 0) === amount,
-            );
-            settlesReceivableId = match?.id;
-          }
-        }
+            ? form.incomeCategory || form.incomePillar
+            : form.categoryDetail && form.categoryDetail !== 'none'
+              ? form.categoryDetail
+              : form.subCategory || form.pillar;
+        const beneficiary: TxBeneficiary = isPiutang ? 'lent' : 'self';
+        const recipient = isPiutang ? form.debtor.trim() : undefined;
         const payload = {
           type,
-          nature: nature as 'fixed' | 'unexpected',
+          nature: 'fixed' as const,
           amount,
           walletId: form.walletId,
           toWalletId: isTransfer ? form.toWalletId : undefined,
+          savingId: isTransfer && form.savingId && form.savingId !== 'none'
+            ? form.savingId
+            : undefined,
           labels: isTransfer ? [] : [category],
-          merchant: isTransfer ? undefined : form.merchant.trim() || undefined,
-          budgetId,
-          savingId: isTransfer && form.savingId !== 'none' ? form.savingId : undefined,
-          beneficiaryId,
-          settlesReceivableId,
-          note: form.note.trim() || (isTransfer ? 'Transfer internal' : 'Transaksi'),
+          note: form.note.trim() || undefined,
           beneficiary: isTransfer ? undefined : beneficiary,
           recipient,
-          isReceivable: owedAmount > 0 || undefined,
-          owedAmount: owedAmount > 0 ? owedAmount : undefined,
+          isReceivable: isPiutang || undefined,
+          owedAmount: isPiutang ? amount : undefined,
           date: toIso(form.date),
         };
         shouldUpdate
@@ -1762,22 +1665,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       }
 
       if (create.type === 'tabungan') {
-        const amount = toNumber(form.balance);
-        const [wallets, savings] = await Promise.all([repos.wallets.list(), repos.savings.list()]);
-        const wallet = wallets.find((w) => w.id === form.walletId);
-        // Saldo tersedia = saldo dompet − yang sudah dikunci tabungan LAIN di dompet itu.
-        const reservedOthers = savings
-          .filter((s) => s.walletId === form.walletId && !s.archived && s.id !== id)
-          .reduce((sum, sv) => sum + sv.balance, 0);
-        const available = (wallet?.balance ?? 0) - reservedOthers;
-        if (amount > available) {
-          notify(`Saldo tersedia ${wallet?.name ?? 'dompet'} cuma ${formatIDR(available)}`);
-          return;
-        }
+        const existing = shouldUpdate ? await repos.savings.get(id!) : null;
         const payload = {
           name: form.name.trim(),
           walletId: form.walletId,
-          balance: amount,
+          balance: existing?.balance ?? 0,
           target: form.target ? toNumber(form.target) : undefined,
           targetDate: form.targetDate || undefined,
           emoji: form.emoji.trim() || '🎯',
@@ -1932,7 +1824,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       && (!isTransactionForm || showTransactionDetails || !field.advanced),
     ),
   );
-  const transactionDetailsToggle = isTransactionForm ? (
+  const formIsValid = visibleFormSections
+    .flatMap((section) => section.fields)
+    .every((field) => !fieldIsRequired(field) || Boolean(form[field.key]?.trim()));
+  const hasTransactionDetails = isTransactionForm && currentConfig.fields.some((field) =>
+    field.advanced && (!field.showIf || field.showIf(form)),
+  );
+  const transactionDetailsToggle = hasTransactionDetails ? (
     <button
       type="button"
       className={`optional-fields-toggle${showTransactionDetails ? ' open' : ''}`}
@@ -2261,9 +2159,6 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           }.title`)}</p>
           {item.type === 'tabungan' && (
             <>
-              <button className="act" onClick={() => openCreate('sisihkan', false, item.name, item.id)}>
-                <span className="ax"><Plus /></span> {t('wallets.setAside')}
-              </button>
               <button className="act" onClick={() => openCreate('ambil', false, item.name, item.id)}>
                 <span className="ax"><Download /></span> {t('wallets.take')}
               </button>
@@ -2297,7 +2192,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           </h3>
           <p className="lead">{currentConfig.description}</p>
           <form onSubmit={(event) => void saveForm(event)}>
-            <div className="form-grid">
+            <div className="form-scroll">
+              <div className="form-grid">
               {visibleFormSections.map((section) => (
                 <React.Fragment key={section.title}>
                   {section.title === 'Detail opsional' && transactionDetailsToggle}
@@ -2306,15 +2202,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                   <div className="form-section-fields">
                     {section.fields.map((field) => (
                 <label className="input-field" key={field.key}>
-                  <span>{field.labelOf ? field.labelOf(form) : field.label}</span>
+                  <span>
+                    {field.labelOf ? field.labelOf(form) : field.label}
+                    {fieldIsRequired(field) && <em className="required-mark">*</em>}
+                  </span>
                   {field.type === 'segmented' ? (
-                    <div className={`form-segmented${field.options?.length === 2 ? ' two' : ''}`} role="radiogroup">
+                    <div
+                      className={`form-segmented${field.options?.length === 2 ? ' two' : ''}${field.key === 'txType' ? ' transaction-types' : ''}`}
+                      role="radiogroup"
+                    >
                       {(field.options ?? []).map((option) => (
                         <button
                           type="button"
                           role="radio"
                           aria-checked={form[field.key] === option.value}
-                          className={form[field.key] === option.value ? 'on' : ''}
+                          className={`${form[field.key] === option.value ? 'on ' : ''}${field.key === 'txType' ? `type-${option.value}` : ''}`.trim()}
                           key={option.value}
                           onClick={() => setForm(applyFieldChange(form, field.key, option.value))}
                         >
@@ -2363,6 +2265,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                                     aria-selected={option.value === (form[field.key] || '')}
                                     className={option.value === (form[field.key] || '') ? 'on' : ''}
                                     key={option.value || `${field.key}-empty`}
+                                    onPointerDown={(event) => {
+                                      event.preventDefault();
+                                      setForm(applyFieldChange(form, field.key, option.value));
+                                      setOpenSuggest(null);
+                                    }}
                                     onClick={() => {
                                       setForm(applyFieldChange(form, field.key, option.value));
                                       setOpenSuggest(null);
@@ -2394,7 +2301,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                   ) : (
                     // Field bersaran memakai dropdown milik aplikasi (bukan <datalist> bawaan
                     // browser) supaya tampilannya sama dengan select lain di form ini.
-                    <div className={field.suggestions ? 'suggest-field' : undefined}>
+                    <div className={
+                      field.type === 'date' ? 'date-field' : field.suggestions ? 'suggest-field' : undefined
+                    }>
                       <input
                         type={field.type || 'text'}
                         inputMode={field.type === 'number' ? 'numeric' : undefined}
@@ -2407,6 +2316,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         min={field.type === 'number' ? 0 : undefined}
                         required={fieldIsRequired(field)}
                       />
+                      {field.type === 'date' && form[field.key] && (
+                        <span className="date-field-value" aria-hidden="true">
+                          {new Date(`${form[field.key]}T00:00:00`).toLocaleDateString(
+                            prefs.language === 'EN' ? 'en-US' : 'id-ID',
+                            { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' },
+                          )}
+                        </span>
+                      )}
                       {field.suggestions && openSuggest === field.key && (() => {
                         const typed = (form[field.key] || '').trim().toLowerCase();
                         const matches = field.suggestions
@@ -2419,9 +2336,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                               <button
                                 type="button"
                                 key={suggestion}
-                                // mousedown dipakai supaya pilihan terbaca sebelum input kehilangan fokus.
-                                onMouseDown={(event) => {
+                                // pointerdown membuat panel langsung tertutup di mouse maupun sentuhan.
+                                onPointerDown={(event) => {
                                   event.preventDefault();
+                                  setForm({ ...form, [field.key]: suggestion });
+                                  setOpenSuggest(null);
+                                }}
+                                onClick={() => {
                                   setForm({ ...form, [field.key]: suggestion });
                                   setOpenSuggest(null);
                                 }}
@@ -2440,19 +2361,22 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 </fieldset>
                 </React.Fragment>
               ))}
+              </div>
+              {hasTransactionDetails && !showTransactionDetails && transactionDetailsToggle}
             </div>
-            {isTransactionForm && !showTransactionDetails && transactionDetailsToggle}
-            <button className="cta" disabled={saving}>
-              {saving
-                ? 'Menyimpan...'
-                : create.type === 'sisihkan'
-                  ? 'Sisihkan'
-                  : create.type === 'ambil'
-                    ? 'Ambil'
-                    : create.isEdit
-                      ? 'Simpan perubahan'
-                      : `Simpan ${currentConfig.title}`}
-            </button>
+            <div className="form-actions">
+              <button className="cta" disabled={saving || !formIsValid}>
+                {saving
+                  ? 'Menyimpan...'
+                  : create.type === 'sisihkan'
+                    ? 'Sisihkan'
+                    : create.type === 'ambil'
+                      ? 'Ambil'
+                      : create.isEdit
+                        ? 'Simpan perubahan'
+                        : `Simpan ${currentConfig.title}`}
+              </button>
+            </div>
           </form>
         </section>
 

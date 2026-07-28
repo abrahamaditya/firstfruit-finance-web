@@ -2,10 +2,10 @@
 
 import React, { useMemo, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useReminders, useSubscriptions, useTransactions } from '../application/hooks';
+import { useReminders, useSubscriptions, useTransactions, useWallets } from '../application/hooks';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay, weekGrid } from '../core/domain/calendar';
-import { Check, ChevronR, Clock, Plus, Recur, Up, Down, Transfer } from '../components/ui/icons';
+import { Check, ChevronR, Clock, Plus, Recur, Up, Down, TransferCard } from '../components/ui/icons';
 
 type View = 'month' | 'week';
 
@@ -16,8 +16,16 @@ export default function CalendarScreen() {
   const repos = useRepositories();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const { data: transactions } = useTransactions();
+  const { wallets } = useWallets();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();
+  const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
+  const transactionTitle = (transaction: typeof transactions[number]) => {
+    if (transaction.type === 'transfer') {
+      return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
+    }
+    return transaction.note || transaction.labels.at(-1) || 'Transaksi';
+  };
 
   const [view, setView] = useState<View>('month');
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
@@ -178,13 +186,13 @@ export default function CalendarScreen() {
         <div
           className="row"
           key={item.id}
-          onClick={() => ui.openItem(item.note || 'Transaksi', item.type === 'transfer' ? 'transfer' : 'transaksi', item.id)}
+          onClick={() => ui.openItem(transactionTitle(item), item.type === 'transfer' ? 'transfer' : 'transaksi', item.id)}
         >
           <div className={`ic ${item.type === 'income' ? 'in' : item.type === 'transfer' ? '' : 'out'}`}>
-            {item.type === 'income' ? <Down /> : item.type === 'transfer' ? <Transfer /> : <Up />}
+            {item.type === 'income' ? <Down /> : item.type === 'transfer' ? <TransferCard /> : <Up />}
           </div>
           <div className="mid">
-            <div className="t1">{item.note}</div>
+            <div className="t1">{transactionTitle(item)}</div>
             <div className="t2">
               {item.labels[0] && <span className="chip">{item.labels[0]}</span>}
               {item.merchant && <span className="chip">📍 {item.merchant}</span>}

@@ -2,8 +2,8 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBeneficiaries, useTransactions } from '../application/hooks';
-import { Up, Down, Transfer, Plus, Search } from '../components/ui/icons';
+import { useBeneficiaries, useTransactions, useWallets } from '../application/hooks';
+import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 
 export default function TransactionsScreen() {
   const ui = useUI();
@@ -11,7 +11,15 @@ export default function TransactionsScreen() {
   const tr = useT();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const { data } = useTransactions();
+  const { wallets } = useWallets();
   const { nameOf: beneficiaryName } = useBeneficiaries();
+  const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
+  const transactionTitle = (transaction: typeof data[number]) => {
+    if (transaction.type === 'transfer') {
+      return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
+    }
+    return transaction.note || transaction.labels.at(-1) || 'Transaksi';
+  };
   const dayLabel = (iso: string) => {
     const date = new Date(iso);
     const now = new Date();
@@ -108,24 +116,24 @@ export default function TransactionsScreen() {
               key={transaction.id}
               onClick={() =>
                 ui.openItem(
-                  transaction.note || 'Transaksi',
+                  transactionTitle(transaction),
                   transaction.type === 'transfer' ? 'transfer' : 'transaksi',
                   transaction.id,
                 )
               }
             >
               <div className={`ic ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <Transfer /> : <Up />}
+                {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <TransferCard /> : <Up />}
               </div>
               <div className="mid">
-                <div className="t1">{transaction.note}</div>
+                <div className="t1">{transactionTitle(transaction)}</div>
                 <div className="t2">
-                  {transaction.labels.map((label) => <span className="chip" key={label}>{label}</span>)}
+                  {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
+                    .map((label) => <span className="chip" key={label}>{label}</span>)}
                   {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
                   {transaction.beneficiaryId && beneficiaryName(transaction.beneficiaryId) && (
                     <span className="chip">👤 {beneficiaryName(transaction.beneficiaryId)}</span>
                   )}
-                  {transaction.adjustment && <span className="chip">⚖️ {tr('tx.adjustment')}</span>}
                   {benefChip(transaction)}
                   {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
                 </div>

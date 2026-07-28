@@ -18,6 +18,9 @@ export const Recur = S(<><path d="M21 12a9 9 0 1 1-3-6.7" /><path d="M21 4v5h-5"
 export const Up = S(<path d="M7 17 17 7M17 7H9M17 7v8" />);
 export const Down = S(<path d="M17 7 7 17M7 17h8M7 17V9" />);
 export const Transfer = S(<path d="M4 9h13M13 5l4 4-4 4M20 15H7M11 19l-4-4 4-4" />);
+export const TransferCard = S(
+  <path d="M4 8h13M13 4l4 4-4 4M20 16H7M11 20l-4-4 4-4" />,
+);
 export const Split = S(<path d="M12 3v18M5 8h14M5 16h14" />);
 export const Chart = S(<path d="M3 17l5-5 4 3 6-7" />);
 // Anggaran: meter "terpakai dari batas". Silhuetnya (busur terbuka ke bawah) sengaja

@@ -75,28 +75,53 @@ export const EXPENSE_TREE: CategoryTree = {
 };
 
 export const INCOME_TREE: CategoryTree = {
-  'Penghasilan Utama': {
-    Gaji: ['Gaji Pokok', 'Tunjangan Tetap', 'Lembur', 'Uang Makan & Transport'],
-    'Bonus & Insentif': ['Bonus Tahunan', 'THR', 'Komisi', 'Insentif Proyek'],
+  'Active Income': {
+    'Salary / Gaji': [],
+    'Bonus & Allowance': [],
+    'Side Hustle / Freelance': [],
   },
-  'Penghasilan Tambahan': {
-    'Kerja Sampingan': ['Freelance', 'Proyek Lepas', 'Mengajar & Les', 'Jasa Desain'],
-    Usaha: ['Penjualan Produk', 'Penjualan Jasa', 'Dropship & Reseller'],
-    Konten: ['Adsense & Monetisasi', 'Endorse & Sponsor', 'Royalti'],
+  'Passive Income': {
+    Investments: [],
   },
-  'Hasil Aset': {
-    Investasi: ['Dividen', 'Capital Gain', 'Imbal Hasil Reksadana'],
-    'Bunga & Sewa': ['Bunga Tabungan', 'Bunga Deposito', 'Sewa Properti', 'Sewa Barang'],
+  'Other Income': {
+    'Reimbursement / Pelunasan Piutang': [],
+    'Gift / Cashflow Lain': [],
   },
-  'Rohani & Sosial': {
-    Berkat: ['Persembahan Kasih', 'Taburan', 'Berkat Tak Terduga'],
-    Pemberian: ['Hadiah / Angpao', 'Uang Saku', 'Warisan'],
+};
+
+/** Taksonomi ringkas untuk pencatatan pengeluaran sehari-hari. */
+export const PILLAR_EXPENSE_TREE: CategoryTree = {
+  Needs: {
+    Housing: [],
+    Utilities: [],
+    Groceries: [],
+    Transport: [],
+    'Debt & Bills': [],
+    'Personal Care': [],
+    Health: [],
   },
-  'Uang Masuk Lain': {
-    Pengembalian: ['Pengembalian Piutang', 'Refund & Cashback', 'Klaim Asuransi'],
-    Pinjaman: ['Hutang / Pinjaman Diterima', 'Pinjaman Keluarga'],
-    'Lain-lain': ['Penjualan Barang Bekas', 'Koreksi Saldo', 'Lainnya'],
+  Wants: {
+    'Dining Out': [],
+    Entertainment: [],
+    Shopping: [],
+    Lifestyle: [],
+    Social: [
+      'Traktir Keluarga',
+      'Kado / Hadiah',
+      'Sumbangan / Donasi Sosial',
+      'Traktir Teman',
+    ],
   },
+  Giving: {
+    Persepuluhan: [],
+    Persembahan: [],
+    Taburan: [],
+  },
+  Savings: {
+    'Emergency Fund': [],
+    Investments: [],
+  },
+  Piutang: {},
 };
 
 export const CATEGORY_CUSTOM = '__custom__';
@@ -127,12 +152,20 @@ const buildIndex = (tree: CategoryTree) => {
 };
 const EXPENSE_INDEX = buildIndex(EXPENSE_TREE);
 const INCOME_INDEX = buildIndex(INCOME_TREE);
+const PILLAR_EXPENSE_INDEX = buildIndex(PILLAR_EXPENSE_TREE);
 
 /** Jalur lengkap sebuah label. Label bebas (di luar taksonomi) berdiri sendiri. */
-export function categoryPath(label: string): string[] {
+export function categoryPath(label: string, flow?: 'expense' | 'income'): string[] {
   const key = label?.trim().toLowerCase();
   if (!key) return [];
-  return EXPENSE_INDEX.get(key) ?? INCOME_INDEX.get(key) ?? [label.trim()];
+  if (flow === 'income') return INCOME_INDEX.get(key) ?? [label.trim()];
+  if (flow === 'expense') {
+    return PILLAR_EXPENSE_INDEX.get(key) ?? EXPENSE_INDEX.get(key) ?? [label.trim()];
+  }
+  return PILLAR_EXPENSE_INDEX.get(key)
+    ?? EXPENSE_INDEX.get(key)
+    ?? INCOME_INDEX.get(key)
+    ?? [label.trim()];
 }
 /** Kelompok besar sebuah label — dipakai laporan untuk agregasi tingkat atas. */
 export const categoryTop = (label: string) => categoryPath(label)[0] ?? label;

@@ -18,7 +18,6 @@ export interface Wallet {
   phone?: string;            // e-wallet: identitas akun bukan no. rekening tapi no. HP
   balance: number;           // cached, maintained incrementally
   creditLimit?: number;
-  showAdjustmentInTransactions?: boolean; // opsi command saat saldo diedit
 }
 export interface Transaction {
   id: string; type: TxType; nature: TxNature; amount: number;

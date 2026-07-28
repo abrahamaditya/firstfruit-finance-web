@@ -14,28 +14,79 @@ import {
 import { billingDatesInRange } from '../core/domain/calendar';
 import { PlanningContext, estimateMonthlyIncome } from '../core/domain/planning';
 
-// Small helper: load a collection once.
-// `version` untuk pemanggil yang tidak ikut di-remount saat data berubah (mis. kerangka
-// aplikasi): naikkan angkanya dan koleksinya ditarik ulang.
+type CollectionCacheEntry<T> = {
+  data?: T[];
+  request?: Promise<T[]>;
+  listeners: Set<(data: T[]) => void>;
+};
+
+// Cache mengikuti instance repository, sehingga otomatis terpisah per workspace dan
+// dibuang GC ketika pengguna keluar. Halaman yang di-mount ulang langsung memakai data
+// terakhir, lalu melakukan revalidasi di background (stale-while-revalidate).
+const collectionCache = new WeakMap<object, CollectionCacheEntry<unknown>>();
+
+function cacheFor<T>(repository: object): CollectionCacheEntry<T> {
+  let entry = collectionCache.get(repository) as CollectionCacheEntry<T> | undefined;
+  if (!entry) {
+    entry = { listeners: new Set() };
+    collectionCache.set(repository, entry as CollectionCacheEntry<unknown>);
+  }
+  return entry;
+}
+
+// Shared collection loader. `version` memaksa revalidasi setelah mutasi, tetapi data
+// lama tetap dirender sampai respons baru datang agar UI tidak berkedip ke empty state.
 function useCollection<T extends { id: string }>(
   pick: (r: ReturnType<typeof useRepositories>) => { list(): Promise<T[]> },
   version = 0,
 ) {
   const repos = useRepositories();
   const repository = pick(repos);
-  const [data, setData] = useState<T[]>([]);
-  const [loading, setLoading] = useState(true);
+  const entry = cacheFor<T>(repository);
+  const [data, setData] = useState<T[]>(() => entry.data ?? []);
+  const [loading, setLoading] = useState(() => entry.data === undefined);
+
   const reload = useCallback(async () => {
-    setLoading(true);
+    const current = cacheFor<T>(repository);
+    if (current.data === undefined) setLoading(true);
     try {
-      setData(await repository.list());
+      if (!current.request) {
+        current.request = repository.list()
+          .then((fresh) => {
+            current.data = fresh;
+            current.listeners.forEach((listener) => listener(fresh));
+            return fresh;
+          })
+          .finally(() => {
+            current.request = undefined;
+          });
+      }
+      const fresh = await current.request;
+      setData(fresh);
     } finally {
       setLoading(false);
     }
     // `version` sengaja jadi dependensi walau tidak dipakai di badan fungsi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [repository, version]);
-  useEffect(() => { reload(); }, [reload]);
+
+  useEffect(() => {
+    const current = cacheFor<T>(repository);
+    const receive = (fresh: T[]) => setData(fresh);
+    current.listeners.add(receive);
+    if (current.data !== undefined) {
+      setData(current.data);
+      setLoading(false);
+    }
+    void reload().catch(() => {
+      // Data cache tetap dipertahankan saat refresh jaringan gagal. Error operasional
+      // ditangani oleh aksi pengguna; perpindahan halaman tidak boleh meruntuhkan UI.
+    });
+    return () => {
+      current.listeners.delete(receive);
+    };
+  }, [reload, repository]);
+
   return { data, loading, reload };
 }
 

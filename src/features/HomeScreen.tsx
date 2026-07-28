@@ -3,7 +3,7 @@ import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
 import { useDashboard, useTransactions, useSubscriptions, useReminders } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
-import { Up, Down, Transfer, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
+import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
 
 export default function HomeScreen() {
   const ui = useUI();
@@ -94,8 +94,15 @@ export default function HomeScreen() {
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .slice(0, 4);
 
-  const txIcon = (type: string) => (type === 'income' ? <Down /> : type === 'transfer' ? <Transfer /> : <Up />);
+  const txIcon = (type: string) => (type === 'income' ? <Down /> : type === 'transfer' ? <TransferCard /> : <Up />);
   const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
+  const walletName = (id?: string) => d.wallets.find((wallet) => wallet.id === id)?.name;
+  const transactionTitle = (transaction: typeof txs[number]) => {
+    if (transaction.type === 'transfer') {
+      return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
+    }
+    return transaction.note || transaction.labels.at(-1) || 'Transaksi';
+  };
   const moneyOrHidden = (value: number, compact = false) =>
     hidden ? '••••••' : compact ? money.fmtCompact(value) : money.fmt(value);
   const highlights = [
@@ -208,15 +215,25 @@ export default function HomeScreen() {
         <div className="sec"><span className="t">{tr('home.recent')}</span>
           <button className="addg" onClick={() => ui.go('tx')}>{tr('common.seeAll')}</button></div>
         {recent.map(t => (
-          <div className="row" key={t.id} onClick={() => ui.openItem(t.note || tr('home.txFallback'), t.type === 'transfer' ? 'transfer' : 'transaksi', t.id)}>
+          <div className="row" key={t.id} onClick={() => ui.openItem(transactionTitle(t), t.type === 'transfer' ? 'transfer' : 'transaksi', t.id)}>
             <div className={'ic ' + txDir(t.type)}>{txIcon(t.type)}</div>
             <div className="mid">
-              <div className="t1">{t.note}</div>
-              <div className="t2">{t.labels[0] && <span className="chip">{t.labels[0]}</span>}{dateLabel(t.date)}</div>
+              <div className="t1">{transactionTitle(t)}</div>
+              <div className="t2">
+                {(t.note ? t.labels : t.labels.slice(0, -1))
+                  .map((label) => <span className="chip" key={label}>{label}</span>)}
+                {dateLabel(t.date)}
+              </div>
             </div>
             <div className="r"><div className={'val ' + txDir(t.type)}>{fmtTx(t)}</div></div>
           </div>
         ))}
+        {recent.length === 0 && (
+          <div className="home-recent-empty">
+            <b>{tr('home.recentEmptyTitle')}</b>
+            <p>{tr('home.recentEmptyBody')}</p>
+          </div>
+        )}
       </div>
       </div>
 

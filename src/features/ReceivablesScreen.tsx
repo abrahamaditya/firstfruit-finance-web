@@ -74,7 +74,7 @@ export default function ReceivablesScreen() {
       {[...settled, ...active.filter(r => done.includes(r.id))].map(r => {
         const tx = settlingTx.get(r.id);
         return (
-          <div className="row done" key={r.id} onClick={() => tx && ui.openItem(tx.note || 'Transaksi', 'transaksi', tx.id)}>
+          <div className="row done" key={r.id} onClick={() => tx && ui.openItem(tx.note || tx.labels.at(-1) || '', 'transaksi', tx.id)}>
             <div className="lg" style={{ background: 'var(--ink-faint)' }}>{r.person[0]}</div>
             <div className="mid">
               <div className="t1">{r.person}</div>

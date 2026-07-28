@@ -14,6 +14,7 @@ import type {
   Wallet,
 } from '../../core/domain/types';
 import type { DataRepositories, Repository } from '../../core/ports/repositories';
+import { categoryPath } from '../../core/domain/categories';
 
 type DbRow = Record<string, any>;
 
@@ -61,7 +62,9 @@ function mapTransaction(row: DbRow): Transaction {
     amount: amount(row.amount_minor),
     walletId: row.wallet_id,
     toWalletId: row.to_wallet_id ?? undefined,
-    labels: row.category_name ? [row.category_name] : [],
+    labels: row.category_name
+      ? categoryPath(row.category_name, type === 'income' ? 'income' : 'expense')
+      : [],
     merchant: row.merchant ?? undefined,
     budgetId: row.budget_id ?? undefined,
     beneficiaryId: row.beneficiary_id ?? undefined,
@@ -194,36 +197,55 @@ export function createSupabaseRepositories(
   }
 
   async function ensureCategory(name: string, flow: 'expense' | 'income') {
-    const normalized = name.trim().toLowerCase() || 'lainnya';
-    const { data: existing, error: findError } = await supabase
-      .from('categories')
-      .select('id')
-      .eq('flow', flow)
-      .eq('normalized_name', normalized)
-      .is('archived_at', null)
-      .or(`workspace_id.is.null,workspace_id.eq.${workspaceId}`)
-      .limit(1)
-      .maybeSingle();
-    throwIfError(findError, 'Gagal mencari kategori');
-    if (existing) return existing.id as string;
+    const path = categoryPath(name, flow);
+    const labels = path.length > 0 ? path : [name.trim() || 'Lainnya'];
+    let parentId: string | null = null;
 
-    const { data, error } = await supabase
-      .from('categories')
-      .insert({
-        workspace_id: workspaceId,
-        flow,
-        depth: 1,
-        name: name.trim() || 'Lainnya',
-        is_system: false,
-        created_by: userId,
-      })
-      .select('id')
-      .single();
-    if (error?.message.toLowerCase().includes('duplicate')) {
-      return ensureCategory(name, flow);
+    for (const [index, label] of labels.entries()) {
+      const findNode = async () => {
+        let query = supabase
+          .from('categories')
+          .select('id')
+          .eq('flow', flow)
+          .eq('normalized_name', label.trim().toLowerCase())
+          .is('archived_at', null)
+          .or(`workspace_id.is.null,workspace_id.eq.${workspaceId}`)
+          .limit(1);
+        query = parentId === null ? query.is('parent_id', null) : query.eq('parent_id', parentId);
+        return query.maybeSingle();
+      };
+
+      const { data: existing, error: findError } = await findNode();
+      throwIfError(findError, 'Gagal mencari kategori');
+      if (existing) {
+        parentId = existing.id as string;
+        continue;
+      }
+
+      const { data, error } = await supabase
+        .from('categories')
+        .insert({
+          workspace_id: workspaceId,
+          flow,
+          parent_id: parentId,
+          depth: index + 1,
+          name: label,
+          is_system: false,
+          created_by: userId,
+        })
+        .select('id')
+        .single();
+      if (error?.message.toLowerCase().includes('duplicate')) {
+        const { data: raced, error: racedError } = await findNode();
+        throwIfError(racedError, 'Gagal mencari kategori');
+        if (!raced) throw new Error(`Gagal membuat kategori: ${error.message}`);
+        parentId = raced.id as string;
+      } else {
+        throwIfError(error, 'Gagal membuat kategori');
+        parentId = data!.id as string;
+      }
     }
-    throwIfError(error, 'Gagal membuat kategori');
-    return data!.id as string;
+    return parentId!;
   }
 
   async function postPayload(item: Omit<Transaction, 'id'>) {
@@ -307,7 +329,7 @@ export function createSupabaseRepositories(
         phone_masked: patch.phone ?? before.phone ?? null,
         credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
         target_balance_minor: patch.balance ?? before.balance,
-        visible_in_feed: patch.showAdjustmentInTransactions ?? true,
+        visible_in_feed: false,
         reason: `Penyesuaian saldo ${patch.name ?? before.name}`,
       };
       const { error } = await supabase.rpc('update_wallet', { p_payload: payload });
@@ -337,8 +359,8 @@ export function createSupabaseRepositories(
       const { data, error } = await supabase
         .from('v_transactions').select('*')
         .eq('workspace_id', workspaceId)
-        // Feed beranda dan halaman transaksi mengikuti aksi pencatatan terbaru.
-        // `occurred_at` bisa sengaja diisi mundur oleh pengguna, jadi bukan penentu urutan feed.
+        // Edit mempertahankan `created_at` transaksi pertama, sehingga card tidak
+        // meloncat ke atas hanya karena baru direvisi.
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .limit(500);
@@ -657,7 +679,7 @@ export function createSupabaseRepositories(
           idempotency_key: idempotencyKey(),
           wallet_id: item.walletId,
           name: item.name,
-          balance_minor: item.balance,
+          balance_minor: 0,
           target_minor: item.target ?? null,
           target_date: item.targetDate ?? null,
           emoji: item.emoji ?? null,
@@ -677,7 +699,6 @@ export function createSupabaseRepositories(
           idempotency_key: idempotencyKey(),
           wallet_id: next.walletId,
           name: next.name,
-          target_balance_minor: next.balance,
           target_minor: next.target ?? null,
           target_date: next.targetDate ?? null,
           emoji: next.emoji ?? null,
