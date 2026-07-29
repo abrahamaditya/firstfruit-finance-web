@@ -19,7 +19,6 @@ Konvensi:
 
 ```
 Wallet ──< Transaction >── Budget
-  │            │  │  └──── Beneficiary
   │            │  └─────── Receivable   (settlesReceivableId)
   │            └────────── Wallet       (toWalletId, khusus transfer)
   └──< Saving
@@ -60,11 +59,10 @@ Plan          (berdiri sendiri, sandbox rencana)
 | `toWalletId` | string → Wallet | | Hanya transfer. |
 | `labels` | string[] | ✔ | `labels[0]` = kategori terdalam yang dipilih. Kosong untuk transfer. |
 | `merchant` | string | | Tempat transaksi (bebas, ada daftar saran). |
-| `budgetId` | string → Budget | | Pos anggaran yang dibebani (khusus pengeluaran). |
-| `beneficiaryId` | string → Beneficiary | | Pihak terkait. |
+| `budgetId` | string → Budget | | Pos anggaran yang direalisasikan oleh pengeluaran atau transfer biasa; pembayaran kartu dikecualikan. |
+| `installmentTenorMonths` | number | | Tenor 2–120 bulan; hanya untuk pengeluaran dari kartu kredit. |
 | `settlesReceivableId` | string → Receivable | | Pemasukan ini melunasi piutang tersebut. |
-| `beneficiary` | `self` \| `gift` \| `lent` \| `shared` | | Untuk siapa pengeluaran ini; menentukan pembuatan piutang. |
-| `recipient` | string | | Nama pihak (turunan dari `beneficiaryId` atau isian bebas). |
+| `recipient` | string | | Nama pengutang pada transaksi Piutang. |
 | `isReceivable` | boolean | | Penanda bahwa transaksi ini melahirkan piutang. |
 | `owedAmount` | number | | Porsi yang ditagih balik. |
 | `subscriptionId` | string → Subscription | | Bila transaksi lahir dari langganan. |
@@ -163,18 +161,6 @@ Turunan (dihitung, tidak disimpan): `velocity`, `over`, `remaining` — lihat `b
 
 ---
 
-## Beneficiary — koleksi `beneficiaries`
-
-| Field | Tipe | Wajib | Keterangan |
-| --- | --- | :-: | --- |
-| `id` | string | ✔ | |
-| `name` | string | ✔ | Mis. "Gereja", "Keluarga", "Budi". |
-| `kind` | `person` \| `family` \| `church` \| `organization` \| `business` | ✔ | Dipakai untuk pengelompokan di dropdown. |
-| `note` | string | | |
-| `archived` | boolean | | Disembunyikan dari pilihan bila `true`. |
-
----
-
 ## Plan — koleksi `plans`
 
 | Field | Tipe | Wajib | Keterangan |
@@ -205,7 +191,7 @@ Semua field baru bersifat opsional, jadi data lama tetap terbaca:
 | Perubahan | Perilaku untuk data lama |
 | --- | --- |
 | `Wallet.medium`, `Wallet.phone` | Tanpa `medium` → diturunkan dari `kind`. |
-| `Transaction.merchant`, `budgetId`, `beneficiaryId`, `adjustment` | Kosong = perilaku lama. |
+| `Transaction.merchant`, `budgetId`, `adjustment` | Kosong = perilaku lama. |
 | `Receivable.paid`, `settledAt`, `settledByTxId` | `paid` kosong dianggap 0. |
 | Taksonomi kategori 3 tingkat | Label lama yang tidak dikenal tetap valid sebagai kategori bebas satu tingkat. |
 | `Preferences.defaultWalletId` | Kosong = tidak ada dompet default; fallback memakai dompet debit pertama. |

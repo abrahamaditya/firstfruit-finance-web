@@ -2,7 +2,7 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBeneficiaries, useSavings, useTransactions, useWallets } from '../application/hooks';
+import { useSavings, useTransactions, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 
 export default function TransactionsScreen() {
@@ -13,8 +13,8 @@ export default function TransactionsScreen() {
   const { data } = useTransactions();
   const { wallets } = useWallets();
   const { all: savings } = useSavings();
-  const { nameOf: beneficiaryName } = useBeneficiaries();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
+  const walletById = new Map(wallets.map(wallet => [wallet.id, wallet]));
   const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
   const transactionTitle = (transaction: typeof data[number]) => {
     if (transaction.type === 'transfer') {
@@ -31,12 +31,6 @@ export default function TransactionsScreen() {
   };
   const formatAmount = (type: string, amount: number) =>
     `${type === 'income' ? '+' : type === 'expense' ? '-' : ''}${money.fmt(amount)}`;
-  const benefChip = (t: { beneficiary?: string; recipient?: string; owedAmount?: number }) => {
-    if (t.beneficiary === 'gift') return <span className="chip">🎁 {t.recipient || tr('tx.given')}</span>;
-    if (t.beneficiary === 'lent') return <span className="chip">{tr('tx.lent')} {t.recipient || ''}</span>;
-    if (t.beneficiary === 'shared') return <span className="chip">{tr('tx.sharedTag')} {money.fmtCompact(t.owedAmount || 0)}</span>;
-    return null;
-  };
   const [filter, setFilter] = useState<'all' | 'expense' | 'income' | 'transfer'>('all');
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -55,7 +49,7 @@ export default function TransactionsScreen() {
   const visible = data.filter((transaction) =>
     matchesType(transaction) &&
     (activeCategory === 'all' || transaction.labels.includes(activeCategory)) &&
-    `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${savingName(transaction.savingId) || ''}`
+    `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${walletName(transaction.walletId) || ''} ${walletName(transaction.toWalletId) || ''} ${savingName(transaction.savingId) || ''}`
       .toLowerCase().includes(deferredQuery),
   );
   const groups: Record<string, typeof data> = {};
@@ -113,46 +107,60 @@ export default function TransactionsScreen() {
       {Object.entries(groups).map(([day, items]) => (
         <React.Fragment key={day}>
           <div className="tx-day">{day.toUpperCase()}</div>
-          {items.map((transaction) => (
-            <div
-              className="row"
-              key={transaction.id}
-              onClick={() =>
-                ui.openItem(
-                  transactionTitle(transaction),
-                  transaction.type === 'transfer' ? 'transfer' : 'transaksi',
-                  transaction.id,
-                )
-              }
-            >
-              <div className={`ic ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <TransferCard /> : <Up />}
-              </div>
-              <div className="mid">
-                <div className="t1">{transactionTitle(transaction)}</div>
-                <div className="t2">
-                  {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
-                    .map((label) => <span className="chip" key={label}>{label}</span>)}
-                  {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
-                  {transaction.beneficiaryId && beneficiaryName(transaction.beneficiaryId) && (
-                    <span className="chip">👤 {beneficiaryName(transaction.beneficiaryId)}</span>
-                  )}
-                  {transaction.type === 'transfer' && transaction.savingId && (
-                    <span className="chip saving-destination">
-                      Tabungan · {savingName(transaction.savingId) ?? 'Tabungan'}
+          {items.map((transaction) => {
+            const sourceWallet = walletById.get(transaction.walletId);
+            const destinationWallet = transaction.toWalletId
+              ? walletById.get(transaction.toWalletId)
+              : undefined;
+            return (
+              <div
+                className="row"
+                key={transaction.id}
+                onClick={() =>
+                  ui.openItem(
+                    transactionTitle(transaction),
+                    transaction.type === 'transfer' ? 'transfer' : 'transaksi',
+                    transaction.id,
+                  )
+                }
+              >
+                <div className={`ic ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
+                  {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <TransferCard /> : <Up />}
+                </div>
+                <div className="mid">
+                  <div className="t1">{transactionTitle(transaction)}</div>
+                  <div className="t2">
+                    {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
+                      .map((label) => <span className="chip" key={label}>{label}</span>)}
+                    {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
+                    {transaction.type === 'transfer' && transaction.savingId && (
+                      <span className="chip saving-destination">
+                        Tabungan · {savingName(transaction.savingId) ?? 'Tabungan'}
+                      </span>
+                    )}
+                    {transaction.installmentTenorMonths && (
+                      <span className="chip">Cicilan · {transaction.installmentTenorMonths} bulan</span>
+                    )}
+                    {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
+                  </div>
+                </div>
+                <div className="r">
+                  <div className={`val ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
+                    {formatAmount(transaction.type, transaction.amount)}
+                  </div>
+                  {sourceWallet && (
+                    <span className="tx-wallet-label">
+                      {transaction.type === 'transfer' && destinationWallet
+                        ? `${sourceWallet.name} → ${destinationWallet.name}`
+                        : transaction.type === 'income'
+                          ? `Ke ${sourceWallet.name}`
+                          : `Dari ${sourceWallet.name}`}
                     </span>
                   )}
-                  {benefChip(transaction)}
-                  {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
                 </div>
               </div>
-              <div className="r">
-                <div className={`val ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                  {formatAmount(transaction.type, transaction.amount)}
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </React.Fragment>
       ))}
 

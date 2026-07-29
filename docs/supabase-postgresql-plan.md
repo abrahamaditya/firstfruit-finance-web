@@ -224,7 +224,7 @@ Token mentah tidak disimpan. Invite hanya dapat dibuat owner melalui RPC.
 
 Preferensi pindah dari `localStorage` agar sinkron antarperangkat. Theme dapat tetap dicache lokal untuk mencegah flash saat render.
 
-### 5.2 Kategori dan pihak terkait
+### 5.2 Kategori
 
 #### `categories`
 
@@ -248,17 +248,6 @@ Constraint:
 - kategori sistem tidak dapat dimutasi user.
 
 Taksonomi yang sekarang berada di TypeScript menjadi seed database. Domain tetap dapat membawa fallback agar UI tidak rusak saat boot.
-
-#### `beneficiaries`
-
-- `workspace_id`
-- `name`
-- `normalized_name`
-- `kind`: `person | family | church | organization | business`
-- `note`
-- `archived_at`
-
-Nama tidak harus global-unique, tetapi UI memberi peringatan jika ada nama aktif yang sama.
 
 ### 5.3 Wallet dan chart of accounts
 
@@ -323,8 +312,7 @@ Opening balance selalu diposting sebagai journal entry terhadap `EQUITY_OPENING_
 - `period_id`
 - `category_id nullable`
 - `merchant text nullable`
-- `beneficiary_id nullable`
-- `beneficiary_mode`: `self | gift | lent | shared`
+- `recipient text nullable`
 - `owed_amount_minor nullable`
 - `subscription_id nullable`
 - `split_bill_id nullable`
@@ -352,7 +340,6 @@ Constraint:
 - `side`: `debit | credit`
 - `amount_minor`
 - `category_id nullable`
-- `beneficiary_id nullable`
 - `memo`
 
 Posting function harus membuktikan:
@@ -370,7 +357,10 @@ dan seluruh ledger account berada di workspace yang sama.
 - `amount_minor`
 - primary key `(transaction_id, budget_id)`
 
-V1 UI boleh hanya memilih satu budget, tetapi struktur mendukung split allocation. Jumlah alokasi tidak boleh melebihi porsi expense milik pengguna.
+V1 UI boleh hanya memilih satu budget, tetapi struktur mendukung split allocation.
+Untuk expense, jumlah alokasi tidak boleh melebihi porsi expense milik pengguna; transfer
+biasa dapat merealisasikan anggaran sebesar nominal transfer tanpa mengubah net liquidity.
+`credit_payment` tidak membuat alokasi karena pembeliannya sudah merealisasikan anggaran.
 
 #### `command_receipts`
 
@@ -474,7 +464,6 @@ Pengecekan dilakukan dalam RPC dengan row lock pada wallet dan goal terkait.
 #### `receivables`
 
 - `workspace_id`
-- `beneficiary_id nullable`
 - `person_snapshot`
 - `source_transaction_id nullable`
 - `source_type`: `manual | lent | shared | split_bill`
@@ -514,7 +503,6 @@ Payment melebihi remaining ditolak. Auto-match hanya menjadi suggestion di UI; p
 #### `split_participants`
 
 - `split_bill_id`
-- `beneficiary_id nullable`
 - `name_snapshot`
 - `is_current_user`
 - `color`
@@ -844,7 +832,7 @@ Karena wallet balance sudah mencerminkan transaksi, hanya **remaining budget** y
 ### Transaksi
 
 - Daftar memakai cursor pagination berdasarkan `(occurred_at, id)`.
-- Filter: period, type, wallet, category, beneficiary, adjustment.
+- Filter: period, type, wallet, category, adjustment.
 - Create memakai posting RPC.
 - Edit transaksi open period menjadi reverse + replacement.
 - Delete menjadi reversal.
@@ -870,13 +858,6 @@ Karena wallet balance sudah mencerminkan transaksi, hanya **remaining budget** y
 - Payment membuat income/receivable journal dan payment row dalam satu commit.
 - Total aktif memakai remaining, bukan original amount.
 - Matching nama+nominal hanya suggestion; user memilih receivable sebelum posting.
-
-### Pihak terkait
-
-- Daftar orang/keluarga/gereja/organisasi/bisnis berasal dari `beneficiaries`.
-- Ringkasan masuk, keluar, dan jumlah transaksi dihitung dari posted transaction.
-- Beneficiary yang sudah dipakai di transaksi diarsipkan, bukan dihapus.
-- Nama disimpan sebagai snapshot pada transaksi/piutang agar histori tidak berubah ketika master data diganti nama.
 
 ### Split bill
 
@@ -1034,7 +1015,6 @@ transactions(workspace_id, occurred_at desc, id desc)
 transactions(workspace_id, period_id, occurred_at desc)
 transactions(workspace_id, type, occurred_at desc)
 transactions(workspace_id, category_id, occurred_at desc)
-transactions(workspace_id, beneficiary_id, occurred_at desc)
 transaction_lines(ledger_account_id, transaction_id)
 budgets(period_id, category_id)
 saving_movements(saving_id, occurred_at)
@@ -1352,7 +1332,7 @@ Gate:
 Deliverables:
 
 - transaction UI;
-- beneficiaries/categories;
+- categories;
 - budget/period;
 - savings;
 - receivables;

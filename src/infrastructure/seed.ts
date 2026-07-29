@@ -1,4 +1,4 @@
-import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary } from '../core/domain/types';
+import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder } from '../core/domain/types';
 
 const iso = (daysFromNow: number) => { const d = new Date(); d.setDate(d.getDate() + daysFromNow); return d.toISOString(); };
 
@@ -17,7 +17,7 @@ export const seedTransactions: Transaction[] = [
   { id: 't4', type: 'income', nature: 'fixed', amount: 9_500_000, walletId: 'w_bca', labels: ['Gaji Pokok'], note: 'Gaji Februari', date: iso(-1) },
   { id: 't5', type: 'expense', nature: 'fixed', amount: 500_000, walletId: 'w_bca', labels: ['Persembahan Mingguan'], budgetId: 'b2', recipient: 'Gereja', note: 'Persembahan', date: iso(-1) },
   { id: 't6', type: 'expense', nature: 'fixed', amount: 186_000, walletId: 'w_cc', labels: ['Streaming Film'], subscriptionId: 's_netflix', note: 'Netflix Premium', date: iso(-1) },
-  { id: 't7', type: 'expense', nature: 'unexpected', amount: 150_000, walletId: 'w_bca', labels: ['Hadiah & Kado'], merchant: 'Shopee', beneficiary: 'gift', recipient: 'Sarah', note: 'Kado ultah Sarah', date: iso(-2) },
+  { id: 't7', type: 'expense', nature: 'unexpected', amount: 150_000, walletId: 'w_bca', labels: ['Hadiah & Kado'], merchant: 'Shopee', note: 'Kado ultah Sarah', date: iso(-2) },
 ];
 export const seedBudgets: Budget[] = [
   { id: 'b1', category: 'Makanan & Minuman', allocated: 1_500_000, spent: 1_080_000 },
@@ -45,14 +45,6 @@ export const seedPlans: Plan[] = [
   { id: 'pl1', title: 'Furniture Ruang Tamu', target: 12_000_000, saved: 4_800_000, targetDate: '2026-12-01', status: 'active' },
   { id: 'pl2', title: 'DP Mobil', target: 50_000_000, saved: 3_000_000, targetDate: '2027-06-01', status: 'draft' },
   { id: 'pl3', title: 'Dana Darurat 6 bulan', target: 30_000_000, saved: 21_000_000, status: 'active' },
-];
-export const seedBeneficiaries: Beneficiary[] = [
-  { id: 'bf_gereja', name: 'Gereja', kind: 'church', note: 'Perpuluhan & persembahan' },
-  { id: 'bf_keluarga', name: 'Keluarga', kind: 'family', note: 'Orang tua & saudara' },
-  { id: 'bf_jeje', name: 'Jeje', kind: 'person', note: 'Adik — biaya kuliah' },
-  { id: 'bf_budi', name: 'Budi', kind: 'person' },
-  { id: 'bf_citra', name: 'Citra', kind: 'person' },
-  { id: 'bf_kantor', name: 'PT Sejahtera', kind: 'business', note: 'Tempat kerja' },
 ];
 export const seedReminders: Reminder[] = [
   { id: 'rm1', title: 'Bayar SPP Jeje', date: iso(2), amount: 1_250_000, done: false },

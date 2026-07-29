@@ -2,7 +2,7 @@
 import React from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { useBudgets, useDashboard } from '../application/hooks';
-import { Check, Plus } from '../components/ui/icons';
+import { Check, Plus, Warn } from '../components/ui/icons';
 
 export default function BudgetScreen() {
   const ui = useUI();
@@ -11,8 +11,11 @@ export default function BudgetScreen() {
   const { budgets: allBudgets } = useBudgets();
   const d = useDashboard();
   const activePeriodId = d.period?.id;
+  const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const budgets = activePeriodId
-    ? allBudgets.filter(budget => budget.periodId === activePeriodId)
+    ? allBudgets
+        .filter(budget => budget.periodId === activePeriodId)
+        .sort((a, b) => a.category.localeCompare(b.category, locale, { sensitivity: 'base' }))
     : [];
   const allocated = budgets.reduce((s, b) => s + b.allocated, 0);
   const spent = budgets.reduce((s, b) => s + b.spent, 0);
@@ -53,7 +56,11 @@ export default function BudgetScreen() {
       <div className="shero">
         <div className="sl">{t('budget.allocated')} · {d.period?.alias}</div>
         <div className="sa">{money.fmt(allocated)}</div>
-        <div className="sp"><Check /> {money.fmt(d.safeToSpend)} {t('budget.unallocated')}</div>
+        <div className={`sp${d.safeToSpend < 0 ? ' negative' : ''}`}>
+          {d.safeToSpend < 0 ? <Warn /> : <Check />}
+          {money.fmtSigned(d.safeToSpend)}{' '}
+          {t(d.safeToSpend < 0 ? 'budget.cashDeficit' : 'budget.unallocated')}
+        </div>
       </div>
       <div className="mini-metrics">
         <div className="m-spend"><span>{t('budget.used')}</span><b>{money.fmt(spent)}</b></div>

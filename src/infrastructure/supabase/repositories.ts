@@ -2,7 +2,6 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
-  Beneficiary,
   Budget,
   BudgetPeriod,
   Plan,
@@ -68,14 +67,15 @@ function mapTransaction(row: DbRow): Transaction {
       : [],
     merchant: row.merchant ?? undefined,
     budgetId: row.budget_id ?? undefined,
-    beneficiaryId: row.beneficiary_id ?? undefined,
+    installmentTenorMonths: row.installment_tenor_months == null
+      ? undefined
+      : amount(row.installment_tenor_months),
     settlesReceivableId: row.settles_receivable_id ?? undefined,
     adjustment: rawType === 'adjustment',
     adjustmentReason: rawType === 'adjustment' ? row.note ?? undefined : undefined,
     note: row.note ?? undefined,
-    recipient: row.beneficiary_name_snapshot ?? undefined,
+    recipient: row.recipient ?? undefined,
     isReceivable: amount(row.owed_amount_minor) > 0 || undefined,
-    beneficiary: row.beneficiary_mode ?? undefined,
     owedAmount: row.owed_amount_minor == null ? undefined : amount(row.owed_amount_minor),
     subscriptionId: row.subscription_id ?? undefined,
     savingId: row.saving_id ?? undefined,
@@ -171,16 +171,6 @@ function mapReminder(row: DbRow): Reminder {
   };
 }
 
-function mapBeneficiary(row: DbRow): Beneficiary {
-  return {
-    id: row.id,
-    name: row.name,
-    kind: row.kind,
-    note: row.note ?? undefined,
-    archived: Boolean(row.archived_at),
-  };
-}
-
 export function createSupabaseRepositories(
   supabase: SupabaseClient,
   workspaceId: string,
@@ -272,10 +262,13 @@ export function createSupabaseRepositories(
       destination_wallet_id: item.toWalletId ?? null,
       category_name: item.labels[0] ?? null,
       merchant: item.merchant ?? null,
-      budget_id: item.type === 'expense' ? item.budgetId ?? null : null,
-      beneficiary_id: item.beneficiaryId ?? null,
-      beneficiary_name: item.recipient ?? null,
-      beneficiary_mode: item.beneficiary ?? 'self',
+      budget_id: item.type === 'expense' || dbType === 'transfer'
+        ? item.budgetId ?? null
+        : null,
+      installment_tenor_months: item.type === 'expense'
+        ? item.installmentTenorMonths ?? null
+        : null,
+      recipient: item.recipient ?? null,
       owed_amount_minor: item.owedAmount ?? null,
       settles_receivable_id: item.settlesReceivableId ?? null,
       subscription_id: item.subscriptionId ?? null,
@@ -785,48 +778,6 @@ export function createSupabaseRepositories(
     },
   };
 
-  const beneficiaries: Repository<Beneficiary> = {
-    async list() {
-      const { data, error } = await supabase.from('beneficiaries').select('*')
-        .eq('workspace_id', workspaceId).order('name');
-      throwIfError(error, 'Gagal memuat pihak terkait');
-      return (data ?? []).map(mapBeneficiary);
-    },
-    async get(id) {
-      const { data, error } = await supabase.from('beneficiaries').select('*')
-        .eq('workspace_id', workspaceId).eq('id', id).maybeSingle();
-      throwIfError(error, 'Gagal memuat pihak terkait');
-      return data ? mapBeneficiary(data) : null;
-    },
-    async create(item) {
-      const { data, error } = await supabase.from('beneficiaries').insert({
-        workspace_id: workspaceId,
-        name: item.name,
-        kind: item.kind,
-        note: item.note ?? null,
-        created_by: userId,
-      }).select('*').single();
-      throwIfError(error, 'Gagal membuat pihak terkait');
-      return mapBeneficiary(data!);
-    },
-    async update(id, patch) {
-      const changes: DbRow = {};
-      if (patch.name !== undefined) changes.name = patch.name;
-      if (patch.kind !== undefined) changes.kind = patch.kind;
-      if (patch.note !== undefined) changes.note = patch.note ?? null;
-      if (patch.archived !== undefined) changes.archived_at = patch.archived ? new Date().toISOString() : null;
-      const { data, error } = await supabase.from('beneficiaries').update(changes)
-        .eq('workspace_id', workspaceId).eq('id', id).select('*').single();
-      throwIfError(error, 'Gagal memperbarui pihak terkait');
-      return mapBeneficiary(data!);
-    },
-    async remove(id) {
-      const { error } = await supabase.from('beneficiaries').update({ archived_at: new Date().toISOString() })
-        .eq('workspace_id', workspaceId).eq('id', id);
-      throwIfError(error, 'Gagal mengarsipkan pihak terkait');
-    },
-  };
-
   async function defaultAssetWalletId(explicit?: string) {
     if (explicit) return explicit;
     const { data: preference } = await supabase.from('user_workspace_preferences')
@@ -855,7 +806,7 @@ export function createSupabaseRepositories(
         occurred_at: new Date().toISOString(),
         source_wallet_id: destination,
         category_name: 'Pengembalian Piutang',
-        beneficiary_name: target.person,
+        recipient: target.person,
         settles_receivable_id: receivableId,
         note: `Pelunasan piutang ${target.person}`,
       },
@@ -873,7 +824,6 @@ export function createSupabaseRepositories(
     plans,
     savings,
     reminders,
-    beneficiaries,
     commands: {
       async closePeriod(periodId, options) {
         const { data, error } = await supabase.rpc('close_budget_period', {

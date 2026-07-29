@@ -4,6 +4,70 @@ import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
 import { useDashboard, useTransactions, useSubscriptions, useReminders, useSavings } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
+import { walletBrandInitial, walletBrandLogo } from '../core/wallet-branding';
+
+const randomScramble = (value: string, lockedDigits = 0) => {
+  let digitIndex = 0;
+  return value.replace(/\d/g, (digit) => {
+    const locked = digitIndex < lockedDigits;
+    digitIndex += 1;
+    return locked ? digit : String(Math.floor(Math.random() * 10));
+  });
+};
+
+/**
+ * Nominal mengacak digit selama data dimuat, lalu mengunci digit kiri-ke-kanan ke
+ * nilai sebenarnya. Tanda, mata uang, dan pemisah ribuan tidak ikut berubah.
+ */
+function useGlitchAmount(target: string, loadingTemplate: string, loading: boolean, enabled: boolean) {
+  const [display, setDisplay] = React.useState(target);
+  const fetchedThisMount = React.useRef(loading);
+
+  React.useEffect(() => {
+    if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      fetchedThisMount.current = false;
+      setDisplay(target);
+      return;
+    }
+
+    if (loading) {
+      fetchedThisMount.current = true;
+      setDisplay(randomScramble(loadingTemplate));
+      const interval = window.setInterval(() => {
+        setDisplay(randomScramble(loadingTemplate));
+      }, 48);
+      return () => window.clearInterval(interval);
+    }
+
+    // Data dari cache langsung ditampilkan. Fase settle hanya dijalankan bila beranda
+    // ini sebelumnya benar-benar mengalami fetch, bukan sekadar di-mount ulang.
+    if (!fetchedThisMount.current) {
+      setDisplay(target);
+      return;
+    }
+    fetchedThisMount.current = false;
+
+    const duration = 680;
+    const startedAt = performance.now();
+    const digitCount = (target.match(/\d/g) ?? []).length;
+    let timeout = 0;
+    const tick = () => {
+      const progress = Math.min(1, (performance.now() - startedAt) / duration);
+      if (progress === 1) {
+        setDisplay(target);
+        return;
+      }
+      // Sepertiga awal tetap liar; setelah itu digit menetap bertahap dari kiri.
+      const settleProgress = Math.max(0, (progress - 0.34) / 0.66);
+      setDisplay(randomScramble(target, Math.floor(settleProgress * digitCount)));
+      timeout = window.setTimeout(tick, 44);
+    };
+    tick();
+    return () => window.clearTimeout(timeout);
+  }, [enabled, loading, loadingTemplate, target]);
+
+  return display;
+}
 
 export default function HomeScreen() {
   const ui = useUI();
@@ -109,27 +173,10 @@ export default function HomeScreen() {
     return (walletCategoryRank[aMedium] ?? 99) - (walletCategoryRank[bMedium] ?? 99)
       || a.name.localeCompare(b.name, locale);
   });
-  const walletLogo = (wallet: typeof walletBalances[number]) => {
-    if (wallet.medium === 'cash') return '/brand/dompet-logo.png';
-    if (wallet.cardNetwork === 'visa') return '/brand/visa-logo.png';
-    if (wallet.cardNetwork === 'mastercard') return '/brand/martercard-logo.png';
-    if (wallet.cardNetwork === 'gpn') return '/brand/gpn-logo.png';
-    const identity = `${wallet.name} ${wallet.bank ?? ''}`.toLowerCase();
-    const known = [
-      { names: ['blu'], src: '/brand/blu-logo.png' },
-      { names: ['gopay'], src: '/brand/gopay-logo.png' },
-      { names: ['ovo'], src: '/brand/ovo-logo.png' },
-      { names: ['dana'], src: '/brand/dana-logo.png' },
-      { names: ['shopeepay', 'shopee pay'], src: '/brand/shopeepay-logo.png' },
-      { names: ['flazz'], src: '/brand/flazz-logo.png' },
-      { names: ['livin', 'mandiri'], src: '/brand/livin-mandiri-logo.png' },
-    ];
-    return known.find((logo) => logo.names.some((name) => identity.includes(name)))?.src;
-  };
   const walletTicker = (duplicate = false) => (
     <div className="home-wallet-set" aria-hidden={duplicate || undefined}>
       {walletBalances.map((wallet) => {
-        const logo = walletLogo(wallet);
+        const logo = walletBrandLogo(wallet);
         const displayBalance = wallet.kind === 'credit'
           ? wallet.balance
           : wallet.balance - reservedIn(wallet.id);
@@ -146,7 +193,7 @@ export default function HomeScreen() {
             <span className={`home-wallet-mark${logo ? ' has-image' : ''}`}>
               {logo
                 ? <img src={logo} alt="" aria-hidden="true" />
-                : wallet.name.trim().slice(0, 3).toUpperCase()}
+                : walletBrandInitial(wallet)}
             </span>
             <span className="home-wallet-copy">
               <small>{wallet.name}</small>
@@ -164,7 +211,10 @@ export default function HomeScreen() {
     return transaction.note || transaction.labels.at(-1) || 'Transaksi';
   };
   const moneyOrHidden = (value: number, compact = false) =>
-    hidden ? '••••••' : compact ? money.fmtCompact(value) : money.fmt(value);
+    hidden ? '••••••' : compact ? money.fmtCompactSigned(value) : money.fmtSigned(value);
+  const safeAmount = moneyOrHidden(d.safeToSpend);
+  const loadingSafeAmount = money.fmtSigned(d.safeToSpend || 8_888_888);
+  const safeAmountGlitch = useGlitchAmount(safeAmount, loadingSafeAmount, d.loading, !hidden);
   const highlights = [
     {
       value: hidden ? '••••' : signed(todayNet),
@@ -205,7 +255,12 @@ export default function HomeScreen() {
       <div className="shero home-hero">
         <div className="sl">{tr('home.safeToSpend')}</div>
         <div className="sa-wrap">
-          <div className="sa">{moneyOrHidden(d.safeToSpend)}</div>
+          <div
+            className={`sa${d.safeToSpend < 0 ? ' negative' : ''}`}
+            aria-label={hidden ? 'Nominal disembunyikan' : safeAmount}
+          >
+            <span aria-hidden="true">{safeAmountGlitch}</span>
+          </div>
           <button
             className={`hero-eye${hidden ? ' on' : ''}`}
             onClick={() => ui.setPref('hideHomeAmounts', !hidden)}

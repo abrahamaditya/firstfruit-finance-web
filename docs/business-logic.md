@@ -28,7 +28,7 @@ Konvensi umum:
 
 ### Dompet default
 
-Preferensi `defaultWalletId` (Profil → Uang & pihak terkait). Dipakai untuk:
+Preferensi `defaultWalletId` (Profil → Uang). Dipakai untuk:
 
 1. isian awal `walletId` pada form transaksi;
 2. tujuan pemindahan saldo saat sebuah dompet dihapus.
@@ -68,25 +68,22 @@ menyesuaikan pilihan ini; berganti jenis mengosongkan field khusus jenis sebelum
 | `toWalletId` | — | — | ✔ ke dompet |
 | Kategori 3 tingkat | ✔ (pohon pengeluaran) | ✔ (pohon pemasukan) | — |
 | `merchant` (tempat) | ✔ | ✔ | — |
-| `budgetId` | ✔ | — | — |
-| `beneficiaryId` (pihak terkait) | ✔ | ✔ | — |
+| `budgetId` | ✔ | — | ✔ |
 | `settlesReceivableId` | — | ✔ | — |
 | `savingId` (sisihkan) | — | — | ✔ |
-| `beneficiary` (self/gift/lent/shared) | ✔ | — | — |
 | `nature` | terencana / tak terduga | rutin / tidak rutin | selalu `fixed` |
 
 ### Efek samping saat CREATE
 
 | Kondisi | Efek |
 | --- | --- |
-| `beneficiary = lent` | Piutang dibuat sebesar **seluruh** nominal. |
-| `beneficiary = shared` | Piutang dibuat sebesar `owed` (default separuh, dibatasi maksimal nominal transaksi). |
-| `beneficiary = gift` | Tidak ada piutang; hanya penanda penerima. |
-| `budgetId` terisi | `budget.spent += amount`. |
+| Expense dengan pilar `Piutang` | Piutang dibuat sebesar **seluruh** nominal untuk nama pengutang yang diisi. |
+| `budgetId` terisi pada expense/transfer biasa | `budget.spent += amount`. Transfer tetap netral terhadap total likuiditas. |
+| Transfer pembayaran kartu kredit | Tidak menerima `budgetId`; hanya mengurangi saldo rekening dan tagihan kartu tanpa realisasi anggaran baru. |
+| Expense kartu + tenor cicilan | Tenor 2–120 bulan disimpan sebagai metadata; nominal transaksi dan realisasi anggaran tetap memakai jumlah yang dicatat. |
 | `settlesReceivableId` terisi | `receivable.paid += amount`; lunas bila `paid ≥ amount`. |
 | Pemasukan tanpa pilihan piutang | Dicocokkan otomatis bila **nama pihak sama persis** dan **sisa piutang == nominal**. |
 | Transfer + `savingId` | `saving.balance += amount` (tabungan harus berada di dompet tujuan). |
-| Pihak baru diketik di form | `Beneficiary` baru dibuat, lalu id-nya dipakai transaksi itu. |
 
 ### Kategori
 
@@ -122,7 +119,10 @@ Aturannya:
 - Tabungan adalah **earmark**, bukan dompet: uangnya tetap berada di `walletId`, saldo dompet
   tidak berubah.
 - Saldo tersedia sebuah dompet = `wallet.balance − Σ(tabungan aktif di dompet itu)`.
-- `safeToSpend = likuiditas − Σ(alokasi anggaran) − Σ(tabungan)`.
+- `safeToSpend = likuiditas − Σ(max(alokasi − realisasi, 0)) − Σ(tabungan)`.
+  Saldo dompet sudah mencerminkan transaksi, jadi hanya sisa anggaran yang dikurangkan
+  agar pengeluaran beranggaran tidak dihitung dua kali. Hasil tidak dijepit ke nol:
+  nilai negatif ditampilkan sebagai defisit arus kas bebas.
 - Aksi **Sisihkan** dibatasi saldo tersedia; aksi **Ambil** dibatasi saldo tabungan itu sendiri.
 
 ---
@@ -158,6 +158,9 @@ Aturannya:
 - `monthlyCost` menormalkan siklus ke bulanan (mingguan ×52/12, kuartalan ÷3, tahunan ÷12).
 - Pengingat aktif bila `0 ≤ hari menuju tagihan ≤ reminderDaysBefore` dan status `active`.
 - "Akan berakhir" bila `endDate` ada dan tinggal ≤14 hari.
+- Kategori langganan memakai pilar dan sub-kategori pengeluaran yang sama dengan form
+  transaksi (`PILLAR_EXPENSE_TREE`); nilai terdalam yang dipilih disimpan. Kategori lama
+  tetap ditampilkan saat edit sampai pengguna memilih nilai dari taksonomi baru.
 - `billingDatesInRange` menghitung tanggal tagihan di rentang tampilan kalender: ditarik mundur
   dari `nextBillingDate` (tidak melewati `startDate`) lalu maju sampai batas rentang atau `endDate`.
 
@@ -172,7 +175,30 @@ Aturannya:
 
 ---
 
-## 9. Rencana keuangan (`planning.ts`)
+## 9. Laporan & insight
+
+- Rentang **Periode aktif** memakai `start`–`end` periode berstatus `open`, termasuk
+  periode yang dimulai tanggal 28; `draft` tidak dianggap periode aktif.
+- Metrik pemasukan, pengeluaran, kategori, dan laporan harian mengecualikan transaksi
+  penyesuaian. Transfer juga tidak menjadi pemasukan/pengeluaran karena netral terhadap kas.
+- Tren saldo direkonstruksi dari likuiditas aktual (`debit − liabilitas kartu`) dan delta
+  transaksi. Penyesuaian ikut mengubah tren; transfer, termasuk pembayaran kartu, berdelta 0.
+  Belanja kartu tetap menurunkan likuiditas pada tanggal transaksi sebesar nominal penuh.
+- Rata-rata harian membagi total belanja dengan seluruh hari kalender dalam rentang, bukan
+  hanya hari yang memiliki transaksi. Persentase kategori memakai seluruh pengeluaran
+  sebagai penyebut, termasuk kategori di luar delapan teratas.
+- Insight transaksi mengikuti rentang terpilih dan merangkum pengeluaran terbesar,
+  rata-rata per transaksi, hari belanja tertinggi, porsi kartu kredit, serta jumlah dan
+  nominal transaksi cicilan.
+- Total anggaran selalu merujuk ke periode aktif dan menampilkan alokasi, persentase
+  realisasi, serta sisa yang boleh bernilai negatif. Analisis kategori membandingkan
+  setiap kategori dengan rentang sebelumnya yang berdurasi sama, selain menampilkan
+  porsi pengeluaran, jumlah transaksi, dan rata-rata nominalnya. Laporan memakai tingkat
+  kategori menengah; label spesifik otomatis digabungkan ke kategori induknya.
+
+---
+
+## 10. Rencana keuangan (`planning.ts`)
 
 Konteks angka (`usePlanningContext`):
 
@@ -193,7 +219,7 @@ Semua metode **murni simulasi** — tidak menulis data apa pun.
 
 ---
 
-## 10. Periode & tutup buku
+## 11. Periode & tutup buku
 
 - Hanya satu periode berstatus terbuka (`closed: false`) yang dianggap aktif.
 - Menutup periode: periode berjalan diberi `closed: true`, lalu periode baru dibuat mulai
@@ -203,7 +229,7 @@ Semua metode **murni simulasi** — tidak menulis data apa pun.
 
 ---
 
-## 11. Notifikasi
+## 12. Notifikasi
 
 Dibangun dari data nyata setiap kali data berubah:
 
@@ -219,11 +245,3 @@ di tabel `notifications`; membuka panel lonceng **tidak** menandai apa pun. Peru
 baca tersinkron realtime dan lonceng menampilkan jumlah yang belum dibaca.
 
 ---
-
-## 12. Pihak terkait (Beneficiary)
-
-- Jenis: `person`, `family`, `church`, `organization`, `business`.
-- Dipakai di transaksi lewat `beneficiaryId`; nama yang tersimpan di transaksi (`recipient`)
-  diambil dari pihak terpilih agar penamaan konsisten.
-- Bisa dibuat langsung dari form transaksi tanpa pindah layar.
-- Layar Pihak Terkait merekap jumlah transaksi serta total masuk/keluar per pihak.

@@ -2,10 +2,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import {
-  Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary,
+  Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder,
 } from '../core/domain/types';
 import {
-  totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet,
+  totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet, remainingBudget,
   totalReserved, reservedInWallet,
 } from '../core/domain/calculations';
 import {
@@ -118,13 +118,20 @@ export function useSavings() {
   };
 }
 
+// Hanya periode berstatus open yang aktif. Draft adalah periode berikutnya yang belum
+// berjalan, sedangkan fallback tanpa status dipertahankan untuk record lama.
+function findActivePeriod(periods: BudgetPeriod[]) {
+  return periods.find(period => period.status === 'open')
+    ?? periods.find(period => period.status == null && !period.closed);
+}
+
 /** Dashboard view-model: composes wallets + budgets + period into the home screen data. */
 export function useDashboard() {
-  const { wallets, liquidity } = useWallets();
-  const { raw: budgets } = useBudgets();
-  const { reserved } = useSavings();
-  const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
-  const period = periods.find(item => !item.closed) ?? periods[0];
+  const { wallets, liquidity, loading: walletsLoading } = useWallets();
+  const { raw: budgets, loading: budgetsLoading } = useBudgets();
+  const { reserved, loading: savingsLoading } = useSavings();
+  const { data: periods, loading: periodsLoading } = useCollection<BudgetPeriod>(r => r.periods);
+  const period = findActivePeriod(periods);
   const periodBudgets = period
     ? budgets.filter(budget => budget.periodId === period.id)
     : [];
@@ -132,12 +139,13 @@ export function useDashboard() {
     liquidity,
     reserved,
     // Dipakai beranda untuk menjabarkan asal angka "aman dibelanjakan".
-    allocated: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),
+    allocated: remainingBudget(periodBudgets),
     safeToSpend: safeToSpend(liquidity, periodBudgets, reserved),
     period,
     progress: period ? periodProgress(period) : null,
     netSurplus: periodNet(liquidity, periodBudgets),
     wallets,
+    loading: walletsLoading || budgetsLoading || savingsLoading || periodsLoading,
   };
 }
 
@@ -175,7 +183,7 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
   const { reminders } = useReminders();
   const { total: receivableTotal } = useReceivables();
   const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
-  const period = periods.find(item => !item.closed) ?? periods[0];
+  const period = findActivePeriod(periods);
   const progress = period ? periodProgress(period) : null;
   const periodBudgets = period
     ? budgets.filter(budget => budget.periodId === period.id)
@@ -206,24 +214,11 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
   };
 }
 
-/** Daftar pihak terkait (gereja, keluarga, orang) untuk dipakai di transaksi. */
-export function useBeneficiaries() {
-  const { data, loading, reload } = useCollection<Beneficiary>(r => r.beneficiaries);
-  const active = data.filter(entry => !entry.archived);
-  return {
-    beneficiaries: [...active].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)),
-    all: data,
-    nameOf: (id?: string) => (id ? data.find(entry => entry.id === id)?.name : undefined),
-    loading,
-    reload,
-  };
-}
-
 /** Daftar periode anggaran, terbaru dulu. */
 export function usePeriods(version = 0) {
   const { data, loading, reload } = useCollection<BudgetPeriod>(r => r.periods, version);
   const sorted = [...data].sort((a, b) => +new Date(b.start) - +new Date(a.start));
-  return { periods: sorted, active: sorted.find(p => !p.closed), loading, reload };
+  return { periods: sorted, active: findActivePeriod(sorted), loading, reload };
 }
 
 export interface PeriodReport {
@@ -255,13 +250,16 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
   const { periods, loading: periodsLoading } = usePeriods();
   const { data: transactions, loading: txLoading } = useTransactions();
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
-  const { liquidity } = useWallets();
-  const { reserved } = useSavings();
+  const { liquidity, loading: walletsLoading } = useWallets();
+  const { reserved, loading: savingsLoading } = useSavings();
 
   const period = periods.find(item => item.id === periodId)
-    ?? periods.find(item => !item.closed)
+    ?? findActivePeriod(periods)
     ?? periods[0];
-  const isActive = Boolean(period && !period.closed);
+  const isActive = Boolean(
+    period
+    && (period.status === 'open' || (period.status == null && !period.closed)),
+  );
 
   const from = period ? +new Date(period.start) : 0;
   const to = period ? +new Date(period.end) : 0;
@@ -305,7 +303,7 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
     liquidity,
     reserved,
     safeToSpend: safeToSpend(liquidity, periodBudgets, reserved),
-    loading: periodsLoading || txLoading || budgetsLoading,
+    loading: periodsLoading || txLoading || budgetsLoading || walletsLoading || savingsLoading,
   };
 }
 

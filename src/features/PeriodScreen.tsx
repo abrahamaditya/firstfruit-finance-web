@@ -90,7 +90,7 @@ export default function PeriodScreen() {
               ? t('planning.draft')
               : report.isActive ? t('closing.statusActive') : t('closing.statusClosed')}
           </span>
-          <strong>{money.fmt(report.net)}</strong>
+          <strong>{money.fmtSigned(report.net)}</strong>
           <small>
             {t('period.netCashflow')} · {range(current.start, current.end)}
           </small>
@@ -113,7 +113,7 @@ export default function PeriodScreen() {
         </div>
         <div className={`metric-card m-net${report.net < 0 ? ' negative-net' : ''}`}>
           <span>{t('reports.netCashflow')}</span>
-          <b>{money.fmtCompact(report.net)}</b>
+          <b>{money.fmtCompactSigned(report.net)}</b>
           <small>{t('reports.afterExpense')}</small>
         </div>
       </div>
@@ -122,9 +122,14 @@ export default function PeriodScreen() {
       {report.isActive && (
         <div className="brk-card">
           <div className="brk-cells">
-            <div><span>{t('home.liquidity')}</span><b>{money.fmtCompact(report.liquidity)}</b></div>
+            <div><span>{t('home.liquidity')}</span><b>{money.fmtCompactSigned(report.liquidity)}</b></div>
             <div><span>{t('home.inSavings')}</span><b>{report.reserved > 0 ? '−' : ''}{money.fmtCompact(report.reserved)}</b></div>
-            <div><span>{t('home.safeToSpend')}</span><b>{money.fmtCompact(report.safeToSpend)}</b></div>
+            <div>
+              <span>{t('home.safeToSpend')}</span>
+              <b className={report.safeToSpend < 0 ? 'negative' : undefined}>
+                {money.fmtCompactSigned(report.safeToSpend)}
+              </b>
+            </div>
           </div>
           {report.progress && (
             <div className="card-foot">
@@ -199,7 +204,9 @@ export default function PeriodScreen() {
                 <div>
                   <span className="step-number"><Check /></span>
                   <p><b>{t('closing.computeSurplus')}</b><small>{t('closing.computeSurplusDesc')}</small></p>
-                  <strong>{money.fmt(report.safeToSpend)}</strong>
+                  <strong className={report.safeToSpend < 0 ? 'negative' : undefined}>
+                    {money.fmtSigned(report.safeToSpend)}
+                  </strong>
                 </div>
               </div>
 

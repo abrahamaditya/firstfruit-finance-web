@@ -6,9 +6,6 @@ export type WalletMedium = 'bank' | 'ewallet' | 'cash' | 'credit';
 export type CardNetwork = 'visa' | 'mastercard' | 'gpn';
 export type TxType = 'expense' | 'income' | 'transfer';
 export type TxNature = 'fixed' | 'unexpected';
-// Untuk siapa pengeluaran ini: diri sendiri, memberi (hadiah, tak kembali),
-// ditalangin (piutang penuh), atau patungan (piutang sebagian).
-export type TxBeneficiary = 'self' | 'gift' | 'lent' | 'shared';
 export type BillingCycle = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
 export type SubStatus = 'active' | 'paused' | 'cancelled' | 'ended';
 export type PlanStatus = 'draft' | 'active' | 'done';
@@ -25,17 +22,16 @@ export interface Transaction {
   id: string; type: TxType; nature: TxNature; amount: number;
   walletId: string; toWalletId?: string; labels: string[];
   merchant?: string;            // tempat transaksi: Indomaret, Shopee, kaki lima, …
-  budgetId?: string;            // anggaran yang dibebani pengeluaran ini
+  budgetId?: string;            // realisasi expense/transfer biasa; bukan pembayaran kartu
+  installmentTenorMonths?: number; // transaksi kartu kredit dicicil selama N bulan
   savingId?: string;            // transfer ini sekaligus menyisihkan dana ke tabungan
   settlesReceivableId?: string; // pemasukan ini adalah pelunasan piutang tertentu
-  beneficiaryId?: string;       // pihak terkait dari daftar penerima
   // Transaksi yang lahir dari perubahan saldo manual / penghapusan dompet, bukan
   // dari belanja nyata. Ditandai agar bisa dikecualikan dari analisa perilaku.
   adjustment?: boolean;
   adjustmentReason?: string;
   note?: string; recipient?: string; isReceivable?: boolean;
-  beneficiary?: TxBeneficiary;  // default 'self'; menentukan apakah jadi piutang
-  owedAmount?: number;          // porsi yang ditagih balik (lent = penuh, shared = sebagian)
+  owedAmount?: number;          // nominal transaksi yang menjadi piutang
   subscriptionId?: string; date: string;
 }
 // `periodId` menempelkan anggaran pada satu periode — dipakai laporan periode agar
@@ -68,13 +64,6 @@ export interface Saving {
   target?: number; targetDate?: string; emoji?: string; archived?: boolean;
 }
 export interface Plan { id: string; title: string; target: number; saved: number; targetDate?: string; status: PlanStatus; }
-// Pihak yang berhubungan dengan transaksi: lembaga (gereja, yayasan), kelompok
-// (keluarga), atau orang tertentu. Dipakai ulang agar penamaannya konsisten.
-export type BeneficiaryKind = 'person' | 'family' | 'organization' | 'church' | 'business';
-export interface Beneficiary {
-  id: string; name: string; kind: BeneficiaryKind; note?: string; archived?: boolean;
-}
-
 // Pengingat / to-do berbasis tanggal yang tampil di kalender bersama jatuh tempo langganan.
 export interface Reminder {
   id: string; title: string; date: string; note?: string; done: boolean;

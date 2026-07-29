@@ -65,66 +65,6 @@ export type Database = {
           },
         ]
       }
-      beneficiaries: {
-        Row: {
-          archived_at: string | null
-          card_network: string | null
-          created_at: string
-          created_by: string
-          id: string
-          kind: Database["public"]["Enums"]["beneficiary_kind"]
-          name: string
-          normalized_name: string | null
-          note: string | null
-          updated_at: string
-          version: number
-          workspace_id: string
-        }
-        Insert: {
-          archived_at?: string | null
-          card_network?: string | null
-          created_at?: string
-          created_by: string
-          id?: string
-          kind: Database["public"]["Enums"]["beneficiary_kind"]
-          name: string
-          normalized_name?: string | null
-          note?: string | null
-          updated_at?: string
-          version?: number
-          workspace_id: string
-        }
-        Update: {
-          archived_at?: string | null
-          card_network?: string | null
-          created_at?: string
-          created_by?: string
-          id?: string
-          kind?: Database["public"]["Enums"]["beneficiary_kind"]
-          name?: string
-          normalized_name?: string | null
-          note?: string | null
-          updated_at?: string
-          version?: number
-          workspace_id?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "beneficiaries_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "v_dashboard_summary"
-            referencedColumns: ["workspace_id"]
-          },
-          {
-            foreignKeyName: "beneficiaries_workspace_id_fkey"
-            columns: ["workspace_id"]
-            isOneToOne: false
-            referencedRelation: "workspaces"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       budget_periods: {
         Row: {
           alias: string
@@ -799,7 +739,6 @@ export type Database = {
       }
       receivables: {
         Row: {
-          beneficiary_id: string | null
           created_at: string
           created_by: string
           due_date: string | null
@@ -814,7 +753,6 @@ export type Database = {
           workspace_id: string
         }
         Insert: {
-          beneficiary_id?: string | null
           created_at?: string
           created_by: string
           due_date?: string | null
@@ -829,7 +767,6 @@ export type Database = {
           workspace_id: string
         }
         Update: {
-          beneficiary_id?: string | null
           created_at?: string
           created_by?: string
           due_date?: string | null
@@ -844,13 +781,6 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "receivables_beneficiary_fk"
-            columns: ["workspace_id", "beneficiary_id"]
-            isOneToOne: false
-            referencedRelation: "beneficiaries"
-            referencedColumns: ["workspace_id", "id"]
-          },
           {
             foreignKeyName: "receivables_source_transaction_id_fkey"
             columns: ["source_transaction_id"]
@@ -1204,7 +1134,6 @@ export type Database = {
       }
       split_participants: {
         Row: {
-          beneficiary_id: string | null
           color: string | null
           created_at: string
           id: string
@@ -1213,7 +1142,6 @@ export type Database = {
           split_bill_id: string
         }
         Insert: {
-          beneficiary_id?: string | null
           color?: string | null
           created_at?: string
           id?: string
@@ -1222,7 +1150,6 @@ export type Database = {
           split_bill_id: string
         }
         Update: {
-          beneficiary_id?: string | null
           color?: string | null
           created_at?: string
           id?: string
@@ -1231,13 +1158,6 @@ export type Database = {
           split_bill_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "split_participants_beneficiary_id_fkey"
-            columns: ["beneficiary_id"]
-            isOneToOne: false
-            referencedRelation: "beneficiaries"
-            referencedColumns: ["id"]
-          },
           {
             foreignKeyName: "split_participants_split_bill_id_fkey"
             columns: ["split_bill_id"]
@@ -1625,10 +1545,59 @@ export type Database = {
           },
         ]
       }
+      transaction_installments: {
+        Row: {
+          created_at: string
+          tenor_months: number
+          transaction_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          tenor_months: number
+          transaction_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          tenor_months?: number
+          transaction_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "transaction_installments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: true
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transaction_installments_transaction_id_fkey"
+            columns: ["transaction_id"]
+            isOneToOne: true
+            referencedRelation: "v_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "transaction_installments_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_summary"
+            referencedColumns: ["workspace_id"]
+          },
+          {
+            foreignKeyName: "transaction_installments_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       transaction_lines: {
         Row: {
           amount_minor: number
-          beneficiary_id: string | null
           category_id: string | null
           created_at: string
           id: string
@@ -1640,7 +1609,6 @@ export type Database = {
         }
         Insert: {
           amount_minor: number
-          beneficiary_id?: string | null
           category_id?: string | null
           created_at?: string
           id?: string
@@ -1652,7 +1620,6 @@ export type Database = {
         }
         Update: {
           amount_minor?: number
-          beneficiary_id?: string | null
           category_id?: string | null
           created_at?: string
           id?: string
@@ -1669,13 +1636,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "ledger_accounts"
             referencedColumns: ["workspace_id", "id"]
-          },
-          {
-            foreignKeyName: "transaction_lines_beneficiary_id_fkey"
-            columns: ["beneficiary_id"]
-            isOneToOne: false
-            referencedRelation: "beneficiaries"
-            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "transaction_lines_category_id_fkey"
@@ -1717,9 +1677,6 @@ export type Database = {
       transactions: {
         Row: {
           amount_minor: number
-          beneficiary_id: string | null
-          beneficiary_mode: Database["public"]["Enums"]["beneficiary_mode"]
-          beneficiary_name_snapshot: string | null
           category_id: string | null
           category_name_snapshot: string | null
           created_at: string
@@ -1733,19 +1690,18 @@ export type Database = {
           occurred_at: string
           owed_amount_minor: number | null
           period_id: string
+          recipient: string | null
           replaced_by_id: string | null
           reversal_of_id: string | null
           split_bill_id: string | null
           status: Database["public"]["Enums"]["transaction_status"]
           subscription_id: string | null
           type: Database["public"]["Enums"]["transaction_type"]
+          visible_in_feed: boolean
           workspace_id: string
         }
         Insert: {
           amount_minor: number
-          beneficiary_id?: string | null
-          beneficiary_mode?: Database["public"]["Enums"]["beneficiary_mode"]
-          beneficiary_name_snapshot?: string | null
           category_id?: string | null
           category_name_snapshot?: string | null
           created_at?: string
@@ -1759,19 +1715,18 @@ export type Database = {
           occurred_at: string
           owed_amount_minor?: number | null
           period_id: string
+          recipient?: string | null
           replaced_by_id?: string | null
           reversal_of_id?: string | null
           split_bill_id?: string | null
           status?: Database["public"]["Enums"]["transaction_status"]
           subscription_id?: string | null
           type: Database["public"]["Enums"]["transaction_type"]
+          visible_in_feed?: boolean
           workspace_id: string
         }
         Update: {
           amount_minor?: number
-          beneficiary_id?: string | null
-          beneficiary_mode?: Database["public"]["Enums"]["beneficiary_mode"]
-          beneficiary_name_snapshot?: string | null
           category_id?: string | null
           category_name_snapshot?: string | null
           created_at?: string
@@ -1785,22 +1740,17 @@ export type Database = {
           occurred_at?: string
           owed_amount_minor?: number | null
           period_id?: string
+          recipient?: string | null
           replaced_by_id?: string | null
           reversal_of_id?: string | null
           split_bill_id?: string | null
           status?: Database["public"]["Enums"]["transaction_status"]
           subscription_id?: string | null
           type?: Database["public"]["Enums"]["transaction_type"]
+          visible_in_feed?: boolean
           workspace_id?: string
         }
         Relationships: [
-          {
-            foreignKeyName: "transactions_beneficiary_fk"
-            columns: ["workspace_id", "beneficiary_id"]
-            isOneToOne: false
-            referencedRelation: "beneficiaries"
-            referencedColumns: ["workspace_id", "id"]
-          },
           {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
@@ -1940,6 +1890,7 @@ export type Database = {
       wallets: {
         Row: {
           archived_at: string | null
+          card_network: string | null
           created_at: string
           created_by: string
           credit_limit_minor: number | null
@@ -1958,6 +1909,7 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          card_network?: string | null
           created_at?: string
           created_by: string
           credit_limit_minor?: number | null
@@ -1976,6 +1928,7 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          card_network?: string | null
           created_at?: string
           created_by?: string
           credit_limit_minor?: number | null
@@ -2205,7 +2158,6 @@ export type Database = {
       }
       v_receivable_balances: {
         Row: {
-          beneficiary_id: string | null
           created_at: string | null
           created_by: string | null
           due_date: string | null
@@ -2225,13 +2177,6 @@ export type Database = {
           workspace_id: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "receivables_beneficiary_fk"
-            columns: ["workspace_id", "beneficiary_id"]
-            isOneToOne: false
-            referencedRelation: "beneficiaries"
-            referencedColumns: ["workspace_id", "id"]
-          },
           {
             foreignKeyName: "receivables_source_transaction_id_fkey"
             columns: ["source_transaction_id"]
@@ -2266,11 +2211,6 @@ export type Database = {
         Row: {
           adjustment_effect: string | null
           amount_minor: number | null
-          beneficiary_id: string | null
-          beneficiary_mode:
-            | Database["public"]["Enums"]["beneficiary_mode"]
-            | null
-          beneficiary_name_snapshot: string | null
           budget_id: string | null
           category_id: string | null
           category_name: string | null
@@ -2278,12 +2218,14 @@ export type Database = {
           created_by: string | null
           currency_code: string | null
           id: string | null
+          installment_tenor_months: number | null
           merchant: string | null
           nature: Database["public"]["Enums"]["transaction_nature"] | null
           note: string | null
           occurred_at: string | null
           owed_amount_minor: number | null
           period_id: string | null
+          recipient: string | null
           replaced_by_id: string | null
           reversal_of_id: string | null
           saving_id: string | null
@@ -2297,13 +2239,6 @@ export type Database = {
           workspace_id: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "transactions_beneficiary_fk"
-            columns: ["workspace_id", "beneficiary_id"]
-            isOneToOne: false
-            referencedRelation: "beneficiaries"
-            referencedColumns: ["workspace_id", "id"]
-          },
           {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
@@ -2398,6 +2333,7 @@ export type Database = {
       create_manual_receivable: { Args: { p_payload: Json }; Returns: string }
       create_saving_goal: { Args: { p_payload: Json }; Returns: string }
       create_wallet: { Args: { p_payload: Json }; Returns: string }
+      create_wallet_with_network: { Args: { p_payload: Json }; Returns: string }
       create_workspace: { Args: { p_payload: Json }; Returns: string }
       ensure_user_bootstrap: { Args: never; Returns: string }
       finalize_split_bill: { Args: { p_payload: Json }; Returns: string }
@@ -2421,23 +2357,21 @@ export type Database = {
       }
       replace_transaction: { Args: { p_payload: Json }; Returns: string }
       reverse_transaction: { Args: { p_payload: Json }; Returns: string }
+      sync_budget_allocations: {
+        Args: { p_period_id: string; p_workspace_id: string }
+        Returns: undefined
+      }
       transfer_workspace_ownership: {
         Args: { p_new_owner_id: string; p_workspace_id: string }
         Returns: undefined
       }
       update_saving_goal: { Args: { p_payload: Json }; Returns: string }
       update_wallet: { Args: { p_payload: Json }; Returns: string }
+      update_wallet_with_network: { Args: { p_payload: Json }; Returns: string }
       update_workspace_settings: { Args: { p_payload: Json }; Returns: string }
       write_off_receivable: { Args: { p_payload: Json }; Returns: string }
     }
     Enums: {
-      beneficiary_kind:
-        | "person"
-        | "family"
-        | "church"
-        | "organization"
-        | "business"
-      beneficiary_mode: "self" | "gift" | "lent" | "shared"
       billing_cycle: "weekly" | "monthly" | "quarterly" | "yearly" | "custom"
       flow_type: "expense" | "income"
       ledger_account_class:
@@ -2612,14 +2546,6 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      beneficiary_kind: [
-        "person",
-        "family",
-        "church",
-        "organization",
-        "business",
-      ],
-      beneficiary_mode: ["self", "gift", "lent", "shared"],
       billing_cycle: ["weekly", "monthly", "quarterly", "yearly", "custom"],
       flow_type: ["expense", "income"],
       ledger_account_class: [

@@ -33,8 +33,12 @@ export function budgetView(b: Budget): BudgetView {
   const velocity = b.allocated > 0 ? b.spent / b.allocated : 0;
   return { ...b, velocity, over: b.spent > b.allocated, remaining: b.allocated - b.spent };
 }
+/** Komitmen anggaran yang belum terealisasi; transaksi yang sudah terjadi ada di saldo. */
+export function remainingBudget(budgets: Budget[]): number {
+  return budgets.reduce((sum, budget) => sum + Math.max(0, budget.allocated - budget.spent), 0);
+}
 export function safeToSpend(liquidity: number, budgets: Budget[], reserved = 0): number {
-  return liquidity - budgets.reduce((s, b) => s + b.allocated, 0) - reserved;
+  return liquidity - remainingBudget(budgets) - reserved;
 }
 
 const DAY_MS = 86_400_000;

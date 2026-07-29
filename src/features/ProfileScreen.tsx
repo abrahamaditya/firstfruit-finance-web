@@ -134,11 +134,6 @@ export default function ProfileScreen() {
             ))}
           </select>
         </div>
-        <button className="set set-button" onClick={() => ui.go('people')}>
-          <div className="si"><User /></div>
-          <div className="sl">{tr('profile.people')}</div>
-          <ChevronR />
-        </button>
       </div>
       <p className="fx-note">{tr('profile.defaultWalletNote')}</p>
 
