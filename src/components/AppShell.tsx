@@ -2443,11 +2443,6 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                                     aria-selected={option.value === (form[field.key] || '')}
                                     className={option.value === (form[field.key] || '') ? 'on' : ''}
                                     key={option.value || `${field.key}-empty`}
-                                    onPointerDown={(event) => {
-                                      event.preventDefault();
-                                      setForm(applyFieldChange(form, field.key, option.value));
-                                      setOpenSuggest(null);
-                                    }}
                                     onClick={() => {
                                       setForm(applyFieldChange(form, field.key, option.value));
                                       setOpenSuggest(null);
