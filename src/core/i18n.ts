@@ -170,8 +170,8 @@ const D: Record<string, Entry> = {
   'tx.adjustment': { id: 'penyesuaian', en: 'adjustment' },
   'tx.filterAllCategories': { id: 'Semua kategori', en: 'All categories' },
   'tx.unexpected': { id: 'Tak terduga', en: 'Unexpected' },
-  'tx.today': { id: 'HARI INI', en: 'TODAY' },
-  'tx.yesterday': { id: 'KEMARIN', en: 'YESTERDAY' },
+  'tx.today': { id: 'Hari ini', en: 'Today' },
+  'tx.yesterday': { id: 'Kemarin', en: 'Yesterday' },
   'tx.emptyTitle': { id: 'Transaksi tidak ditemukan', en: 'No transactions found' },
   'tx.emptyBody': { id: 'Coba kata kunci atau filter lain.', en: 'Try another keyword or filter.' },
 

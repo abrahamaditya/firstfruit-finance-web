@@ -985,7 +985,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .custom-select-trigger>svg{width:17px;height:17px;flex:0 0 auto;stroke:var(--ink-soft);fill:none;
   stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
 .custom-select.open .custom-select-trigger>svg{transform:rotate(180deg)}
-.custom-select-list{z-index:20}
+.custom-select-list{z-index:20;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .custom-select-group+.custom-select-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
 .custom-select-group-label{padding:8px 12px 5px;color:var(--ink-faint);font-size:10px;font-weight:800;
   letter-spacing:.06em;text-transform:uppercase}

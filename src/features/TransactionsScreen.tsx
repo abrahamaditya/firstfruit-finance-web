@@ -26,8 +26,12 @@ export default function TransactionsScreen() {
     const date = new Date(iso);
     const now = new Date();
     const diff = Math.round((+new Date(now.toDateString()) - +new Date(date.toDateString())) / 86_400_000);
-    const formatted = date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
-    return `${diff === 0 ? tr('tx.today') + ' · ' : diff === 1 ? tr('tx.yesterday') + ' · ' : ''}${formatted}`;
+    const formatted = date.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    return `${diff === 0 ? tr('tx.today') + ' - ' : diff === 1 ? tr('tx.yesterday') + ' - ' : ''}${formatted}`;
   };
   const formatAmount = (type: string, amount: number) =>
     `${type === 'income' ? '+' : type === 'expense' ? '-' : ''}${money.fmt(amount)}`;
@@ -106,7 +110,7 @@ export default function TransactionsScreen() {
 
       {Object.entries(groups).map(([day, items]) => (
         <React.Fragment key={day}>
-          <div className="tx-day">{day.toUpperCase()}</div>
+          <div className="tx-day">{day}</div>
           {items.map((transaction) => {
             const sourceWallet = walletById.get(transaction.walletId);
             const destinationWallet = transaction.toWalletId

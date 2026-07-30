@@ -578,6 +578,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [rateUpdated, setRateUpdated] = useState('');
   const appRef = useRef<HTMLDivElement>(null);
   const formScrollRef = useRef<HTMLDivElement>(null);
+  const selectGestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dragged: boolean;
+  } | null>(null);
+  const suppressSelectClickRef = useRef(false);
 
   // Sheet tetap terpasang ketika ditutup agar animasinya halus. Karena itu browser
   // juga mempertahankan posisi scroll dan fokus terakhirnya. Setiap pembukaan harus
@@ -2443,7 +2450,51 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                                     aria-selected={option.value === (form[field.key] || '')}
                                     className={option.value === (form[field.key] || '') ? 'on' : ''}
                                     key={option.value || `${field.key}-empty`}
+                                    onPointerDown={(event) => {
+                                      if (event.pointerType === 'mouse') return;
+                                      selectGestureRef.current = {
+                                        pointerId: event.pointerId,
+                                        startX: event.clientX,
+                                        startY: event.clientY,
+                                        dragged: false,
+                                      };
+                                    }}
+                                    onPointerMove={(event) => {
+                                      const gesture = selectGestureRef.current;
+                                      if (!gesture || gesture.pointerId !== event.pointerId) return;
+                                      if (
+                                        Math.hypot(
+                                          event.clientX - gesture.startX,
+                                          event.clientY - gesture.startY,
+                                        ) > 8
+                                      ) {
+                                        gesture.dragged = true;
+                                      }
+                                    }}
+                                    onPointerCancel={(event) => {
+                                      if (selectGestureRef.current?.pointerId === event.pointerId) {
+                                        selectGestureRef.current = null;
+                                      }
+                                    }}
+                                    onPointerUp={(event) => {
+                                      if (event.pointerType === 'mouse') return;
+                                      const gesture = selectGestureRef.current;
+                                      selectGestureRef.current = null;
+                                      if (!gesture || gesture.pointerId !== event.pointerId) return;
+
+                                      // Abaikan click sintetis setelah pointerup. Tap diproses di sini,
+                                      // sedangkan drag dibiarkan sepenuhnya untuk menggulir daftar.
+                                      suppressSelectClickRef.current = true;
+                                      window.setTimeout(() => {
+                                        suppressSelectClickRef.current = false;
+                                      }, 0);
+                                      if (gesture.dragged) return;
+
+                                      setForm(applyFieldChange(form, field.key, option.value));
+                                      setOpenSuggest(null);
+                                    }}
                                     onClick={() => {
+                                      if (suppressSelectClickRef.current) return;
                                       setForm(applyFieldChange(form, field.key, option.value));
                                       setOpenSuggest(null);
                                     }}
