@@ -86,6 +86,7 @@ export const INCOME_TREE: CategoryTree = {
   'Other Income': {
     'Reimbursement / Pelunasan Piutang': [],
     'Gift / Cashflow Lain': [],
+    'Persembahan Kasih': [],
   },
 };
 
