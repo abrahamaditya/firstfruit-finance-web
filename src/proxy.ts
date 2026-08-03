@@ -5,6 +5,7 @@ const PUBLIC_PATHS = new Set([
   '/login',
   '/manifest.webmanifest',
   '/opengraph-image',
+  '/sw.js',
 ]);
 
 export async function proxy(request: NextRequest) {

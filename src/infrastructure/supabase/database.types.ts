@@ -1962,6 +1962,57 @@ export type Database = {
           },
         ]
       }
+      web_push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string
+          endpoint: string
+          id: string
+          last_seen_at: string
+          p256dh: string
+          user_agent: string | null
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          last_seen_at?: string
+          p256dh: string
+          user_agent?: string | null
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          last_seen_at?: string
+          p256dh?: string
+          user_agent?: string | null
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "web_push_subscriptions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_summary"
+            referencedColumns: ["workspace_id"]
+          },
+          {
+            foreignKeyName: "web_push_subscriptions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_invitations: {
         Row: {
           accepted_at: string | null
@@ -2369,6 +2420,20 @@ export type Database = {
       update_wallet: { Args: { p_payload: Json }; Returns: string }
       update_wallet_with_network: { Args: { p_payload: Json }; Returns: string }
       update_workspace_settings: { Args: { p_payload: Json }; Returns: string }
+      upsert_web_push_subscription: {
+        Args: {
+          p_auth: string
+          p_endpoint: string
+          p_p256dh: string
+          p_user_agent?: string
+          p_workspace_id: string
+        }
+        Returns: string
+      }
+      verify_push_dispatch_secret: {
+        Args: { p_secret: string }
+        Returns: boolean
+      }
       write_off_receivable: { Args: { p_payload: Json }; Returns: string }
     }
     Enums: {

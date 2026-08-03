@@ -1,10 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useUI, useT, Preferences } from '../components/AppShell';
 import { useWallets } from '../application/hooks';
 import { Bell, Calendar, Chevron, ChevronR, Settings, User, WalletIcon } from '../components/ui/icons';
 import { useAuthWorkspace } from '../infrastructure/supabase/AuthProvider';
+import {
+  disableWebPush,
+  enableWebPush,
+  webPushState,
+  type WebPushState,
+} from '../core/pushNotifications';
 
 function Seg({
   options,
@@ -34,6 +40,12 @@ export default function ProfileScreen() {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(prefs.name);
   const [email, setEmail] = useState(prefs.email);
+  const [pushState, setPushState] = useState<WebPushState>('disabled');
+  const [pushBusy, setPushBusy] = useState(false);
+
+  useEffect(() => {
+    void webPushState().then(setPushState).catch(() => setPushState('unsupported'));
+  }, [auth.workspaceId]);
 
   // Preferensi disimpan global + localStorage lewat context (bertahan antar-halaman & reload).
   function change<K extends keyof Preferences>(key: K, value: Preferences[K]) {
@@ -55,6 +67,28 @@ export default function ProfileScreen() {
       ui.notify(tr('profile.updated'));
     } catch (caught) {
       ui.notify(caught instanceof Error ? caught.message : 'Profil gagal diperbarui');
+    }
+  };
+
+  const toggleDevicePush = async () => {
+    if (!auth.workspaceId || pushBusy) return;
+    setPushBusy(true);
+    try {
+      if (pushState === 'enabled') {
+        await disableWebPush();
+        setPushState('disabled');
+        ui.notify(tr('profile.pushDisabled'));
+      } else {
+        await enableWebPush(auth.workspaceId);
+        setPushState('enabled');
+        if (!prefs.notifications) setPref('notifications', true);
+        ui.notify(tr('profile.pushEnabled'));
+      }
+    } catch (caught) {
+      setPushState(await webPushState().catch((): WebPushState => 'unsupported'));
+      ui.notify(caught instanceof Error ? caught.message : tr('profile.pushFailed'));
+    } finally {
+      setPushBusy(false);
     }
   };
 
@@ -141,6 +175,25 @@ export default function ProfileScreen() {
       <div className="setg">
         <div className="set"><div className="si"><Bell /></div><div className="sl">{tr('profile.notifications')}</div>
           <Seg options={[notifOn, tr('profile.off')]} value={prefs.notifications ? notifOn : tr('profile.off')} onChange={(v) => change('notifications', v === notifOn)} /></div>
+        <div className="set">
+          <div className="si"><Bell /></div>
+          <div className="sl">
+            {tr('profile.devicePush')}
+            <small className="set-note">{tr(`profile.pushState.${pushState}`)}</small>
+          </div>
+          <button
+            type="button"
+            className={`push-toggle${pushState === 'enabled' ? ' on' : ''}`}
+            onClick={() => void toggleDevicePush()}
+            disabled={pushBusy || pushState === 'unsupported' || pushState === 'denied'}
+          >
+            {pushBusy
+              ? tr('profile.pushBusy')
+              : pushState === 'enabled'
+                ? tr('profile.pushTurnOff')
+                : tr('profile.pushTurnOn')}
+          </button>
+        </div>
         {/* Membuka daftar periode (sheet), bukan pindah layar — chevron ke bawah,
             sama seperti tombol periode di sidebar. */}
         <button className="set set-button" onClick={ui.openPeriods}><div className="si"><Calendar /></div><div className="sl">{tr('profile.closePeriod')}</div><Chevron /></button>
