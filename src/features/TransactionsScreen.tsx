@@ -4,6 +4,8 @@ import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { useSavings, useTransactions, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
+import { walletBrandInitial, walletBrandLogo } from '../core/wallet-branding';
+import { categoryTone } from '../core/domain/categories';
 
 export default function TransactionsScreen() {
   const ui = useUI();
@@ -36,22 +38,51 @@ export default function TransactionsScreen() {
   const formatAmount = (type: string, amount: number) =>
     `${type === 'income' ? '+' : type === 'expense' ? '-' : ''}${money.fmt(amount)}`;
   const [filter, setFilter] = useState<'all' | 'expense' | 'income' | 'transfer'>('all');
+  const [wallet, setWallet] = useState('all');
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query.toLowerCase());
 
   const matchesType = (transaction: { type: string }) => filter === 'all' || transaction.type === filter;
-  // Kategori yang ditawarkan mengikuti filter jenis — jadi saat "Pemasukan" dipilih,
-  // yang muncul hanya kategori pemasukan yang benar-benar ada datanya.
+  const byType = data.filter(matchesType);
+
+  // Transfer dihitung di dua dompet sekaligus — uangnya memang lewat keduanya, jadi
+  // memfilter dompet asal maupun tujuan sama-sama harus memunculkan transfer itu.
+  const walletCounts = new Map<string, number>();
+  const bumpWallet = (id?: string) => { if (id) walletCounts.set(id, (walletCounts.get(id) || 0) + 1); };
+  byType.forEach((transaction) => {
+    bumpWallet(transaction.walletId);
+    if (transaction.toWalletId && transaction.toWalletId !== transaction.walletId) bumpWallet(transaction.toWalletId);
+  });
+  // Seluruh dompet selalu ditawarkan, termasuk yang belum punya transaksi pada jenis yang
+  // sedang dipilih. Angka 0 itu sendiri sudah jadi jawaban ("belum ada pemasukan ke sini"),
+  // sementara daftar yang isinya keluar-masuk membuat dompet terasa raib.
+  // Urutannya mengikuti layar Dompet — rekening, e-wallet, tunai, kredit — supaya tetap di
+  // tempat yang sama saat filter jenis diganti, bukan berpindah mengikuti jumlah.
+  const walletRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
+  const mediumOf = (entry: typeof wallets[number]) =>
+    entry.medium ?? (entry.kind === 'credit' ? 'credit' : 'bank');
+  const walletPills = [...wallets]
+    .sort((a, b) => (walletRank[mediumOf(a)] ?? 99) - (walletRank[mediumOf(b)] ?? 99)
+      || a.name.localeCompare(b.name, locale))
+    .map((entry) => [entry, walletCounts.get(entry.id) ?? 0] as const);
+  // Dompet kosong tetap boleh dipilih: hasilnya memang kosong, dan itu jawaban yang jujur.
+  // Pilihan hanya dilepas kalau dompetnya benar-benar sudah tidak ada.
+  const activeWallet = wallets.some((entry) => entry.id === wallet) ? wallet : 'all';
+  const matchesWallet = (transaction: { walletId: string; toWalletId?: string }) =>
+    activeWallet === 'all' || transaction.walletId === activeWallet || transaction.toWalletId === activeWallet;
+
+  // Kategori menyaring lebih lanjut hasil jenis + dompet, jadi angkanya selalu cocok
+  // dengan daftar yang sedang tampak.
+  const scoped = byType.filter(matchesWallet);
   const categoryCounts = new Map<string, number>();
-  data.filter(matchesType).forEach((transaction) =>
+  scoped.forEach((transaction) =>
     transaction.labels.forEach((label) => categoryCounts.set(label, (categoryCounts.get(label) || 0) + 1)),
   );
   const categories = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const activeCategory = categoryCounts.has(category) ? category : 'all';
 
-  const visible = data.filter((transaction) =>
-    matchesType(transaction) &&
+  const visible = scoped.filter((transaction) =>
     (activeCategory === 'all' || transaction.labels.includes(activeCategory)) &&
     `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${walletName(transaction.walletId) || ''} ${walletName(transaction.toWalletId) || ''} ${savingName(transaction.savingId) || ''}`
       .toLowerCase().includes(deferredQuery),
@@ -93,11 +124,37 @@ export default function TransactionsScreen() {
         ))}
       </div>
 
+      {/* Dengan satu dompet saja, memfilter per dompet tidak menyaring apa pun. */}
+      {walletPills.length > 1 && (
+        <div className="filter-pills sub-filter">
+          <button className={activeWallet === 'all' ? 'on' : ''} onClick={() => setWallet('all')}>
+            {tr('tx.filterAllWallets')}
+            <span className="pill-count">{byType.length}</span>
+          </button>
+          {walletPills.map(([entry, count]) => {
+            const logo = walletBrandLogo(entry);
+            return (
+              <button
+                key={entry.id}
+                className={`${activeWallet === entry.id ? 'on' : ''}${count === 0 ? ' is-empty' : ''}`.trim()}
+                onClick={() => setWallet(entry.id)}
+              >
+                <span className={`pill-mark${logo ? ' has-image' : ''}`} aria-hidden="true">
+                  {logo ? <img src={logo} alt="" /> : walletBrandInitial(entry)}
+                </span>
+                {entry.name}
+                <span className="pill-count">{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {categories.length > 0 && (
         <div className="filter-pills sub-filter">
           <button className={activeCategory === 'all' ? 'on' : ''} onClick={() => setCategory('all')}>
             {tr('tx.filterAllCategories')}
-            <span className="pill-count">{data.filter(matchesType).length}</span>
+            <span className="pill-count">{scoped.length}</span>
           </button>
           {categories.map(([name, count]) => (
             <button key={name} className={activeCategory === name ? 'on' : ''} onClick={() => setCategory(name)}>
@@ -135,7 +192,9 @@ export default function TransactionsScreen() {
                   <div className="t1">{transactionTitle(transaction)}</div>
                   <div className="t2">
                     {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
-                      .map((label) => <span className="chip" key={label}>{label}</span>)}
+                      .map((label) => (
+                        <span className="chip" data-cat={categoryTone(label)} key={label}>{label}</span>
+                      ))}
                     {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
                     {transaction.type === 'transfer' && transaction.savingId && (
                       <span className="chip saving-destination">

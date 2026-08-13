@@ -280,18 +280,24 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .home-summary-row{display:grid;grid-template-columns:1fr;gap:10px;align-items:stretch}
 .home-summary-row .brk-card{max-width:none;min-width:0}
 .home-wallet-card{min-width:0;display:flex;align-items:center;overflow:hidden}
-.home-wallet-marquee{width:100%;overflow:hidden;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
-.home-wallet-track{display:flex;width:max-content;will-change:transform;animation:home-wallet-marquee 20s linear infinite}
+/* touch-action:pan-y menyerahkan gulir vertikal halaman ke peramban, tapi menahan gerak
+   mendatar untuk diri sendiri — tanpa itu jari yang menyeret dompet malah men-scroll halaman
+   dan pointer event kita diputus oleh pointercancel. */
+.home-wallet-marquee{width:100%;overflow:hidden;touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.home-wallet-marquee.is-dragging{cursor:grabbing}
+/* Deret yang muat seluruhnya tidak berjalan, jadi tidak perlu kursor seret maupun
+   pudar di tepi yang justru menyamarkan nama dompet pertama dan terakhir. */
+.home-wallet-marquee.is-static{cursor:default;mask-image:none;-webkit-mask-image:none}
+.home-wallet-track{display:flex;width:max-content;will-change:transform}
 .home-wallet-set{display:flex;align-items:center;gap:16px;flex:0 0 auto;padding:12px 16px 12px 0}
 .home-wallet-item{display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap}
 .home-wallet-mark{width:30px;height:30px;display:grid;place-items:center;overflow:hidden;border-radius:9px;background:var(--surface-2);color:var(--ink);font-size:8px;font-weight:800}
 .home-wallet-mark.has-image{background:#fff}
-.home-wallet-mark img{width:100%;height:100%;display:block;object-fit:cover}
+.home-wallet-mark img{width:100%;height:100%;display:block;object-fit:cover;-webkit-user-drag:none}
 .home-wallet-copy{display:flex;flex-direction:column;align-items:flex-start;gap:1px}
 .home-wallet-copy small{max-width:120px;overflow:hidden;text-overflow:ellipsis;color:var(--ink-faint);font-size:9px;font-weight:700;line-height:1.2}
 .home-wallet-copy .home-wallet-nominal{font-family:var(--nominal);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
 .home-wallet-empty{display:grid;place-items:center;width:100%;min-height:64px;padding:12px;color:var(--ink-faint);font-size:11px;text-align:center}
-@keyframes home-wallet-marquee{to{transform:translateX(-50%)}}
 /* Ringkasan tidak boleh menyusut lebih sempit daripada nominal di dalamnya: padding kanan
    kartu harus selalu utuh. Ketika ruang terbatas, kolom wallet yang mengalah hingga 0.
    Ambang desktop memperhitungkan sidebar + padding viewport; di bawahnya kedua blok
@@ -317,6 +323,38 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .tx-wallet-label{display:block;max-width:150px;margin-top:4px;color:var(--ink-faint);font-size:9.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft)}
 .chip.saving-destination{color:var(--pos);background:color-mix(in srgb,var(--pos) 12%,transparent)}
+/* Kapsul kategori memakai resep yang sama dengan .saving-destination: teks berwarna penuh
+   di atas jejak 12% warna yang sama. Kapsul non-kategori (tempat, cicilan, tak terduga)
+   sengaja dibiarkan netral supaya warna tetap berarti "ini kelompok kategori".
+   Nada gelap dipatok terang (L~72%) untuk dibaca di atas permukaan gelap; tema terang
+   menggelapkannya sampai kontrasnya aman di atas putih, mengikuti pola --pos/--warn. */
+.chip[data-cat]{color:var(--cat);background:color-mix(in srgb,var(--cat) 12%,transparent)}
+.chip[data-cat="health"]{--cat:hsl(358 82% 74%)}
+.chip[data-cat="needs"]{--cat:hsl(28 84% 70%)}
+.chip[data-cat="bills"]{--cat:hsl(48 80% 68%)}
+.chip[data-cat="income"]{--cat:hsl(145 62% 65%)}
+.chip[data-cat="savings"]{--cat:hsl(172 62% 62%)}
+.chip[data-cat="education"]{--cat:hsl(195 72% 68%)}
+.chip[data-cat="transport"]{--cat:hsl(218 82% 76%)}
+.chip[data-cat="finance"]{--cat:hsl(245 76% 80%)}
+.chip[data-cat="digital"]{--cat:hsl(272 76% 80%)}
+.chip[data-cat="giving"]{--cat:hsl(300 66% 78%)}
+.chip[data-cat="lifestyle"]{--cat:hsl(332 78% 76%)}
+/* Kecerahan tema terang dipatok per rona, bukan satu angka seragam: kuning dan hijau
+   harus jauh lebih gelap daripada biru untuk mencapai kontras yang sama. Nilai di bawah
+   diukur terhadap latar kapsul (tint 12% di atas --surface) dan semuanya ≥4,9:1 — lolos
+   WCAG AA untuk teks kecil, sesuai patokan yang dipakai token tema terang lainnya. */
+:root[data-theme="light"] .chip[data-cat="health"]{--cat:hsl(358 62% 40%)}
+:root[data-theme="light"] .chip[data-cat="needs"]{--cat:hsl(28 82% 29%)}
+:root[data-theme="light"] .chip[data-cat="bills"]{--cat:hsl(48 88% 22%)}
+:root[data-theme="light"] .chip[data-cat="income"]{--cat:hsl(145 78% 21%)}
+:root[data-theme="light"] .chip[data-cat="savings"]{--cat:hsl(172 84% 20%)}
+:root[data-theme="light"] .chip[data-cat="education"]{--cat:hsl(195 82% 25%)}
+:root[data-theme="light"] .chip[data-cat="transport"]{--cat:hsl(218 68% 40%)}
+:root[data-theme="light"] .chip[data-cat="finance"]{--cat:hsl(245 58% 45%)}
+:root[data-theme="light"] .chip[data-cat="digital"]{--cat:hsl(272 58% 44%)}
+:root[data-theme="light"] .chip[data-cat="giving"]{--cat:hsl(300 56% 37%)}
+:root[data-theme="light"] .chip[data-cat="lifestyle"]{--cat:hsl(332 64% 38%)}
 .tx-day{font-size:11.5px;color:var(--ink-faint);font-weight:700;margin:16px 2px 9px;letter-spacing:.05em}
 
 
@@ -391,14 +429,61 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .paycard.behind{transform:scale(.93);opacity:.86}
 .paycard.behind.before{transform-origin:100% 50%}
 .paycard.behind.after{transform-origin:0 50%}
-.paycard.credit{background:linear-gradient(150deg,#46606F 0%,#2B3B45 55%,#1B262D 100%);color:#EAF2F0;box-shadow:0 16px 40px -20px rgba(0,0,0,.7)}
-.paycard.credit .pchip{background:rgba(255,255,255,.18)}
+/* ===== Palet kartu =====
+   Tiap dompet memakai warnanya sendiri (lihat wallet-card-theme.ts). Yang dipatok di sini
+   hanya tokennya; kartu tanpa data-theme tetap memakai gradasi merek aplikasi, sehingga
+   tampilan lama tidak hilang — ia jadi tema 'mint' untuk uang tunai.
+   --card-glow sengaja terpisah dari --card-b: bayangan harus versi yang jauh lebih pekat
+   dan tersaturasi agar terbaca sebagai pantulan kartu, bukan kabut abu-abu.
+   Kedua ujung gradasi tiap tema diukur ≥5:1 terhadap tintanya — patokan yang sama dengan
+   gradien mint (5,13:1). Itu sebabnya warnanya pekat, bukan pastel: nama dompet duduk di
+   ujung paling terang, jadi ujung itulah yang menentukan seluruh paletnya. */
+.paycard[data-theme]{background:linear-gradient(150deg,var(--card-a) 0%,var(--card-b) 100%);
+  color:var(--card-ink);box-shadow:0 14px 30px -17px var(--card-glow)}
+.paycard[data-theme="mint"]{background:var(--grad);color:var(--on-grad);--card-glow:rgba(43,204,142,.48)}
+.paycard[data-theme="ocean"]{--card-a:#0C61EA;--card-b:#0A2E86;--card-ink:#F2F7FF;--card-glow:rgba(28,79,187,.62)}
+.paycard[data-theme="sky"]{--card-a:#0671A1;--card-b:#06405F;--card-ink:#F0FAFF;--card-glow:rgba(14,131,197,.6)}
+.paycard[data-theme="emerald"]{--card-a:#1B7C59;--card-b:#02452F;--card-ink:#F0FFF8;--card-glow:rgba(6,142,97,.6)}
+.paycard[data-theme="teal"]{--card-a:#197A6E;--card-b:#083F45;--card-ink:#EFFFFD;--card-glow:rgba(13,124,124,.58)}
+.paycard[data-theme="violet"]{--card-a:#6F42F7;--card-b:#3F1387;--card-ink:#F8F4FF;--card-glow:rgba(87,32,168,.62)}
+.paycard[data-theme="plum"]{--card-a:#B509D0;--card-b:#61104D;--card-ink:#FFF4FD;--card-glow:rgba(139,26,116,.6)}
+.paycard[data-theme="sunset"]{--card-a:#A35804;--card-b:#7C2008;--card-ink:#FFF8F0;--card-glow:rgba(184,62,20,.6)}
+/* Satu-satunya tema bertinta gelap selain mint: kuning tidak bisa digelapkan sampai
+   putih terbaca tanpa berhenti jadi kuning, jadi arah kontrasnya yang dibalik. */
+.paycard[data-theme="amber"]{--card-a:#FCD34D;--card-b:#CF7709;--card-ink:#2A1A02;--card-glow:rgba(178,110,12,.58)}
+.paycard[data-theme="royal"]{--card-a:#3B5BA9;--card-b:#101C42;--card-ink:#F2F5FF;--card-glow:rgba(21,36,86,.68)}
+/* Kartu kredit: selalu gelap, karena ia utang dan bukan saldo. */
+.paycard[data-theme="slate"]{--card-a:#46606F;--card-b:#1B262D;--card-ink:#EAF2F0;--card-glow:rgba(0,0,0,.72)}
+.paycard[data-theme="graphite"]{--card-a:#4A4A55;--card-b:#17171E;--card-ink:#F0F0F3;--card-glow:rgba(0,0,0,.75)}
+.paycard[data-theme="wine"]{--card-a:#6E3543;--card-b:#25101A;--card-ink:#FDF0F2;--card-glow:rgba(28,8,14,.75)}
 .paycard .pbal{display:flex;justify-content:space-between;align-items:baseline;margin-top:16px;position:relative;z-index:1}
 .paycard .pbal span{font-size:11px;font-weight:700;opacity:.75}
 .paycard .pbal b{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
-.paycard::before{content:"";position:absolute;right:-30px;top:-50px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.15)}
+/* ===== Corak latar kartu =====
+   Warna saja belum cukup membedakan kartu saat digeser cepat — dua biru berbeda tetap
+   "biru". Corak memberi pembeda kedua yang bertahan meski warnanya mirip. Semuanya
+   dibangun dari putih transparan supaya otomatis cocok di atas gradasi mana pun, dan
+   semuanya bebas pointer-event karena kartunya sendiri yang bisa diklik. */
+.paycard::before,.paycard::after{content:"";position:absolute;pointer-events:none}
+/* orb — lingkaran besar menyembul dari sudut; ini rupa asli kartu sebelum ada varian. */
+.paycard[data-pattern="orb"]::before{right:-30px;top:-50px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.15)}
+.paycard[data-pattern="orb"]::after{display:none}
+/* arcs — dua cincin sepusat, hanya garis luarnya. */
+.paycard[data-pattern="arcs"]::before{right:-70px;top:-60px;width:190px;height:190px;border-radius:50%;border:22px solid rgba(255,255,255,.14)}
+.paycard[data-pattern="arcs"]::after{right:-24px;bottom:-72px;width:150px;height:150px;border-radius:50%;border:16px solid rgba(255,255,255,.09)}
+/* sheen — pita cahaya diagonal melintasi seluruh kartu. */
+.paycard[data-pattern="sheen"]::before{inset:0;background:linear-gradient(112deg,transparent 30%,rgba(255,255,255,.20) 46%,rgba(255,255,255,.05) 58%,transparent 72%)}
+.paycard[data-pattern="sheen"]::after{right:-60px;top:-90px;width:180px;height:180px;border-radius:50%;background:rgba(255,255,255,.10)}
+/* dots — kisi titik halus, memudar ke kiri supaya tidak mengganggu nominal. */
+.paycard[data-pattern="dots"]::before{inset:0;background-image:radial-gradient(rgba(255,255,255,.22) 1.3px,transparent 1.3px);background-size:15px 15px;
+  mask-image:linear-gradient(105deg,transparent 32%,#000 100%);-webkit-mask-image:linear-gradient(105deg,transparent 32%,#000 100%)}
+.paycard[data-pattern="dots"]::after{display:none}
 .paycard .pt{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
-.paycard .pb{font-weight:800;font-size:15px}.paycard .pchip{width:34px;height:26px;border-radius:6px;background:rgba(4,38,26,.22)}
+.paycard .pb{font-weight:800;font-size:15px}
+/* Chip: kotaknya hanya wadah, gambarnya ada di komponen CardChip. Bayangan tipis di
+   bawahnya membuatnya terbaca menonjol dari permukaan kartu, bukan tercetak rata. */
+.paycard .pchip{width:34px;height:26px;flex:0 0 auto;display:block;line-height:0;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.28))}
+.paycard .pchip svg{width:100%;height:100%;display:block}
 .paycard .pt-actions{display:flex;align-items:center;gap:10px}
 /* Kapsul ikut memakan lebar baris judul, jadi nama panjang kini perlu dipotong elipsis —
    tanpa ini ia mendorong chip & tombol edit keluar dari kartu. */
@@ -446,6 +531,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .transaction-insight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:12px}
 .transaction-insight-grid>div{min-width:0;background:var(--surface-2);border-radius:13px;padding:11px}
 .transaction-insight-grid>div:last-child{grid-column:1/-1}
+/* Varian isi genap: tidak ada sel ganjil yang perlu direntangkan penuh. */
+.transaction-insight-grid.wide>div:last-child{grid-column:auto}
 .transaction-insight-grid b{display:block;margin-top:5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nominal);font-variant-numeric:tabular-nums}
 .transaction-insight-grid small{display:block;margin-top:2px;color:var(--ink-soft);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .transaction-insight-note{margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(91,233,170,.09);color:var(--mint);font-size:11px;font-weight:700}
@@ -471,7 +558,9 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .category-report-meta em.down{color:var(--pos);background:rgba(91,233,170,.1)}
 .category-report-meta em.new{color:var(--info);background:rgba(138,182,249,.1)}
 .category-report-meta em.flat{color:var(--ink-soft);background:var(--surface-2)}
-.category-share-bar{height:4px;margin-top:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+/* display:block wajib eksplisit — di baris sektor elemen ini berupa <span> (isi <button>
+   hanya boleh phrasing content), dan span inline mengabaikan height. */
+.category-share-bar{display:block;height:4px;margin-top:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .category-share-bar i{display:block;height:100%;min-width:2px;border-radius:inherit}
 .cat-card{background:var(--surface);border-radius:22px;padding:8px 16px;margin-top:12px}
 .cb{padding:11px 0;border-bottom:1px solid var(--line)}.cb:last-child{border-bottom:0}
@@ -762,6 +851,91 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .chart-axis{display:flex;justify-content:space-between;color:var(--ink-faint);font-size:9px;padding:3px 2px 0;text-transform:capitalize}
 .report-columns{display:grid;grid-template-columns:1fr;gap:0}
 
+/* ===== Kesehatan arus kas ===== */
+.health-card{background:var(--surface);border-radius:22px;padding:15px;margin-top:6px}
+.health-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.health-grid>div{min-width:0;background:var(--surface-2);border-radius:13px;padding:11px}
+.health-grid span{display:block;font-size:10px;color:var(--ink-faint);font-weight:700}
+.health-grid b{display:block;margin-top:5px;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nominal);font-variant-numeric:tabular-nums}
+.health-grid small{display:block;margin-top:2px;color:var(--ink-soft);font-size:9.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.health-grid>div.negative b{color:var(--neg)}
+.compare-strip{margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.compare-title{display:block;font-size:9.5px;font-weight:800;letter-spacing:.05em;color:var(--ink-faint);text-transform:uppercase}
+.compare-items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:9px}
+.compare-item{min-width:0}
+.compare-item>span{display:block;font-size:9.5px;color:var(--ink-faint);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compare-item b{display:block;margin-top:3px;font-size:13px;font-family:var(--nominal);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.compare-item em{display:inline-block;margin-top:3px;font-style:normal;font-size:9.5px;font-weight:700;border-radius:99px;padding:2px 6px}
+.compare-item small{display:block;margin-top:3px;font-size:9px;color:var(--ink-faint);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Warna mengikuti maknanya, bukan arah panah: pengeluaran naik itu merah, pemasukan naik hijau. */
+.compare-item em.up{color:var(--neg);background:rgba(239,134,118,.1)}
+.compare-item em.down{color:var(--pos);background:rgba(91,233,170,.1)}
+.compare-item em.flat{color:var(--ink-soft);background:var(--surface-2)}
+
+/* ===== Pola hari dalam seminggu ===== */
+.weekday-card{background:var(--surface);border-radius:22px;padding:14px;margin-top:6px}
+.weekday-row{display:grid;grid-template-columns:34px 1fr auto;gap:9px;align-items:center;padding:5px 0}
+.weekday-name{font-size:10.5px;font-weight:800;color:var(--ink-soft);text-transform:capitalize}
+.weekday-bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.weekday-bar i{display:block;height:100%;min-width:3px;border-radius:99px;background:var(--info)}
+.weekday-row.peak .weekday-bar i{background:var(--warn)}
+.weekday-row.peak .weekday-name,.weekday-row.peak .weekday-value{color:var(--warn)}
+.weekday-value{font-size:11px;font-weight:800;font-family:var(--nominal);font-variant-numeric:tabular-nums;text-align:right}
+/* Jumlah kemunculan hari itu di rentang — pembagi rata-ratanya, ditaruh di baris kedua
+   kolom kanan supaya tidak mendorong bar menyempit di layar ponsel. */
+.weekday-count{grid-column:3;font-size:8.5px;color:var(--ink-faint);font-weight:650;text-align:right;margin-top:-4px}
+.weekday-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.weekday-summary>div{min-width:0;background:var(--surface-2);border-radius:13px;padding:10px}
+.weekday-summary span{display:block;font-size:9.5px;color:var(--ink-faint);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.weekday-summary b{display:block;margin-top:4px;font-size:12.5px;text-transform:capitalize;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.weekday-summary small{display:block;margin-top:2px;font-size:9px;color:var(--ink-soft);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Angka yang disaring harus menyebut penyaringnya — tanpa ini pembaca tidak punya cara
+   tahu kenapa totalnya tidak cocok dengan pengeluaran di kartu lain. */
+.weekday-note{margin-top:11px;padding:9px 11px;border-radius:12px;background:var(--surface-2);color:var(--ink-faint);font-size:9.5px;font-weight:650;line-height:1.45}
+
+/* ===== Kategori bertingkat ===== */
+.flow-toggle{margin-top:10px;margin-bottom:10px}
+.sector-list{margin-top:8px}
+.sector{border-bottom:1px solid var(--line)}
+.sector:last-child{border-bottom:0}
+.sector-head{display:flex;align-items:flex-start;gap:10px;width:100%;padding:12px 1px;border:0;background:transparent;color:inherit;text-align:left;font-family:inherit;cursor:pointer}
+.sector-main{min-width:0;flex:1}
+.sector-caret{width:15px;flex:0 0 auto;margin-top:4px;color:var(--ink-faint);stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
+.sector.open .sector-caret{transform:rotate(180deg)}
+.sector-children{padding:2px 1px 12px 34px}
+.sector-child{padding:8px 0}
+.sector-child+.sector-child{border-top:1px solid var(--line)}
+.sector-child-head{display:flex;align-items:baseline;gap:8px}
+.sector-child-head b{min-width:0;flex:1;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sector-child-head span{flex:0 0 auto;font-size:11.5px;font-weight:700;font-family:var(--nominal);font-variant-numeric:tabular-nums}
+.sector-child-head em{flex:0 0 auto;font-style:normal;font-size:9.5px;font-weight:700;color:var(--ink-faint);min-width:26px;text-align:right}
+.sector-child-bar{height:3px;margin-top:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.sector-child-bar i{display:block;height:100%;min-width:2px;border-radius:inherit;opacity:.75}
+.sector-child-meta{margin-top:5px;font-size:9px;color:var(--ink-faint);font-weight:650}
+/* Tingkat ketiga hanya butuh nama + nominal; dibuat mengalir supaya sepuluh item pun
+   tetap muat tanpa membuat kartunya memanjang seperti daftar tersendiri. */
+.sector-leaves{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+.sector-leaves span{display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft);font-size:9.5px;font-weight:650}
+.sector-leaves b{font-size:9.5px;font-weight:800;font-family:var(--nominal);font-variant-numeric:tabular-nums;color:var(--ink)}
+
+/* ===== Irisan datar: dompet, tempat, anggaran ===== */
+.breakdown-card{background:var(--surface);border-radius:22px;padding:6px 15px;margin-top:6px}
+.breakdown-row{padding:12px 0;border-bottom:1px solid var(--line)}
+.breakdown-row:last-child{border-bottom:0}
+.breakdown-head{display:flex;align-items:baseline;gap:10px}
+.breakdown-head b{min-width:0;flex:1;font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.breakdown-head strong{flex:0 0 auto;font-size:11.5px;font-family:var(--nominal);font-variant-numeric:tabular-nums}
+.breakdown-bar{height:5px;margin-top:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+.breakdown-bar i{display:block;height:100%;min-width:3px;border-radius:inherit;background:var(--info)}
+.breakdown-bar i.warm{background:var(--warn)}
+.breakdown-bar i.over{background:var(--neg)}
+.breakdown-meta{margin-top:5px;font-size:9.5px;color:var(--ink-faint);font-weight:650}
+.projection-note{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:12px 0 2px;padding:10px 12px;border-radius:13px;background:rgba(138,182,249,.1);color:var(--info)}
+.projection-note.over{background:rgba(239,134,118,.1);color:var(--neg)}
+.projection-note span{font-size:10px;font-weight:800;letter-spacing:.04em}
+.projection-note b{font-size:14px;font-family:var(--nominal);font-variant-numeric:tabular-nums}
+.projection-note small{width:100%;font-size:9.5px;font-weight:600;opacity:.85}
+
 .closing-hero{display:flex;flex-wrap:wrap;gap:16px;align-items:center;background:linear-gradient(135deg,rgba(91,233,170,.15),rgba(43,204,142,.04));border:1px solid rgba(91,233,170,.13);padding:22px;border-radius:24px}
 .closing-icon{width:54px;height:54px;border-radius:17px;display:grid;place-items:center;background:var(--grad);color:var(--on-grad);flex:0 0 auto}
 .closing-icon svg{width:24px}
@@ -832,8 +1006,6 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    shadow dirender utuh; padding slide menjaga kartunya tetap tidak terlalu lebar. */
 .card-track.single{overflow:visible;-webkit-mask-image:none;mask-image:none}
 .card-track.single .card-slide{padding:12px 14px 28px}
-.paycard{box-shadow:0 14px 30px -16px rgba(43,204,142,.48)}
-.paycard.credit{box-shadow:0 14px 30px -18px rgba(0,0,0,.72)}
 
 /* Bilah diposisikan di atas viewport, bukan mengambil baris putih tersendiri di bawahnya.
    Karena lapisan pembungkus transparan dan pointer-events dimatikan, hanya kapsul navbar
@@ -971,7 +1143,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .date-field input[type=date]::-webkit-calendar-picker-indicator{position:relative;z-index:3}
 /* Dropdown saran (tempat transaksi) — dibuat sendiri agar seragam dengan select lain. */
 .suggest-field{position:relative;width:100%}.suggest-field>input{padding-right:42px}.suggest-chevron{position:absolute;right:14px;top:50%;width:18px;height:18px;transform:translateY(-50%);pointer-events:none;color:var(--muted)}
+/* overscroll-behavior:contain menahan gulir di ujung daftar supaya tidak merembet ke
+   form di belakangnya — daftar yang mentok jangan sampai menggulir seluruh sheet. */
 .suggest-list{position:absolute;z-index:5;top:calc(100% + 6px);left:0;right:0;max-height:216px;overflow-y:auto;
+  touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
   background:var(--surface-2);border:1px solid var(--line);border-radius:15px;padding:5px;box-shadow:var(--shadow)}
 .suggest-list button{display:block;width:100%;text-align:left;border:0;border-radius:11px;background:transparent;
   color:var(--ink);font-family:var(--sans);font-size:13px;font-weight:600;padding:10px 12px;cursor:pointer}
@@ -989,7 +1164,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .custom-select-trigger>svg{width:17px;height:17px;flex:0 0 auto;stroke:var(--ink-soft);fill:none;
   stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
 .custom-select.open .custom-select-trigger>svg{transform:rotate(180deg)}
-.custom-select-list{z-index:20;touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+.custom-select-list{z-index:20}
 .custom-select-group+.custom-select-group{margin-top:4px;padding-top:4px;border-top:1px solid var(--line)}
 .custom-select-group-label{padding:8px 12px 5px;color:var(--ink-faint);font-size:10px;font-weight:800;
   letter-spacing:.06em;text-transform:uppercase}
@@ -1040,7 +1215,15 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .filter-pills.sub-filter button{display:inline-flex;align-items:center;gap:6px;background:transparent;border:1px solid var(--line);font-size:11.5px;font-weight:600;padding:7px 11px}
 .filter-pills.sub-filter button.on{background:rgba(91,233,170,.12);border-color:rgba(91,233,170,.3);color:var(--mint);font-weight:700}
 .pill-count{font-size:10px;font-weight:700;color:var(--ink-faint);background:var(--surface-2);border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
+/* Penanda dompet di pill filter: logo merek kalau ada, kalau tidak inisial namanya. */
+.filter-pills.sub-filter .pill-mark{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden;border-radius:5px;background:var(--surface-2);color:var(--ink);font-size:6px;font-weight:800;line-height:1}
+.filter-pills.sub-filter .pill-mark.has-image{background:#fff}
+.filter-pills.sub-filter .pill-mark img{width:100%;height:100%;display:block;object-fit:cover}
 .filter-pills.sub-filter button.on .pill-count{background:rgba(91,233,170,.18);color:var(--mint)}
+/* Dompet tanpa transaksi tetap ditawarkan, cuma diredupkan — masih bisa dipilih, dan
+   hasilnya yang kosong itu memang jawabannya. */
+.filter-pills.sub-filter button.is-empty{opacity:.5}
+.filter-pills.sub-filter button.is-empty.on{opacity:1}
 .empty-state{min-height:230px;display:flex;align-items:center;justify-content:center;flex-direction:column;text-align:center;color:var(--ink-soft)}
 .empty-state>svg{width:38px;height:38px;color:var(--ink-faint);margin-bottom:13px}
 .empty-state b{font-size:15px;color:var(--ink);margin-bottom:4px}
@@ -1169,6 +1352,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .metric-grid{gap:12px}.report-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
   .metric-card{padding:18px}.metric-card>b{font-size:19px}
   .report-columns{grid-template-columns:1fr 1fr;gap:18px}
+  .health-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .transaction-insight-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
   .profile-card{padding:24px}
   .sheet{max-width:560px;bottom:24px;border-radius:28px;padding:12px 28px 28px;box-shadow:0 28px 90px rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.06)}
   .sheet.show{transform:translateX(-50%) translateY(0)}

@@ -36,6 +36,39 @@ export const Trash = S(<path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />);
 export const Check = S(<path d="M20 6 9 17l-5-5" />);
 export const TrendUp = S(<path d="M7 14l5-5 5 5" />);
 export const Card = S(<><rect x="2" y="6" width="20" height="12" rx="3" /><path d="M2 10h20" /></>);
+/**
+ * Chip EMV di kartu dompet. Digambar utuh, bukan lewat helper `S`, karena ini satu-satunya
+ * ikon yang hidup dari gradasi isi alih-alih garis — chip beroutline saja terbaca sebagai
+ * kotak kosong, persis keluhan yang membuatnya digambar ulang.
+ *
+ * Warnanya dipatok emas, tidak mengikuti `currentColor`: chip nyata memang selalu logam,
+ * dan justru kontras tetap inilah yang membuatnya terbaca sebagai chip di atas kartu
+ * berwarna apa pun. `useId` memisahkan definisi gradasi antar kartu di satu halaman.
+ */
+export const CardChip = ({ className }: P) => {
+  const id = React.useId();
+  return (
+    <svg viewBox="0 0 34 26" className={className} aria-hidden="true">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#F8E7BC" />
+          <stop offset="38%" stopColor="#DCBC74" />
+          <stop offset="62%" stopColor="#B8912F" />
+          <stop offset="100%" stopColor="#EBD59A" />
+        </linearGradient>
+      </defs>
+      <rect x=".6" y=".6" width="32.8" height="24.8" rx="4.6" fill={`url(#${id})`}
+        stroke="rgba(72,52,10,.35)" strokeWidth=".8" />
+      {/* Pola kontak: satu bantalan tengah dengan delapan jalur ke tepi. Ujung jalur
+          ditarik masuk dari tepi supaya tidak menembus sudut membulatnya. */}
+      <g stroke="rgba(72,52,10,.42)" strokeWidth=".9" fill="none">
+        <rect x="10.8" y="8.4" width="12.4" height="9.2" rx="2" />
+        <path d="M1.6 8.4h9.2M23.2 8.4h9.2M1.6 17.6h9.2M23.2 17.6h9.2
+                 M10.8 1.4v7M23.2 1.4v7M10.8 17.6v7M23.2 17.6v7" />
+      </g>
+    </svg>
+  );
+};
 export const Search = S(<><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></>);
 export const Calendar = S(<><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /></>);
 export const Target = S(<><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="4" /><path d="M12 3v3M21 12h-3" /></>);

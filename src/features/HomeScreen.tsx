@@ -5,6 +5,7 @@ import { useDashboard, useTransactions, useSubscriptions, useReminders, useSavin
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
 import { walletBrandInitial, walletBrandLogo } from '../core/wallet-branding';
+import { categoryTone } from '../core/domain/categories';
 
 const randomScramble = (value: string, lockedDigits = 0) => {
   let digitIndex = 0;
@@ -67,6 +68,156 @@ function useGlitchAmount(target: string, loadingTemplate: string, loading: boole
   }, [enabled, loading, loadingTemplate, target]);
 
   return display;
+}
+
+const MARQUEE_SPEED = 28;        // piksel/detik, menyamai laju animasi CSS sebelumnya
+const MARQUEE_RESUME = 2600;     // jeda sebelum jalan sendiri lagi setelah disentuh
+const MARQUEE_MAX_FLING = 2600;  // batas kecepatan lemparan, px/detik
+
+/**
+ * Deret dompet berjalan yang bisa diambil alih: seret dengan tetikus atau jari, geser
+ * mendatar dengan trackpad, lalu ia melambat dan kembali berjalan sendiri.
+ *
+ * Posisinya dihitung sendiri lewat transform per frame, bukan animasi CSS, karena animasi
+ * CSS tidak punya posisi yang bisa dibaca maupun digeser di tengah jalan. `renderSet`
+ * dipanggil dua kali: salinan kedua yang menutup celah saat posisi mendekati ujung set
+ * pertama, dan hanya dibuat kalau deretnya memang lebih panjang dari kartunya.
+ */
+function WalletMarquee({ label, renderSet }: {
+  label: string;
+  renderSet: (duplicate?: boolean) => React.ReactNode;
+}) {
+  const viewportRef = React.useRef<HTMLDivElement>(null);
+  const trackRef = React.useRef<HTMLDivElement>(null);
+  const [scrollable, setScrollable] = React.useState(false);
+  const [dragging, setDragging] = React.useState(false);
+  const state = React.useRef({
+    offset: 0, velocity: 0, setWidth: 0,
+    dragging: false, pointerId: -1, lastX: 0, lastTime: 0,
+    hold: 0, hover: false,
+  });
+
+  // Lebar satu set jadi dua hal sekaligus: periode pembungkusan posisi, dan penentu
+  // apakah deretnya perlu berjalan sama sekali.
+  React.useEffect(() => {
+    const viewport = viewportRef.current;
+    const track = trackRef.current;
+    if (!viewport || !track) return;
+    const measure = () => {
+      const set = track.firstElementChild as HTMLElement | null;
+      state.current.setWidth = set?.offsetWidth ?? 0;
+      setScrollable(state.current.setWidth > viewport.clientWidth + 1);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(viewport);
+    observer.observe(track);
+    return () => observer.disconnect();
+  }, []);
+
+  React.useEffect(() => {
+    const track = trackRef.current;
+    if (!scrollable) {
+      if (track) track.style.transform = '';
+      state.current.offset = 0;
+      state.current.velocity = 0;
+      return;
+    }
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
+    let previous = performance.now();
+    let frame = requestAnimationFrame(function step(now) {
+      const s = state.current;
+      // Frame yang tertinggal (tab di latar, jank) dibatasi supaya deretnya tidak melompat.
+      const delta = Math.min(0.064, (now - previous) / 1000);
+      previous = now;
+      if (!s.dragging) {
+        if (Math.abs(s.velocity) > 6) {
+          s.offset += s.velocity * delta;
+          s.velocity *= Math.pow(0.0016, delta);
+        } else {
+          s.velocity = 0;
+          if (!s.hover && now >= s.hold && !reduced.matches) s.offset += MARQUEE_SPEED * delta;
+        }
+      }
+      const period = s.setWidth || 1;
+      s.offset = ((s.offset % period) + period) % period;
+      if (trackRef.current) trackRef.current.style.transform = `translate3d(${-s.offset}px,0,0)`;
+      frame = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [scrollable]);
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!scrollable || event.button > 0) return;
+    const s = state.current;
+    s.dragging = true;
+    s.pointerId = event.pointerId;
+    s.lastX = event.clientX;
+    s.lastTime = event.timeStamp;
+    s.velocity = 0;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+
+  const onPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const s = state.current;
+    if (!s.dragging || event.pointerId !== s.pointerId) return;
+    const dx = event.clientX - s.lastX;
+    const dt = Math.max(8, event.timeStamp - s.lastTime);
+    s.offset -= dx;
+    // Kecepatan dihaluskan antar sampel: satu frame pendek yang kebetulan besar
+    // tidak boleh menentukan sendiri seberapa jauh lemparannya meluncur.
+    s.velocity = s.velocity * 0.7 + (-dx / (dt / 1000)) * 0.3;
+    s.lastX = event.clientX;
+    s.lastTime = event.timeStamp;
+  };
+
+  const endDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    const s = state.current;
+    if (!s.dragging || event.pointerId !== s.pointerId) return;
+    s.dragging = false;
+    s.pointerId = -1;
+    s.hold = performance.now() + MARQUEE_RESUME;
+    // Jari yang berhenti dulu sebelum diangkat berarti menaruh, bukan melempar.
+    s.velocity = event.timeStamp - s.lastTime > 90
+      ? 0
+      : Math.max(-MARQUEE_MAX_FLING, Math.min(MARQUEE_MAX_FLING, s.velocity));
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    setDragging(false);
+  };
+
+  // Geser mendatar trackpad/roda mendatar. Hanya diambil saat sumbu X yang dominan,
+  // supaya gulir vertikal halaman tidak ikut tertahan di atas kartu ini.
+  const onWheel = (event: React.WheelEvent<HTMLDivElement>) => {
+    const s = state.current;
+    if (!scrollable || Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return;
+    s.offset += event.deltaX;
+    s.velocity = 0;
+    s.hold = performance.now() + MARQUEE_RESUME;
+  };
+
+  return (
+    <div
+      ref={viewportRef}
+      className={`home-wallet-marquee${scrollable ? '' : ' is-static'}${dragging ? ' is-dragging' : ''}`}
+      role="group"
+      aria-label={label}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onWheel={onWheel}
+      onMouseEnter={() => { state.current.hover = true; }}
+      onMouseLeave={() => { state.current.hover = false; }}
+    >
+      <div className="home-wallet-track" ref={trackRef}>
+        {renderSet()}
+        {scrollable ? renderSet(true) : null}
+      </div>
+    </div>
+  );
 }
 
 export default function HomeScreen() {
@@ -308,12 +459,7 @@ export default function HomeScreen() {
         </div>
         <div className="home-wallet-card">
           {walletBalances.length > 0 ? (
-            <div className="home-wallet-marquee" aria-label={tr('home.walletBalances')}>
-              <div className="home-wallet-track">
-                {walletTicker()}
-                {walletTicker(true)}
-              </div>
-            </div>
+            <WalletMarquee label={tr('home.walletBalances')} renderSet={walletTicker} />
           ) : (
             <div className="home-wallet-empty">{tr('home.noWalletBalances')}</div>
           )}
@@ -350,7 +496,9 @@ export default function HomeScreen() {
               <div className="t1">{transactionTitle(t)}</div>
               <div className="t2">
                 {(t.note ? t.labels : t.labels.slice(0, -1))
-                  .map((label) => <span className="chip" key={label}>{label}</span>)}
+                  .map((label) => (
+                    <span className="chip" data-cat={categoryTone(label)} key={label}>{label}</span>
+                  ))}
                 {t.type === 'transfer' && t.savingId && (
                   <span className="chip saving-destination">Tabungan · {savingName(t.savingId) ?? 'Tabungan'}</span>
                 )}

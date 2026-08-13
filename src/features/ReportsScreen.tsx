@@ -3,12 +3,17 @@
 import React, { useState } from 'react';
 import { useBudgets, useDashboard, useTransactions } from '../application/hooks';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { Download, TrendUp } from '../components/ui/icons';
+import { Chevron, Download, TrendUp } from '../components/ui/icons';
 import { addDays, dayKey, startOfDay } from '../core/domain/calendar';
-import { categoryMid, categoryPath } from '../core/domain/categories';
+import { categoryPath } from '../core/domain/categories';
+import {
+  amountStats, categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
+  projectedSpending, runwayDays, transactionPath, weekdayPattern,
+} from '../core/domain/report-insights';
 import type { Transaction } from '../core/domain/types';
 
 type Range = 'daily' | 'activePeriod' | '3months' | '6months';
+type Flow = 'expense' | 'income';
 
 const CATEGORY_COLORS = ['#5BE9AA', '#8AB6F9', '#F5C26B', '#EF8676', '#B69AF6', '#71D4E8', '#E99AD1', '#9BC982'];
 
@@ -74,6 +79,10 @@ const sampledAxisLabels = (buckets: TrendBucket[]) => {
   );
 };
 
+/** 7 Januari 2024 jatuh di hari Minggu — jangkar tetap untuk menamai indeks getDay(). */
+const weekdayLabel = (weekday: number, locale: string, long = false) =>
+  new Date(2024, 0, 7 + weekday).toLocaleDateString(locale, { weekday: long ? 'long' : 'short' });
+
 export default function ReportsScreen() {
   const ui = useUI();
   const money = useMoney();
@@ -83,6 +92,8 @@ export default function ReportsScreen() {
   const { budgets } = useBudgets();
   const dashboard = useDashboard();
   const [range, setRange] = useState<Range>('activePeriod');
+  const [flow, setFlow] = useState<Flow>('expense');
+  const [openSector, setOpenSector] = useState<string | null>(null);
 
   const today = startOfDay(new Date());
   const activePeriodEnd = dashboard.period
@@ -115,9 +126,9 @@ export default function ReportsScreen() {
     transaction => !transaction.adjustment && inSelectedRange(transaction),
   );
   const expenses = transactions.filter(transaction => transaction.type === 'expense');
-  const income = transactions
-    .filter(transaction => transaction.type === 'income')
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const incomeTransactions = transactions.filter(transaction => transaction.type === 'income');
+  const transfers = transactions.filter(transaction => transaction.type === 'transfer');
+  const income = incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   const spending = expenses.reduce((sum, transaction) => sum + transaction.amount, 0);
   const netCashflow = income - spending;
   const activeBudgets = dashboard.period
@@ -128,51 +139,80 @@ export default function ReportsScreen() {
   const remainingBudget = totalBudget - usedBudget;
   const budgetUsage = totalBudget ? Math.round((usedBudget / totalBudget) * 100) : 0;
 
-  // Laporan memakai tingkat kategori menengah secara konsisten. Label spesifik otomatis
-  // digabungkan ke induknya; kategori bebas tetap berdiri sendiri.
-  const levelKey = (label: string) => categoryMid(label);
-  const categoryTotals = new Map<string, { total: number; count: number }>();
-  expenses.forEach((transaction) => {
-    const label = transaction.labels[0];
-    if (!label) return;
-    const key = levelKey(label);
-    const current = categoryTotals.get(key) ?? { total: 0, count: 0 };
-    categoryTotals.set(key, {
-      total: current.total + transaction.amount,
-      count: current.count + 1,
-    });
-  });
   const selectedRangeDays = calendarDays(rangeStart, rangeEnd);
+  const dailyAverage = Math.round(spending / selectedRangeDays);
+
+  // ===== Rentang sebelumnya, panjangnya persis sama =====
+  // Pembanding harus sepanjang rentang aktif, bukan "bulan lalu": rentang 7 hari yang
+  // dibandingkan dengan sebulan penuh akan selalu terlihat membaik drastis.
   const previousRangeStart = addDays(rangeStart, -selectedRangeDays);
-  const previousCategoryTotals = new Map<string, number>();
-  allTransactions
-    .filter((transaction) => {
-      const at = new Date(transaction.date);
-      return !transaction.adjustment
-        && transaction.type === 'expense'
-        && at >= previousRangeStart
-        && at < rangeStart;
-    })
+  const previousTransactions = allTransactions.filter((transaction) => {
+    const at = new Date(transaction.date);
+    return !transaction.adjustment && at >= previousRangeStart && at < rangeStart;
+  });
+  const previousExpenses = previousTransactions.filter(item => item.type === 'expense');
+  const previousIncomeTotal = previousTransactions
+    .filter(item => item.type === 'income')
+    .reduce((sum, item) => sum + item.amount, 0);
+  const previousSpending = previousExpenses.reduce((sum, item) => sum + item.amount, 0);
+  const previousNet = previousIncomeTotal - previousSpending;
+  const deltaPercent = (current: number, previous: number) =>
+    previous === 0 ? null : ((current - previous) / Math.abs(previous)) * 100;
+  const formatDelta = (value: number | null) => value == null
+    ? t('reports.newCategory')
+    : `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toLocaleString(locale, {
+        maximumFractionDigits: 0,
+      })}%`;
+
+  // ===== Kesehatan arus kas =====
+  const savingsRate = income > 0 ? Math.round((netCashflow / income) * 100) : null;
+  const runway = runwayDays(dashboard.liquidity, dailyAverage);
+  const freeDays = noSpendDays(expenses, rangeStart, rangeEnd);
+  const freeStreak = longestNoSpendStreak(expenses, rangeStart, rangeEnd);
+
+  // ===== Pola hari dalam seminggu =====
+  // Hanya belanja berpola kebiasaan yang dihitung — lihat isHabitualExpense untuk
+  // alasannya. Yang dibuang tetap dilaporkan angkanya supaya angkanya tidak misterius.
+  const habitualExpenses = expenses.filter(isHabitualExpense);
+  const excludedExpenses = expenses.filter(transaction => !isHabitualExpense(transaction));
+  const excludedTotal = excludedExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const weekdays = weekdayPattern(habitualExpenses, rangeStart, rangeEnd);
+  const weekdayPeak = Math.max(...weekdays.map(entry => entry.average), 1);
+  // Yang disyaratkan hanya harinya pernah muncul di rentang. Belanja nol BUKAN alasan
+  // untuk dikeluarkan dari peringkat — hari yang tiga kali muncul tanpa sekali pun belanja
+  // justru jawaban paling benar untuk "hari paling hemat"; menyaringnya membuat kartu itu
+  // menunjuk hari lain sementara grafik di atasnya jelas-jelas menampilkan Rp 0.
+  const measuredWeekdays = weekdays.filter(entry => entry.occurrences > 0);
+  const priciestWeekday = [...measuredWeekdays].sort((a, b) => b.average - a.average)[0];
+  const leanestWeekday = [...measuredWeekdays].sort((a, b) => a.average - b.average)[0];
+  const weekendDays = weekdays.filter(entry => entry.weekday === 0 || entry.weekday === 6);
+  const workDays = weekdays.filter(entry => entry.weekday > 0 && entry.weekday < 6);
+  const averageOf = (entries: typeof weekdays) => {
+    const occurrences = entries.reduce((sum, entry) => sum + entry.occurrences, 0);
+    const total = entries.reduce((sum, entry) => sum + entry.total, 0);
+    return occurrences > 0 ? Math.round(total / occurrences) : 0;
+  };
+  const weekendAverage = averageOf(weekendDays);
+  const workdayAverage = averageOf(workDays);
+  const weekendGap = deltaPercent(weekendAverage, workdayAverage);
+
+  // ===== Kategori bertingkat =====
+  const flowTransactions = flow === 'expense' ? expenses : incomeTransactions;
+  const flowTotal = flow === 'expense' ? spending : income;
+  const sectors = categoryTree(flowTransactions, t('reports.uncategorized'));
+  const previousSectorTotals = new Map<string, number>();
+  previousTransactions
+    .filter(transaction => transaction.type === flow)
     .forEach((transaction) => {
-      const label = transaction.labels[0];
-      if (!label) return;
-      const key = levelKey(label);
-      previousCategoryTotals.set(
-        key,
-        (previousCategoryTotals.get(key) ?? 0) + transaction.amount,
-      );
+      const sector = transactionPath(transaction)[0] ?? t('reports.uncategorized');
+      previousSectorTotals.set(sector, (previousSectorTotals.get(sector) ?? 0) + transaction.amount);
     });
-  const categories = [...categoryTotals.entries()]
-    .map(([name, stats]) => ({
-      name,
-      ...stats,
-      previousTotal: previousCategoryTotals.get(name) ?? 0,
-    }))
-    .sort((a, b) => b.total - a.total)
-    .slice(0, 8);
-  const topCategory = categories[0];
-  const shownCategoryTotal = categories.reduce((sum, category) => sum + category.total, 0);
-  const otherCategoryTotal = Math.max(0, spending - shownCategoryTotal);
+  const activeCategoryCount = new Set(
+    flowTransactions.map(transaction => transactionPath(transaction).join('›')),
+  ).size;
+  const topSector = sectors[0];
+  const shownSectorTotal = sectors.slice(0, 8).reduce((sum, sector) => sum + sector.total, 0);
+  const otherSectorTotal = Math.max(0, flowTotal - shownSectorTotal);
 
   // Laporan harian: satu baris per tanggal yang ada aktivitasnya, terbaru di atas.
   const dailyMap = new Map<string, { income: number; expense: number; count: number }>();
@@ -187,9 +227,10 @@ export default function ReportsScreen() {
   });
   const daily = [...dailyMap.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 31);
   const dailyMax = Math.max(...daily.map(([, entry]) => Math.max(entry.income, entry.expense)), 1);
-  const dailyAverage = Math.round(spending / calendarDays(rangeStart, rangeEnd));
-  const averageExpense = expenses.length ? Math.round(spending / expenses.length) : 0;
-  const largestExpense = [...expenses].sort((a, b) => b.amount - a.amount)[0];
+
+  // ===== Sebaran nominal =====
+  const stats = amountStats(expenses);
+  const largestExpense = expenses.find(transaction => transaction.amount === stats.largest);
   const largestExpenseLabel = largestExpense
     ? largestExpense.note
       || largestExpense.merchant
@@ -206,6 +247,14 @@ export default function ReportsScreen() {
         month: 'short',
       })
     : '';
+  const unexpected = expenses.filter(transaction => transaction.nature === 'unexpected');
+  const unexpectedTotal = unexpected.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const unexpectedPercent = spending ? Math.round((unexpectedTotal / spending) * 100) : 0;
+  const savingsMoved = transfers
+    .filter(transaction => transaction.savingId)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const transferVolume = transfers.reduce((sum, transaction) => sum + transaction.amount, 0);
+
   const creditWalletIds = new Set(
     dashboard.wallets.filter(wallet => wallet.kind === 'credit').map(wallet => wallet.id),
   );
@@ -214,6 +263,25 @@ export default function ReportsScreen() {
   const creditPercent = spending ? Math.round((creditSpending / spending) * 100) : 0;
   const installments = creditExpenses.filter(transaction => transaction.installmentTenorMonths);
   const installmentSpending = installments.reduce((sum, transaction) => sum + transaction.amount, 0);
+
+  const walletNames = new Map(dashboard.wallets.map(wallet => [wallet.id, wallet.name]));
+  const budgetNames = new Map(budgets.map(budget => [budget.id, budget.category]));
+
+  // ===== Sumber dana & tempat =====
+  const walletSlices = groupBy(expenses, transaction => transaction.walletId).slice(0, 8);
+  const merchantSlices = groupBy(
+    expenses,
+    transaction => transaction.merchant?.trim() || undefined,
+  ).slice(0, 8);
+  const walletPeak = Math.max(...walletSlices.map(slice => slice.total), 1);
+  const merchantPeak = Math.max(...merchantSlices.map(slice => slice.total), 1);
+
+  // ===== Realisasi anggaran & proyeksi =====
+  const budgetRows = [...activeBudgets].sort((a, b) => b.spent - a.spent);
+  const progress = range === 'activePeriod' ? dashboard.progress : null;
+  const projected = progress && progress.dayOf > 0 && progress.dayOf < progress.totalDays
+    ? projectedSpending(spending, progress.dayOf, progress.totalDays)
+    : null;
 
   // Saldo historis direkonstruksi dari likuiditas saat ini dengan membalik delta kas.
   // Expense kartu kredit tetap -amount; pembayaran kartunya transfer, sehingga delta 0.
@@ -287,14 +355,14 @@ export default function ReportsScreen() {
   const selectedRangeLabel = range === 'activePeriod' && dashboard.period
     ? dashboard.period.alias
     : rangeOptions.find(([value]) => value === range)?.[1] ?? '';
-  const walletNames = new Map(dashboard.wallets.map(wallet => [wallet.id, wallet.name]));
-  const budgetNames = new Map(budgets.map(budget => [budget.id, budget.category]));
 
   const exportCsv = () => {
     const rows = [
       [
         'Tanggal',
+        'Hari',
         'Jenis',
+        'Sifat',
         'Catatan',
         'Tempat',
         'Kelompok besar',
@@ -309,9 +377,12 @@ export default function ReportsScreen() {
       ],
       ...transactions.map((transaction) => {
         const path = transaction.labels[0] ? categoryPath(transaction.labels[0]) : [];
+        const at = new Date(transaction.date);
         return [
-          new Date(transaction.date).toLocaleDateString('id-ID'),
+          at.toLocaleDateString('id-ID'),
+          weekdayLabel(at.getDay(), 'id-ID', true),
           transaction.type,
+          transaction.nature === 'unexpected' ? 'tak terduga' : 'terencana',
           transaction.note || '',
           transaction.merchant || '',
           path[0] || '',
@@ -381,6 +452,66 @@ export default function ReportsScreen() {
         </div>
       </div>
 
+      {/* ===== Kesehatan arus kas ===== */}
+      <div className="sec">
+        <span className="t">{t('reports.cashflowHealth')}</span>
+        <span className="daily-avg">{selectedRangeLabel.toLowerCase()}</span>
+      </div>
+      <div className="health-card">
+        <div className="health-grid">
+          <div className={savingsRate != null && savingsRate < 0 ? 'negative' : ''}>
+            <span>{t('reports.savingsRate')}</span>
+            <b>{savingsRate == null ? '—' : `${savingsRate}%`}</b>
+            <small>{t('reports.savingsRateNote')}</small>
+          </div>
+          <div>
+            <span>{t('reports.dailyBurn')}</span>
+            <b>{money.fmtCompact(dailyAverage)}</b>
+            <small>{t('reports.dailyBurnNote', { days: selectedRangeDays })}</small>
+          </div>
+          <div>
+            <span>{t('reports.runway')}</span>
+            <b>{runway == null ? t('reports.runwayUnknown') : t('reports.runwayValue', { days: runway })}</b>
+            <small>{t('reports.runwayNote')}</small>
+          </div>
+          <div>
+            <span>{t('reports.noSpendDays')}</span>
+            <b>{freeDays}/{selectedRangeDays}</b>
+            <small>{t('reports.noSpendNote', { days: freeStreak })}</small>
+          </div>
+        </div>
+        <div className="compare-strip">
+          <span className="compare-title">{t('reports.vsPrevious')}</span>
+          <div className="compare-items">
+            {([
+              [t('reports.income'), income, previousIncomeTotal, true, false],
+              [t('reports.expense'), spending, previousSpending, false, false],
+              // Arus kas bersih boleh negatif, jadi tandanya harus ikut tercetak —
+              // dua sisanya selalu ≥ 0 dan tidak perlu diberi tanda plus.
+              [t('reports.netCashflow'), netCashflow, previousNet, true, true],
+            ] as Array<[string, number, number, boolean, boolean]>)
+              .map(([label, current, previous, higherIsBetter, signed]) => {
+                const change = deltaPercent(current, previous);
+                // Naiknya pengeluaran bukan kabar baik, naiknya pemasukan iya — kelas
+                // warnanya mengikuti maknanya, bukan arah angkanya.
+                const tone = change == null || change === 0
+                  ? 'flat'
+                  : (change > 0) === higherIsBetter ? 'down' : 'up';
+                const show = (value: number) =>
+                  signed ? money.fmtCompactSigned(value) : money.fmtCompact(value);
+                return (
+                  <div className="compare-item" key={label}>
+                    <span>{label}</span>
+                    <b>{show(current)}</b>
+                    <em className={tone}>{formatDelta(change)}</em>
+                    <small>{t('reports.previousValue', { amount: show(previous) })}</small>
+                  </div>
+                );
+              })}
+          </div>
+        </div>
+      </div>
+
       <div className="sec">
         <span className="t">{t('reports.balanceTrend')} · {selectedRangeLabel.toLowerCase()}</span>
       </div>
@@ -425,6 +556,67 @@ export default function ReportsScreen() {
         </div>
       </div>
 
+      {/* ===== Pola hari dalam seminggu ===== */}
+      <div className="sec">
+        <span className="t">{t('reports.weekdayPattern')}</span>
+        <span className="daily-avg">{t('reports.weekdayScope')}</span>
+      </div>
+      <div className="weekday-card">
+        {habitualExpenses.length === 0 ? (
+          <div className="saving-empty">{t('reports.noData')}</div>
+        ) : (
+          <>
+            <div className="weekday-rows">
+              {weekdays.map((entry) => {
+                const peak = priciestWeekday?.weekday === entry.weekday;
+                return (
+                  <div className={`weekday-row${peak ? ' peak' : ''}`} key={entry.weekday}>
+                    <span className="weekday-name">{weekdayLabel(entry.weekday, locale)}</span>
+                    <span className="weekday-bar">
+                      {/* Nol tidak boleh menyisakan isi apa pun: min-width pada .weekday-bar i
+                          membuat 0 tetap tampil sebagai secuil garis, dan itu membantah
+                          angka "Rp 0" di sebelahnya. */}
+                      {entry.average > 0 && (
+                        <i style={{ width: `${(entry.average / weekdayPeak) * 100}%` }} />
+                      )}
+                    </span>
+                    <span className="weekday-value">{money.fmtCompact(entry.average)}</span>
+                    <span className="weekday-count">
+                      {t('reports.weekdayOccurrence', { count: entry.occurrences })}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="weekday-summary">
+              <div>
+                <span>{t('reports.priciestWeekday')}</span>
+                <b>{priciestWeekday ? weekdayLabel(priciestWeekday.weekday, locale, true) : '—'}</b>
+                <small>{money.fmtCompact(priciestWeekday?.average ?? 0)}</small>
+              </div>
+              <div>
+                <span>{t('reports.leanestWeekday')}</span>
+                <b>{leanestWeekday ? weekdayLabel(leanestWeekday.weekday, locale, true) : '—'}</b>
+                <small>{money.fmtCompact(leanestWeekday?.average ?? 0)}</small>
+              </div>
+              <div>
+                <span>{t('reports.weekendGap')}</span>
+                <b>{formatDelta(weekendGap)}</b>
+                <small>{money.fmtCompact(weekendAverage)} vs {money.fmtCompact(workdayAverage)}</small>
+              </div>
+            </div>
+          </>
+        )}
+        {excludedExpenses.length > 0 && (
+          <div className="weekday-note">
+            {t('reports.weekdayExcluded', {
+              count: excludedExpenses.length,
+              amount: money.fmtCompact(excludedTotal),
+            })}
+          </div>
+        )}
+      </div>
+
       <div className="sec">
         <span className="t">{t('reports.dailyReport')}</span>
         <span className="daily-avg">{t('reports.dailyAvg')} {money.fmtCompact(dailyAverage)}</span>
@@ -454,150 +646,305 @@ export default function ReportsScreen() {
         })}
       </div>
 
+      {/* ===== Kategori bertingkat ===== */}
+      <div className="sec">
+        <span className="t">{t('reports.sectorBreakdown')}</span>
+        <span className="daily-avg">{t('reports.sectorHint')}</span>
+      </div>
+      <div className="filter-pills sub-filter flow-toggle">
+        {([['expense', t('reports.expense')], ['income', t('reports.income')]] as Array<[Flow, string]>)
+          .map(([value, label]) => (
+            <button
+              key={value}
+              className={flow === value ? 'on' : ''}
+              onClick={() => { setFlow(value); setOpenSector(null); }}
+            >
+              {label}
+              <span className="pill-count">
+                {value === 'expense' ? expenses.length : incomeTransactions.length}
+              </span>
+            </button>
+          ))}
+      </div>
+      <div className="category-report-card">
+        {sectors.length === 0 ? (
+          <div className="saving-empty">
+            {flow === 'expense' ? t('reports.noData') : t('reports.noIncomeData')}
+          </div>
+        ) : (
+          <>
+            <div className="category-report-overview">
+              <div>
+                <span>{t('reports.largestCategory')}</span>
+                <b>{topSector.name}</b>
+                <small>
+                  {money.fmtCompact(topSector.total)} · {flowTotal
+                    ? Math.round((topSector.total / flowTotal) * 100)
+                    : 0}%
+                </small>
+              </div>
+              <div>
+                <span>{t('reports.activeCategories')}</span>
+                <b>{activeCategoryCount}</b>
+                <small>{flowTransactions.length} {t('reports.txCount')}</small>
+              </div>
+            </div>
+            <div className="category-distribution" aria-label={t('reports.categoryDistribution')}>
+              {sectors.slice(0, 8).map((sector, index) => (
+                <i
+                  key={sector.name}
+                  style={{
+                    width: `${flowTotal ? (sector.total / flowTotal) * 100 : 0}%`,
+                    background: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
+                  }}
+                  title={`${sector.name}: ${money.fmt(sector.total)}`}
+                />
+              ))}
+              {otherSectorTotal > 0 && (
+                <i
+                  className="other"
+                  style={{ width: `${(otherSectorTotal / flowTotal) * 100}%` }}
+                  title={`${t('reports.otherCategories')}: ${money.fmt(otherSectorTotal)}`}
+                />
+              )}
+            </div>
+            <div className="sector-list">
+              {sectors.map((sector, index) => {
+                const color = CATEGORY_COLORS[index % CATEGORY_COLORS.length];
+                const share = flowTotal ? Math.round((sector.total / flowTotal) * 100) : 0;
+                const change = deltaPercent(sector.total, previousSectorTotals.get(sector.name) ?? 0);
+                // Untuk pengeluaran, naik itu buruk; untuk pemasukan sebaliknya.
+                const tone = change == null
+                  ? 'new'
+                  : change === 0
+                    ? 'flat'
+                    : (change > 0) === (flow === 'income') ? 'down' : 'up';
+                const expandable = sector.children.length > 0;
+                const open = expandable && openSector === sector.name;
+                return (
+                  <div className={`sector${open ? ' open' : ''}`} key={sector.name}>
+                    <button
+                      type="button"
+                      className="sector-head"
+                      aria-expanded={expandable ? open : undefined}
+                      onClick={() => expandable && setOpenSector(open ? null : sector.name)}
+                    >
+                      <span className="category-rank" style={{ background: color }}>{index + 1}</span>
+                      <span className="sector-main">
+                        <span className="category-report-head">
+                          <b>{sector.name}</b>
+                          <strong>{money.fmt(sector.total)}</strong>
+                        </span>
+                        <span className="category-report-meta">
+                          <span>{share}% {flow === 'expense' ? t('reports.ofSpending') : t('reports.ofIncome')}</span>
+                          <span>{sector.count} {t('reports.txCount')}</span>
+                          {expandable && (
+                            <span>{t('reports.subcategoryCount', { count: sector.children.length })}</span>
+                          )}
+                          <em className={tone}>{formatDelta(change)}</em>
+                        </span>
+                        <span className="category-share-bar">
+                          <i style={{ width: `${share}%`, background: color }} />
+                        </span>
+                      </span>
+                      {expandable && <Chevron className="sector-caret" />}
+                    </button>
+                    {open && (
+                      <div className="sector-children">
+                        {sector.children.map((child) => {
+                          const childShare = sector.total
+                            ? Math.round((child.total / sector.total) * 100)
+                            : 0;
+                          return (
+                            <div className="sector-child" key={child.name}>
+                              <div className="sector-child-head">
+                                <b>{child.name}</b>
+                                <span>{money.fmtCompact(child.total)}</span>
+                                <em>{childShare}%</em>
+                              </div>
+                              <div className="sector-child-bar">
+                                <i style={{ width: `${childShare}%`, background: color }} />
+                              </div>
+                              <div className="sector-child-meta">
+                                {child.count} {t('reports.txCount')} · {t('reports.avgShort')}{' '}
+                                {money.fmtCompact(Math.round(child.total / child.count))} · {childShare}%{' '}
+                                {t('reports.ofSector')}
+                              </div>
+                              {child.children.length > 0 && (
+                                <div className="sector-leaves">
+                                  {child.children.map(leaf => (
+                                    <span key={leaf.name}>
+                                      {leaf.name}
+                                      <b>{money.fmtCompact(leaf.total)}</b>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* ===== Sumber dana & tempat ===== */}
       <div className="report-columns">
         <div>
-          <div className="sec"><span className="t">{t('reports.transactionInsights')}</span></div>
-          <div className="transaction-insight-card">
-            {expenses.length === 0 ? (
-              <div className="saving-empty">{t('reports.noExpenseInsight')}</div>
-            ) : (
-              <>
-                <div className="transaction-insight-feature">
-                  <span>{t('reports.largestExpense')}</span>
-                  <div>
-                    <b>{largestExpenseLabel}</b>
-                    <strong>{money.fmt(largestExpense?.amount ?? 0)}</strong>
-                  </div>
+          <div className="sec"><span className="t">{t('reports.walletBreakdown')}</span></div>
+          <div className="breakdown-card">
+            {walletSlices.length === 0 ? (
+              <div className="saving-empty">{t('reports.noData')}</div>
+            ) : walletSlices.map((slice) => (
+              <div className="breakdown-row" key={slice.key}>
+                <div className="breakdown-head">
+                  <b>{walletNames.get(slice.key) ?? t('reports.uncategorized')}</b>
+                  <strong>{money.fmtCompact(slice.total)}</strong>
                 </div>
-                <div className="transaction-insight-grid">
-                  <div>
-                    <span>{t('reports.avgTransaction')}</span>
-                    <b>{money.fmtCompact(averageExpense)}</b>
-                    <small>{expenses.length} {t('reports.txCount')}</small>
-                  </div>
-                  <div>
-                    <span>{t('reports.busiestDay')}</span>
-                    <b>{busiestDayLabel}</b>
-                    <small>{money.fmtCompact(busiestDay?.[1].expense ?? 0)}</small>
-                  </div>
-                  <div>
-                    <span>{t('reports.creditShare')}</span>
-                    <b>{creditPercent}%</b>
-                    <small>{money.fmtCompact(creditSpending)}</small>
-                  </div>
+                <div className="breakdown-bar">
+                  <i style={{ width: `${(slice.total / walletPeak) * 100}%` }} />
                 </div>
-                {installments.length > 0 && (
-                  <div className="transaction-insight-note">
-                    {t('reports.installmentSummary', {
-                      count: installments.length,
-                      amount: money.fmtCompact(installmentSpending),
-                    })}
-                  </div>
-                )}
-              </>
-            )}
+                <div className="breakdown-meta">
+                  {slice.count} {t('reports.txCount')} · {spending
+                    ? Math.round((slice.total / spending) * 100)
+                    : 0}% {t('reports.ofSpending')}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
         <div>
-          <div className="sec">
-            <span className="t">{t('reports.categoryAnalysis')}</span>
-            <span className="daily-avg">{t('reports.vsPreviousRange')}</span>
-          </div>
-          <div className="category-report-card">
-            {categories.length === 0 && <div className="saving-empty">{t('reports.noData')}</div>}
-            {categories.length > 0 && (
-              <>
-                <div className="category-report-overview">
-                  <div>
-                    <span>{t('reports.largestCategory')}</span>
-                    <b>{topCategory.name}</b>
-                    <small>
-                      {money.fmtCompact(topCategory.total)} · {spending
-                        ? Math.round((topCategory.total / spending) * 100)
-                        : 0}%
-                    </small>
-                  </div>
-                  <div>
-                    <span>{t('reports.activeCategories')}</span>
-                    <b>{categoryTotals.size}</b>
-                    <small>{expenses.length} {t('reports.txCount')}</small>
-                  </div>
+          <div className="sec"><span className="t">{t('reports.merchantBreakdown')}</span></div>
+          <div className="breakdown-card">
+            {merchantSlices.length === 0 ? (
+              <div className="saving-empty">{t('reports.noMerchant')}</div>
+            ) : merchantSlices.map((slice) => (
+              <div className="breakdown-row" key={slice.key}>
+                <div className="breakdown-head">
+                  <b>{slice.key}</b>
+                  <strong>{money.fmtCompact(slice.total)}</strong>
                 </div>
-                <div className="category-distribution" aria-label={t('reports.categoryDistribution')}>
-                  {categories.map((category, index) => (
-                    <i
-                      key={category.name}
-                      style={{
-                        width: `${spending ? (category.total / spending) * 100 : 0}%`,
-                        background: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-                      }}
-                      title={`${category.name}: ${money.fmt(category.total)}`}
-                    />
-                  ))}
-                  {otherCategoryTotal > 0 && (
-                    <i
-                      className="other"
-                      style={{ width: `${(otherCategoryTotal / spending) * 100}%` }}
-                      title={`${t('reports.otherCategories')}: ${money.fmt(otherCategoryTotal)}`}
-                    />
-                  )}
+                <div className="breakdown-bar">
+                  <i className="warm" style={{ width: `${(slice.total / merchantPeak) * 100}%` }} />
                 </div>
-                <div className="category-report-list">
-                  {categories.map((category, index) => {
-                    const share = spending ? Math.round((category.total / spending) * 100) : 0;
-                    const average = Math.round(category.total / category.count);
-                    const change = category.previousTotal
-                      ? ((category.total - category.previousTotal) / category.previousTotal) * 100
-                      : null;
-                    const trendClass = change == null
-                      ? 'new'
-                      : change > 0
-                        ? 'up'
-                        : change < 0
-                          ? 'down'
-                          : 'flat';
-                    const trendLabel = change == null
-                      ? t('reports.newCategory')
-                      : `${change > 0 ? '+' : change < 0 ? '−' : ''}${Math.abs(change).toLocaleString(locale, {
-                          maximumFractionDigits: 0,
-                        })}%`;
-                    return (
-                      <div className="category-report-row" key={category.name}>
-                        <span
-                          className="category-rank"
-                          style={{ background: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }}
-                        >
-                          {index + 1}
-                        </span>
-                        <div className="category-report-main">
-                          <div className="category-report-head">
-                            <b>{category.name}</b>
-                            <strong>{money.fmt(category.total)}</strong>
-                          </div>
-                          <div className="category-report-meta">
-                            <span>{share}% {t('reports.ofSpending')}</span>
-                            <span>{category.count} {t('reports.txCount')}</span>
-                            <span>{t('reports.avgShort')} {money.fmtCompact(average)}</span>
-                            <em className={trendClass}>{trendLabel}</em>
-                          </div>
-                          <div className="category-share-bar">
-                            <i
-                              style={{
-                                width: `${spending ? (category.total / spending) * 100 : 0}%`,
-                                background: CATEGORY_COLORS[index % CATEGORY_COLORS.length],
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="breakdown-meta">
+                  {slice.count} {t('reports.txCount')} · {t('reports.avgShort')}{' '}
+                  {money.fmtCompact(Math.round(slice.total / slice.count))}
                 </div>
-              </>
-            )}
+              </div>
+            ))}
           </div>
         </div>
       </div>
+
+      {/* ===== Insight transaksi ===== */}
+      <div className="sec"><span className="t">{t('reports.transactionInsights')}</span></div>
+      <div className="transaction-insight-card">
+        {expenses.length === 0 ? (
+          <div className="saving-empty">{t('reports.noExpenseInsight')}</div>
+        ) : (
+          <>
+            <div className="transaction-insight-feature">
+              <span>{t('reports.largestExpense')}</span>
+              <div>
+                <b>{largestExpenseLabel}</b>
+                <strong>{money.fmt(stats.largest)}</strong>
+              </div>
+            </div>
+            <div className="transaction-insight-grid wide">
+              <div>
+                <span>{t('reports.avgTransaction')}</span>
+                <b>{money.fmtCompact(stats.average)}</b>
+                <small>{expenses.length} {t('reports.txCount')}</small>
+              </div>
+              <div>
+                <span>{t('reports.medianTransaction')}</span>
+                <b>{money.fmtCompact(stats.median)}</b>
+                <small>{t('reports.smallestExpense')} {money.fmtCompact(stats.smallest)}</small>
+              </div>
+              <div>
+                <span>{t('reports.busiestDay')}</span>
+                <b>{busiestDayLabel}</b>
+                <small>{money.fmtCompact(busiestDay?.[1].expense ?? 0)}</small>
+              </div>
+              <div>
+                <span>{t('reports.creditShare')}</span>
+                <b>{creditPercent}%</b>
+                <small>{money.fmtCompact(creditSpending)}</small>
+              </div>
+              <div>
+                <span>{t('reports.unexpectedShare')}</span>
+                <b>{unexpectedPercent}%</b>
+                <small>{unexpected.length} {t('reports.txCount')} · {money.fmtCompact(unexpectedTotal)}</small>
+              </div>
+              <div>
+                <span>{t('reports.savingsMoved')}</span>
+                <b>{money.fmtCompact(savingsMoved)}</b>
+                <small>
+                  {t('reports.transferVolume')} {money.fmtCompact(transferVolume)}
+                </small>
+              </div>
+            </div>
+            {installments.length > 0 && (
+              <div className="transaction-insight-note">
+                {t('reports.installmentSummary', {
+                  count: installments.length,
+                  amount: money.fmtCompact(installmentSpending),
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* ===== Realisasi anggaran ===== */}
+      {budgetRows.length > 0 && (
+        <>
+          <div className="sec">
+            <span className="t">{t('reports.budgetRealization')}</span>
+            <span className="daily-avg">{budgetUsage}% {t('reports.ofSpending')}</span>
+          </div>
+          <div className="breakdown-card">
+            {projected != null && (
+              <div className={`projection-note${projected > totalBudget && totalBudget > 0 ? ' over' : ''}`}>
+                <span>{t('reports.projection')}</span>
+                <b>{money.fmtCompact(projected)}</b>
+                <small>{t('reports.projectionNote')}</small>
+              </div>
+            )}
+            {budgetRows.map((budget) => {
+              const usage = budget.allocated
+                ? Math.round((budget.spent / budget.allocated) * 100)
+                : 0;
+              return (
+                <div className="breakdown-row" key={budget.id}>
+                  <div className="breakdown-head">
+                    <b>{budget.category}</b>
+                    <strong>{money.fmtCompact(budget.spent)} / {money.fmtCompact(budget.allocated)}</strong>
+                  </div>
+                  <div className="breakdown-bar">
+                    <i
+                      className={budget.over ? 'over' : ''}
+                      style={{ width: `${Math.min(100, usage)}%` }}
+                    />
+                  </div>
+                  <div className="breakdown-meta">
+                    {usage}% ·{' '}
+                    {budget.over
+                      ? t('reports.budgetOver', { amount: money.fmtCompact(-budget.remaining) })
+                      : t('reports.budgetLeft', { amount: money.fmtCompact(budget.remaining) })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </>
   );
 }

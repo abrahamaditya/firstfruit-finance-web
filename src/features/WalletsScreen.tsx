@@ -2,7 +2,8 @@
 import React, { useRef, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { useWallets, useSavings } from '../application/hooks';
-import { Eye, EyeOff, Pencil, Plus, WalletIcon } from '../components/ui/icons';
+import { CardChip, Eye, EyeOff, Pencil, Plus, WalletIcon } from '../components/ui/icons';
+import { walletCardTheme } from '../core/wallet-card-theme';
 
 const color: Record<string, string> = { BCA: '#1a4ea3', 'blu by BCA': '#0a8cd4', GoPay: '#00aa13', OVO: '#4c2a86', Tunai: 'var(--emerald)', 'Kartu Kredit BCA': '#2F4858' };
 const initials = (n: string) => n.split(' ')[0].slice(0, 3);
@@ -130,12 +131,16 @@ export default function WalletsScreen() {
           ref={trackRef}
           onScroll={onScroll}
         >
-          {cards.map((w, index) => (
+          {cards.map((w, index) => {
+            const card = walletCardTheme(w);
+            return (
             <div className="card-slide" key={w.id}>
               <div
                 className={`paycard${mediumOf(w) === 'credit' ? ' credit' : ''}${
                   index === active ? '' : index < active ? ' behind before' : ' behind after'
                 }`}
+                data-theme={card.theme}
+                data-pattern={card.pattern}
                 onClick={() => { setActive(index); ui.openItem(w.name, 'wallet', w.id); }}
               >
                 <div className="pt">
@@ -157,7 +162,7 @@ export default function WalletsScreen() {
                     >
                       <Pencil />
                     </button>
-                    <span className="pchip" />
+                    <span className="pchip"><CardChip /></span>
                   </span>
                 </div>
                 <div className="pn">{cardSubtitle(w)}</div>
@@ -171,7 +176,8 @@ export default function WalletsScreen() {
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
         {cards.length > 1 && (
           <div className="card-dots">

@@ -578,60 +578,26 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [rateUpdated, setRateUpdated] = useState('');
   const appRef = useRef<HTMLDivElement>(null);
   const formScrollRef = useRef<HTMLDivElement>(null);
-  const selectGestureRef = useRef<{
-    pointerId: number;
-    startX: number;
-    startY: number;
-    dragged: boolean;
-  } | null>(null);
-  const suppressSelectClickRef = useRef(false);
 
   /**
-   * Semua opsi dropdown memakai aturan interaksi yang sama:
-   * mouse/keyboard click langsung memilih, sedangkan touch/pen baru memilih
-   * pada pointerup jika jari tidak sedang melakukan drag untuk scroll.
+   * Dropdown ditutup oleh satu sentuhan/klik di luar pembungkusnya.
+   *
+   * Sengaja `pointerdown` di document, bukan blur: menyeret scrollbar atau menggulir
+   * daftar membuat elemen kehilangan fokus tanpa berpindah ke elemen lain, sehingga
+   * penutupan berbasis blur ikut menutup daftar setiap kali pengguna mencoba menggulir.
+   * Pemilihan opsi sendiri cukup mengandalkan event `click` bawaan — peramban tidak
+   * memunculkan click ketika jari dipakai menggulir, jadi tidak perlu deteksi geser sendiri.
    */
-  const dropdownOptionHandlers = (
-    selectOption: () => void,
-  ): React.ButtonHTMLAttributes<HTMLButtonElement> => ({
-    onPointerDown: (event) => {
-      if (event.pointerType === 'mouse') return;
-      selectGestureRef.current = {
-        pointerId: event.pointerId,
-        startX: event.clientX,
-        startY: event.clientY,
-        dragged: false,
-      };
-    },
-    onPointerMove: (event) => {
-      const gesture = selectGestureRef.current;
-      if (!gesture || gesture.pointerId !== event.pointerId) return;
-      if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 8) {
-        gesture.dragged = true;
-      }
-    },
-    onPointerCancel: (event) => {
-      if (selectGestureRef.current?.pointerId === event.pointerId) {
-        selectGestureRef.current = null;
-      }
-    },
-    onPointerUp: (event) => {
-      if (event.pointerType === 'mouse') return;
-      const gesture = selectGestureRef.current;
-      selectGestureRef.current = null;
-      if (!gesture || gesture.pointerId !== event.pointerId) return;
-
-      // Pointerup touch biasanya diikuti click sintetis; cukup proses sekali.
-      suppressSelectClickRef.current = true;
-      window.setTimeout(() => {
-        suppressSelectClickRef.current = false;
-      }, 0);
-      if (!gesture.dragged) selectOption();
-    },
-    onClick: () => {
-      if (!suppressSelectClickRef.current) selectOption();
-    },
-  });
+  useEffect(() => {
+    if (!openSuggest) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest('[data-dropdown-open="true"]')) return;
+      setOpenSuggest(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [openSuggest]);
 
   // Sheet tetap terpasang ketika ditutup agar animasinya halus. Karena itu browser
   // juga mempertahankan posisi scroll dan fokus terakhirnya. Setiap pembukaan harus
@@ -1739,10 +1705,49 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     }
   }, [auth.user?.id, auth.workspaceId, create, form, formDraftReady, sheet]);
 
-  const close = () => {
+  const close = useCallback(() => {
     if (sheet === 'create') clearCurrentFormDraft();
     setSheet(null);
-  };
+  }, [clearCurrentFormDraft, sheet]);
+
+  /**
+   * Tombol/gestur kembali di ponsel harus menutup panel yang terbuka, bukan meninggalkan
+   * aplikasi — panelnya menutupi layar penuh, jadi bagi pengguna itulah "halaman" saat ini.
+   *
+   * Caranya: satu entri riwayat semu didorong selama ada panel terbuka. Aksi kembali
+   * memakan entri itu dan kita tinggal menutup panel; sebaliknya, menutup lewat tombol X
+   * atau scrim harus memakai entri itu sendiri (history.back) supaya riwayat tidak
+   * menumpuk dan tombol kembali berikutnya tidak jadi sekadar aksi kosong.
+   *
+   * `pushedSheetEntry` menandai siapa yang sudah memakai entrinya, sehingga history.back()
+   * dari penutupan lewat UI tidak dikira aksi kembali pengguna dan menutup panel dua kali.
+   */
+  const pushedSheetEntry = useRef(false);
+  const sheetOpen = sheet !== null;
+
+  useEffect(() => {
+    if (sheetOpen) {
+      if (!pushedSheetEntry.current) {
+        pushedSheetEntry.current = true;
+        window.history.pushState({ sheetOpen: true }, '');
+      }
+      return;
+    }
+    if (pushedSheetEntry.current) {
+      pushedSheetEntry.current = false;
+      window.history.back();
+    }
+  }, [sheetOpen]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      if (!pushedSheetEntry.current) return;
+      pushedSheetEntry.current = false;
+      close();
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [close]);
 
   const saveForm = async (event: FormEvent) => {
     event.preventDefault();
@@ -2432,9 +2437,18 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                   <fieldset className="form-section">
                   <legend>{section.title}</legend>
                   <div className="form-section-fields">
-                    {section.fields.map((field) => (
-                <label className="input-field" key={field.key}>
-                  <span>
+                    {section.fields.map((field) => {
+                      // <label> hanya sah membungkus satu kontrol form asli. Select dan
+                      // segmented di sini tersusun dari <button>, dan klik di dalam label
+                      // diteruskan peramban ke kontrol berlabelnya — untuk select itu berarti
+                      // trigger-nya, sehingga memilih opsi langsung membuka lagi dropdown yang
+                      // baru saja ditutup. Keduanya memakai <div> dengan label eksplisit.
+                      const native = field.type !== 'select' && field.type !== 'segmented';
+                      const Wrapper = native ? 'label' : 'div';
+                      const labelId = `field-label-${field.key}`;
+                      return (
+                <Wrapper className="input-field" key={field.key}>
+                  <span id={native ? undefined : labelId}>
                     {field.labelOf ? field.labelOf(form) : field.label}
                     {fieldIsRequired(field, form) && <em className="required-mark">*</em>}
                   </span>
@@ -2442,6 +2456,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     <div
                       className={`form-segmented${field.options?.length === 2 ? ' two' : ''}${field.key === 'txType' ? ' transaction-types' : ''}`}
                       role="radiogroup"
+                      aria-labelledby={labelId}
                     >
                       {(field.options ?? []).map((option) => (
                         <button
@@ -2463,8 +2478,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     return (
                       <div
                         className={`custom-select${expanded ? ' open' : ''}`}
+                        data-dropdown-open={expanded ? 'true' : undefined}
+                        // Hanya perpindahan fokus yang benar-benar keluar (Tab) yang menutup.
+                        // Fokus yang hilang tanpa tujuan — scrollbar diseret, area kosong
+                        // disentuh — diabaikan; itu urusan pointerdown di document.
                         onBlur={(event) => {
-                          if (!event.currentTarget.contains(event.relatedTarget)) {
+                          if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
                             setOpenSuggest((current) => (current === field.key ? null : current));
                           }
                         }}
@@ -2480,6 +2499,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                           className={`custom-select-trigger${selected ? '' : ' placeholder'}`}
                           aria-haspopup="listbox"
                           aria-expanded={expanded}
+                          aria-labelledby={labelId}
                           onClick={() => setOpenSuggest((current) => current === field.key ? null : field.key)}
                         >
                           <span>{(selected?.label ?? form[field.key]) || t('common.choose')}</span>
@@ -2497,10 +2517,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                                     aria-selected={option.value === (form[field.key] || '')}
                                     className={option.value === (form[field.key] || '') ? 'on' : ''}
                                     key={option.value || `${field.key}-empty`}
-                                    {...dropdownOptionHandlers(() => {
+                                    onClick={() => {
                                       setForm(applyFieldChange(form, field.key, option.value));
                                       setOpenSuggest(null);
-                                    })}
+                                    }}
                                   >
                                     <span>{option.label}</span>
                                     {option.value === (form[field.key] || '') && <Check />}
@@ -2532,9 +2552,20 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       className={
                         field.type === 'date' ? 'date-field' : field.suggestions ? 'suggest-field' : undefined
                       }
+                      data-dropdown-open={openSuggest === field.key ? 'true' : undefined}
                       onBlur={(event) => {
-                        if (field.suggestions && !event.currentTarget.contains(event.relatedTarget)) {
+                        if (
+                          field.suggestions
+                          && event.relatedTarget
+                          && !event.currentTarget.contains(event.relatedTarget)
+                        ) {
                           setOpenSuggest((current) => (current === field.key ? null : current));
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (field.suggestions && event.key === 'Escape') {
+                          event.preventDefault();
+                          setOpenSuggest(null);
                         }
                       }}
                     >
@@ -2571,10 +2602,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                               <button
                                 type="button"
                                 key={suggestion}
-                                {...dropdownOptionHandlers(() => {
+                                onClick={() => {
                                   setForm({ ...form, [field.key]: suggestion });
                                   setOpenSuggest(null);
-                                })}
+                                }}
                               >
                                 {suggestion}
                               </button>
@@ -2584,8 +2615,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       })()}
                     </div>
                   )}
-                </label>
-                    ))}
+                </Wrapper>
+                      );
+                    })}
                   </div>
                 </fieldset>
                 </React.Fragment>

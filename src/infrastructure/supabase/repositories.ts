@@ -359,8 +359,14 @@ export function createSupabaseRepositories(
       const { data, error } = await supabase
         .from('v_transactions').select('*')
         .eq('workspace_id', workspaceId)
-        // Edit mempertahankan `created_at` transaksi pertama, sehingga card tidak
-        // meloncat ke atas hanya karena baru direvisi.
+        // Urutannya harus mengikuti `occurred_at`, karena itulah tanggal yang dipakai
+        // layar transaksi untuk mengelompokkan per hari. Diurut menurut `created_at`,
+        // transaksi bertanggal mundur akan mendarat di antara tanggal yang lebih baru.
+        // Ini juga jalur indeks (workspace_id, occurred_at desc, id desc), sekaligus
+        // membuat batas 500 baris mengambil transaksi terbaru, bukan yang terakhir dicatat.
+        .order('occurred_at', { ascending: false })
+        // Sesama hari dipisah waktu pencatatan. Edit mempertahankan `created_at`
+        // transaksi pertama, sehingga card tidak meloncat hanya karena baru direvisi.
         .order('created_at', { ascending: false })
         .order('id', { ascending: false })
         .limit(500);

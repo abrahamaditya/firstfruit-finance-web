@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import {
   Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder,
@@ -96,7 +96,18 @@ export function useWallets() {
 }
 
 export function useTransactions() {
-  return useCollection<Transaction>(r => r.transactions);
+  const result = useCollection<Transaction>(r => r.transactions);
+  // Semua yang memakai daftar ini — pengelompokan per hari di layar transaksi, empat
+  // transaksi terbaru di beranda — mengandalkan urutan menurun menurut tanggal kejadian.
+  // Urutan itu ditegakkan sekali di sini, bukan diserahkan ke tiap repositori: repo memori
+  // menaruh entri baru di akhir, dan repo Supabase bisa saja berubah pengurutannya.
+  // Sort JavaScript bersifat stabil, jadi transaksi bertanggal sama tetap memakai urutan
+  // dari repositori (waktu pencatatan, terbaru dulu).
+  const data = useMemo(
+    () => [...result.data].sort((a, b) => +new Date(b.date) - +new Date(a.date)),
+    [result.data],
+  );
+  return { ...result, data };
 }
 
 export function useBudgets(): { budgets: BudgetView[]; raw: Budget[]; loading: boolean } {

@@ -179,6 +179,39 @@ export const categoryMid = (label: string) => {
 /** Nama untuk ditampilkan lengkap, mis. "Kebutuhan Pokok › Makanan & Minuman › Kopi & Kafe". */
 export const categoryLabel = (label: string) => categoryPath(label).join(' › ');
 
+// Rona kapsul kategori, dipetakan dari KELOMPOK BESAR — bukan label spesifiknya. Dengan
+// begitu jumlah warnanya tetap terbatas dan bisa dihafal, dan satu jalur kategori
+// ("Needs › Food") tampil sebagai satu keluarga warna, bukan pelangi. Beberapa kelompok
+// sengaja berbagi rona karena maknanya berdekatan di mata pengguna.
+const CATEGORY_TONES: Record<string, string> = {
+  'Kebutuhan Pokok': 'needs',
+  Needs: 'needs',
+  'Tagihan & Utilitas': 'bills',
+  Transportasi: 'transport',
+  'Hiburan & Gaya Hidup': 'lifestyle',
+  'Personal & Penampilan': 'lifestyle',
+  Wants: 'lifestyle',
+  'Digital & Produktivitas': 'digital',
+  Kesehatan: 'health',
+  Pendidikan: 'education',
+  Keuangan: 'finance',
+  Piutang: 'finance',
+  'Sosial & Rohani': 'giving',
+  Giving: 'giving',
+  Savings: 'savings',
+  'Active Income': 'income',
+  'Passive Income': 'income',
+  'Other Income': 'income',
+};
+
+/**
+ * Rona untuk sebuah label kategori, atau undefined kalau kelompoknya tidak dikenal —
+ * kategori bebas bikinan pengguna dan "Lainnya" sengaja tetap netral, karena warna di
+ * sini menandakan kelompok yang punya arti, bukan sekadar pembeda.
+ */
+export const categoryTone = (label: string): string | undefined =>
+  CATEGORY_TONES[categoryTop(label)];
+
 const knownNames = new Set([...PILLAR_EXPENSE_INDEX.keys(), ...EXPENSE_INDEX.keys(), ...INCOME_INDEX.keys()]);
 export const isKnownCategory = (label: string) => knownNames.has(label?.trim().toLowerCase());
 
