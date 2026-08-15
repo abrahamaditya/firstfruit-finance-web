@@ -599,6 +599,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     return () => document.removeEventListener('pointerdown', onPointerDown);
   }, [openSuggest]);
 
+  // Daftar opsi berada di dalam alur scroll form (bukan overlay yang bisa tertutup
+  // footer). Setelah daftar dirender, geser secukupnya agar trigger dan daftar yang
+  // baru dibuka masuk ke viewport form. `nearest` menjaga posisi form tetap stabil
+  // bila dropdown memang sudah terlihat seluruhnya.
+  useLayoutEffect(() => {
+    if (!openSuggest || sheet !== 'create') return;
+    const frame = window.requestAnimationFrame(() => {
+      const dropdown = Array.from(
+        formScrollRef.current?.querySelectorAll<HTMLElement>('[data-dropdown-key]') ?? [],
+      ).find((element) => element.dataset.dropdownKey === openSuggest);
+      dropdown?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [openSuggest, sheet]);
+
   // Sheet tetap terpasang ketika ditutup agar animasinya halus. Karena itu browser
   // juga mempertahankan posisi scroll dan fokus terakhirnya. Setiap pembukaan harus
   // dimulai sebagai panel baru: tanpa field aktif dan dari bagian paling atas.
@@ -2478,6 +2493,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     return (
                       <div
                         className={`custom-select${expanded ? ' open' : ''}`}
+                        data-dropdown-key={field.key}
                         data-dropdown-open={expanded ? 'true' : undefined}
                         // Hanya perpindahan fokus yang benar-benar keluar (Tab) yang menutup.
                         // Fokus yang hilang tanpa tujuan — scrollbar diseret, area kosong
@@ -2552,6 +2568,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       className={
                         field.type === 'date' ? 'date-field' : field.suggestions ? 'suggest-field' : undefined
                       }
+                      data-dropdown-key={field.suggestions ? field.key : undefined}
                       data-dropdown-open={openSuggest === field.key ? 'true' : undefined}
                       onBlur={(event) => {
                         if (

@@ -1142,10 +1142,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   overflow:hidden;text-overflow:ellipsis;pointer-events:none}
 .date-field input[type=date]::-webkit-calendar-picker-indicator{position:relative;z-index:3}
 /* Dropdown saran (tempat transaksi) — dibuat sendiri agar seragam dengan select lain. */
-.suggest-field{position:relative;width:100%}.suggest-field>input{padding-right:42px}.suggest-chevron{position:absolute;right:14px;top:50%;width:18px;height:18px;transform:translateY(-50%);pointer-events:none;color:var(--muted)}
+.suggest-field{position:relative;width:100%}.suggest-field>input{padding-right:42px}.suggest-chevron{position:absolute;right:14px;top:24px;width:18px;height:18px;transform:translateY(-50%);pointer-events:none;color:var(--muted)}
 /* overscroll-behavior:contain menahan gulir di ujung daftar supaya tidak merembet ke
    form di belakangnya — daftar yang mentok jangan sampai menggulir seluruh sheet. */
-.suggest-list{position:absolute;z-index:5;top:calc(100% + 6px);left:0;right:0;max-height:216px;overflow-y:auto;
+.suggest-list{position:relative;z-index:5;width:100%;max-height:min(216px,32dvh);margin-top:6px;overflow-y:auto;
   touch-action:pan-y;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;
   background:var(--surface-2);border:1px solid var(--line);border-radius:15px;padding:5px;box-shadow:var(--shadow)}
 .suggest-list button{display:block;width:100%;text-align:left;border:0;border-radius:11px;background:transparent;
