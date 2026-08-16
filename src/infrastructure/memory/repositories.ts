@@ -57,13 +57,13 @@ export function createMemoryRepositories(): DataRepositories {
           balance: action === 'reserve' ? goal.balance + amount : goal.balance - amount,
         });
       },
-      async settleReceivable(receivableId) {
+      async settleReceivable(receivableId, options) {
         const item = await receivables.get(receivableId);
         if (!item) throw new Error('Piutang tidak ditemukan');
         await receivables.update(receivableId, {
           settled: true,
           paid: item.amount,
-          settledAt: new Date().toISOString(),
+          settledAt: options?.occurredAt ?? new Date().toISOString(),
         });
       },
       async markReminderDone(reminderId, done) {

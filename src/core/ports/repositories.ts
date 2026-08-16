@@ -16,11 +16,18 @@ export interface ClosePeriodOptions {
   nextAlias?: string;
 }
 
+/** Detail penerimaan saat piutang dilunasi. */
+export interface SettleReceivableOptions {
+  walletId?: string;
+  occurredAt?: string;
+  note?: string;
+}
+
 export interface FinanceCommands {
   /** Mengembalikan id periode baru, atau null bila ditutup tanpa membuka periode berikutnya. */
   closePeriod(periodId: string, options: ClosePeriodOptions): Promise<string | null>;
   adjustSaving(savingId: string, amount: number, action: 'reserve' | 'release'): Promise<void>;
-  settleReceivable(receivableId: string, walletId?: string): Promise<void>;
+  settleReceivable(receivableId: string, options?: SettleReceivableOptions): Promise<void>;
   markReminderDone(reminderId: string, done: boolean): Promise<void>;
   archiveWallet(walletId: string, destinationWalletId?: string): Promise<void>;
   finalizeSplitBill(title: string, participants: SplitPerson[], receipts: Receipt[]): Promise<string>;

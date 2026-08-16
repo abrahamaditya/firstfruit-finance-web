@@ -235,7 +235,7 @@ const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor'] },
   {
     title: 'Klasifikasi',
-    keys: ['pillar', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory'],
+    keys: ['pillar', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory', 'receivableId'],
   },
   { title: 'Anggaran', keys: ['includeBudget', 'budgetId'] },
   { title: 'Pihak yang ditalangi', keys: ['debtor'] },
@@ -315,6 +315,8 @@ const fieldIsRequired = (field: FieldDefinition, form: Record<string, string> = 
     'emoji', 'target', 'owed',
   ].includes(field.key);
 };
+
+const RECEIVABLE_SETTLEMENT_CATEGORY = 'Reimbursement / Pelunasan Piutang';
 
 const UICtx = createContext<UI | null>(null);
 
@@ -487,6 +489,7 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
     categoryDetail: '',
     incomeCategory: '',
     incomePillar: '',
+    receivableId: '',
     debtor: '',
     catL1: '',
     catL2: '',
@@ -516,7 +519,14 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
     return { ...form, subCategory: value, categoryDetail: '' };
   }
   if (key === 'incomePillar') {
-    return { ...form, incomePillar: value, incomeCategory: '' };
+    return { ...form, incomePillar: value, incomeCategory: '', receivableId: '' };
+  }
+  if (key === 'incomeCategory') {
+    return {
+      ...form,
+      incomeCategory: value,
+      receivableId: value === RECEIVABLE_SETTLEMENT_CATEGORY ? form.receivableId : '',
+    };
   }
   if (key === 'includeBudget') {
     return { ...form, includeBudget: value, budgetId: value === 'yes' ? form.budgetId : '' };
@@ -556,6 +566,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     name: '',
     type: 'wallet',
   });
+  const itemPeriod = item.type === 'periode'
+    ? periods.find((period) => period.id === item.id)
+    : undefined;
   const [create, setCreate] = useState<CreateDescriptor>({ type: 'wallet', isEdit: false });
   const [form, setForm] = useState<Record<string, string>>({});
   const [formDraftReady, setFormDraftReady] = useState(false);
@@ -1160,6 +1173,15 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             showIf: isIncome,
           },
           {
+            key: 'receivableId',
+            label: 'Pilih piutang yang dilunasi',
+            type: 'select',
+            options: receivableOptions.length > 0
+              ? receivableOptions
+              : [{ value: '', label: 'Belum ada piutang aktif' }],
+            showIf: (f) => isIncome(f) && f.incomeCategory === RECEIVABLE_SETTLEMENT_CATEGORY,
+          },
+          {
             key: 'includeBudget',
             label: 'Hitung ke anggaran?',
             type: 'segmented',
@@ -1199,6 +1221,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           debtor: '',
           incomeCategory: '',
           incomePillar: '',
+          receivableId: '',
           includeBudget: 'no',
           budgetId: '',
           isInstallment: 'no',
@@ -1515,7 +1538,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     repos.receivables.list().then((receivables) =>
       setReceivableOptions(
         receivables
-          .filter((entry) => !entry.settled)
+          .filter((entry) => entry.status ? entry.status === 'open' || entry.status === 'partial' : !entry.settled)
           .map((entry) => ({
             value: entry.id,
             label: `${entry.person} · ${formatIDR(entry.amount - (entry.paid ?? 0))} (${entry.source})`,
@@ -1688,6 +1711,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             if (field.key === 'includeBudget') value = record.budgetId ? 'yes' : 'no';
             if (field.key === 'isInstallment') value = record.installmentTenorMonths ? 'yes' : 'no';
             if (field.key === 'installmentTenor') value = record.installmentTenorMonths;
+            if (field.key === 'receivableId') value = record.settlesReceivableId;
             if (field.key === 'name' && create.type === 'budget') value = record.category;
             if (field.type === 'date') value = value ? toDateInput(value as string) : undefined;
             return [field.key, value] as const;
@@ -1785,6 +1809,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       notify('Transfer dalam dompet yang sama harus masuk ke tabungan');
       return;
     }
+    if (create.type === 'periode' && form.end < form.start) {
+      notify('Tanggal selesai periode tidak boleh sebelum tanggal mulai');
+      return;
+    }
     setSaving(true);
     const id = create.id;
     const shouldUpdate = create.isEdit && Boolean(id);
@@ -1856,6 +1884,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               ? form.categoryDetail
               : form.subCategory || form.pillar;
         const recipient = isPiutang ? form.debtor.trim() : undefined;
+        const settlesReceivableId = type === 'income'
+          && form.incomeCategory === RECEIVABLE_SETTLEMENT_CATEGORY
+          ? form.receivableId
+          : undefined;
         const payload = {
           type,
           nature: 'fixed' as const,
@@ -1874,6 +1906,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           recipient,
           isReceivable: isPiutang || undefined,
           owedAmount: isPiutang ? amount : undefined,
+          settlesReceivableId,
           date: toIso(form.date),
         };
         shouldUpdate
@@ -2316,14 +2349,16 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       </span>
                       <span className="pr-range">{dateRange} · {days} {t('closing.daysUnit')}</span>
                     </button>
-                    <button
-                      className="pr-edit"
-                      onClick={() => ui.openItem(entry.alias, 'periode', entry.id)}
-                      aria-label={t('common.edit')}
-                      title={t('common.edit')}
-                    >
-                      <Pencil />
-                    </button>
+                    {entry.status !== 'closed' && (
+                      <button
+                        className="pr-edit"
+                        onClick={() => ui.openItem(entry.alias, 'periode', entry.id)}
+                        aria-label={t('common.edit')}
+                        title={t('common.edit')}
+                      >
+                        <Pencil />
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -2416,7 +2451,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               </button>
             </>
           )}
-          {item.type !== 'piutang' && (
+          {item.type !== 'piutang' && (item.type !== 'periode' || itemPeriod?.status !== 'closed') && (
             <button className="act" onClick={() => openCreate(item.type, true, item.name, item.id)}>
               <span className="ax"><Pencil /></span> {t('common.edit')}
             </button>
@@ -2427,9 +2462,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               <span className="ax"><Copy /></span> {t('common.duplicate')}
             </button>
           )}
-          <button className="act danger" onClick={() => void removeItem()}>
-            <span className="ax"><Trash /></span> {t('common.delete')}
-          </button>
+          {(item.type !== 'periode' || itemPeriod?.status === 'draft') && (
+            <button className="act danger" onClick={() => void removeItem()}>
+              <span className="ax"><Trash /></span> {t('common.delete')}
+            </button>
+          )}
         </section>
 
         <section className={`sheet form-sheet${sheet === 'create' ? ' show' : ''}`} aria-label="Form data">
@@ -2593,12 +2630,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         placeholder={field.placeholder}
                         autoComplete={field.suggestions ? 'off' : undefined}
                         onFocus={() => field.suggestions && setOpenSuggest(field.key)}
+                        onClick={(event) => {
+                          if (field.type !== 'date') return;
+                          // Chromium hanya membuka kalender jika ikon native-nya diklik.
+                          // Jadikan seluruh permukaan input sebagai pemicu yang sama.
+                          try { event.currentTarget.showPicker(); } catch { /* fallback native */ }
+                        }}
                         onChange={(event) => setForm({ ...form, [field.key]: event.target.value })}
                         min={field.type === 'number' ? 0 : undefined}
                         required={fieldIsRequired(field, form)}
                       />
                       {field.suggestions && field.suggestions.length > 0 && (
                         <Chevron className="suggest-chevron" />
+                      )}
+                      {field.type === 'date' && (
+                        <Calendar className="date-field-icon" aria-hidden="true" />
                       )}
                       {field.type === 'date' && form[field.key] && (
                         <span className="date-field-value" aria-hidden="true">

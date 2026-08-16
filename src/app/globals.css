@@ -79,8 +79,6 @@ body{font-family:var(--sans);color:var(--ink);-webkit-font-smoothing:antialiased
    pucat yang justru pas, dan teks di atasnya sudah memakai var(--mint) yang digelapkan. */
 :root[data-theme="light"] .sidebar{background:#F5F8F6}
 :root[data-theme="light"] .sheet{border-color:var(--line)}
-:root[data-theme="light"] .input-field input[type=date]::-webkit-calendar-picker-indicator{
-  filter:grayscale(1) brightness(.45)}
 button,input,select{font:inherit}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--mint);outline-offset:2px}
 /* `height` (bukan `min-height`) supaya .app tidak bisa melar melewati layar — itu yang dulu
@@ -322,6 +320,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .row .subt{font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:2px}
 .tx-wallet-label{display:block;max-width:150px;margin-top:4px;color:var(--ink-faint);font-size:9.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft)}
+/* SVG tanpa ukuran eksplisit memakai dimensi bawaan browser (300×150px). Chip pelunasan
+   piutang memuat ikon panah, jadi ukurannya harus mengikuti tinggi teks, bukan membesar
+   hingga mendorong seluruh kartu. */
+.chip svg{width:12px;height:12px;vertical-align:-2px;stroke:currentColor;fill:none;stroke-width:1.8;
+  stroke-linecap:round;stroke-linejoin:round}
 .chip.saving-destination{color:var(--pos);background:color-mix(in srgb,var(--pos) 12%,transparent)}
 /* Kapsul kategori memakai resep yang sama dengan .saving-destination: teks berwarna penuh
    di atas jejak 12% warna yang sama. Kapsul non-kategori (tempat, cicilan, tak terduga)
@@ -366,6 +369,15 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .bar.over i{background:linear-gradient(90deg,#EF8676,#c25646)}
 .tag-over{font-size:11px;font-weight:700;color:var(--neg);margin-left:7px}
 .budget-foot{display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:7px}
+.budget-transactions-toggle{width:100%;margin-top:12px;padding:0;border:0;background:transparent;color:var(--mint);
+  display:flex;align-items:center;justify-content:space-between;font-family:var(--sans);font-size:11px;font-weight:800;cursor:pointer}
+.budget-transactions-toggle svg{width:16px;height:16px;transition:transform .18s ease}.budget-transactions-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.budget-transactions{display:grid;gap:5px;margin-top:9px;padding:7px;border-radius:12px;background:var(--surface-3)}
+.budget-transaction{width:100%;min-width:0;padding:8px;border:0;border-radius:9px;background:transparent;color:var(--ink);
+  display:flex;align-items:center;justify-content:space-between;gap:12px;text-align:left;font-family:var(--sans);cursor:pointer}
+.budget-transaction:hover{background:var(--surface-2)}.budget-transaction>span{min-width:0;display:grid;gap:2px}
+.budget-transaction b{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.budget-transaction>span small{color:var(--ink-faint);font-size:10px;font-weight:650}
+.budget-transaction> b{font-family:var(--nominal);font-variant-numeric:tabular-nums}.budget-transactions-empty{padding:6px;color:var(--ink-faint);font-size:11px;font-weight:600}
 .budget-empty-screen{min-height:min(62vh,480px);padding:28px}
 .budget-empty-screen>span{max-width:38ch;line-height:1.55}
 .budget-empty-screen .cta.compact{margin-top:20px}
@@ -702,6 +714,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .saving-empty{background:var(--surface);border-radius:18px;padding:16px;font-size:12.5px;color:var(--ink-soft);line-height:1.5}
 
 .settle{font-size:10.5px;font-weight:700;color:var(--mint);background:var(--surface-2);border:0;padding:5px 10px;border-radius:99px;margin-top:5px;cursor:pointer;font-family:var(--sans)}
+.settlement-scrim{position:fixed;z-index:60;inset:0;display:grid;place-items:end center;padding:18px;
+  background:rgba(0,0,0,.62);backdrop-filter:blur(2px)}
+.settlement-dialog{width:min(100%,430px);max-height:calc(100dvh - 36px);overflow-y:auto;border:1px solid var(--line);
+  border-radius:24px;background:var(--surface);box-shadow:var(--shadow);padding:10px 20px 20px}
+.settlement-dialog .grab{margin-bottom:12px}.settlement-dialog h3{font-size:19px;font-weight:800;margin:0 0 5px}
+.settlement-dialog>p{margin:0 0 16px;color:var(--ink-soft);font-size:13px;line-height:1.45}
+.settlement-amount{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;padding:12px 14px;
+  border-radius:14px;background:var(--surface-2)}
+.settlement-amount span,.settlement-field>span{display:block;color:var(--ink-faint);font-size:10.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.settlement-amount b{font-family:var(--nominal);font-size:16px;font-variant-numeric:tabular-nums}
+.settlement-field{display:grid;gap:7px;margin-top:12px}.settlement-field input,.settlement-field select{width:100%;min-height:48px;
+  border:1px solid transparent;border-radius:14px;background:var(--surface-2);color:var(--ink);padding:0 14px;outline:0;font-family:var(--sans)}
+.settlement-field input:focus,.settlement-field select:focus{border-color:rgba(91,233,170,.5);box-shadow:0 0 0 3px rgba(91,233,170,.08)}
+.settlement-actions{display:flex;gap:9px;margin-top:20px}.settlement-actions>*{flex:1}.settlement-actions .cta{margin:0}
+.settlement-cancel{min-height:44px;border:0;border-radius:14px;background:var(--surface-2);color:var(--ink-soft);font-family:var(--sans);font-weight:700;cursor:pointer}
+.settlement-cancel:disabled,.settlement-actions .cta:disabled{cursor:wait;opacity:.65}
 .row.done{opacity:.45}.row.done .val{text-decoration:line-through;color:var(--ink-faint)}
 .note{display:flex;gap:9px;font-size:12px;color:var(--ink-soft);background:var(--surface);border-radius:16px;padding:13px 15px;margin-top:8px;line-height:1.45}
 .note svg{width:16px;height:16px;flex:0 0 auto;stroke:var(--mint);fill:none;stroke-width:1.8;margin-top:1px}
@@ -1130,17 +1158,19 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .input-field input:focus,.input-field select:focus{border-color:rgba(91,233,170,.5);box-shadow:0 0 0 3px rgba(91,233,170,.08)}
 .input-field select{appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--ink-soft) 50%),linear-gradient(135deg,var(--ink-soft) 50%,transparent 50%);background-position:calc(100% - 18px) 21px,calc(100% - 13px) 21px;background-size:5px 5px;background-repeat:no-repeat}
 .input-field optgroup{font-weight:800;font-style:normal}
-/* Ikon kalender bawaan browser dinetralkan agar warnanya sama dengan ikon lain (--ink-soft). */
-.input-field input[type=date]::-webkit-calendar-picker-indicator{
-  opacity:.55;cursor:pointer;filter:grayscale(1) brightness(1.6)}
-.input-field input[type=date]:hover::-webkit-calendar-picker-indicator{opacity:1}
-.date-field{position:relative;width:100%}
-.date-field input[type=date]{position:relative;z-index:1;color:transparent;background-color:var(--surface-2)}
-.date-field input[type=date]::-webkit-datetime-edit{color:transparent}
+/* Input native tetap menutupi seluruh field agar date picker dan aksesibilitas browser
+   terjaga, tetapi visualnya transparan. Tanggal + ikon digambar sendiri supaya bagian
+   internal input native tidak bisa terseleksi sebagai blok biru. */
+.date-field{position:relative;width:100%;min-height:48px;border:1px solid transparent;
+  border-radius:15px;background:var(--surface-2);user-select:none;-webkit-user-select:none}
+.date-field:focus-within{border-color:rgba(91,233,170,.5);box-shadow:0 0 0 3px rgba(91,233,170,.08)}
+.input-field .date-field input[type=date]{position:absolute;z-index:3;inset:0;width:100%;height:100%;
+  min-height:0;border:0;padding:0;opacity:0;cursor:pointer}
 .date-field-value{position:absolute;z-index:2;left:15px;right:48px;top:50%;transform:translateY(-50%);
   color:var(--ink);font-size:13.333px;font-weight:600;text-transform:capitalize;white-space:nowrap;
-  overflow:hidden;text-overflow:ellipsis;pointer-events:none}
-.date-field input[type=date]::-webkit-calendar-picker-indicator{position:relative;z-index:3}
+  overflow:hidden;text-overflow:ellipsis;pointer-events:none;user-select:none;-webkit-user-select:none}
+.date-field-icon{position:absolute;z-index:2;right:15px;top:50%;width:18px;height:18px;
+  transform:translateY(-50%);color:var(--ink-soft);pointer-events:none}
 /* Dropdown saran (tempat transaksi) — dibuat sendiri agar seragam dengan select lain. */
 .suggest-field{position:relative;width:100%}.suggest-field>input{padding-right:42px}.suggest-chevron{position:absolute;right:14px;top:24px;width:18px;height:18px;transform:translateY(-50%);pointer-events:none;color:var(--muted)}
 /* overscroll-behavior:contain menahan gulir di ujung daftar supaya tidak merembet ke

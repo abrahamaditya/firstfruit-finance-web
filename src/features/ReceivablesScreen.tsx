@@ -1,9 +1,24 @@
 'use client';
 import React, { useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useReceivables, useTransactions } from '../application/hooks';
+import { useReceivables, useTransactions, useWallets } from '../application/hooks';
 import { Check, Info, Plus, Up } from '../components/ui/icons';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
+
+type SettlementDraft = {
+  receivableId: string;
+  person: string;
+  amount: number;
+  walletId: string;
+  date: string;
+  note: string;
+};
+
+const dateInputValue = (date = new Date()) => [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, '0'),
+  String(date.getDate()).padStart(2, '0'),
+].join('-');
 
 export default function ReceivablesScreen() {
   const ui = useUI();
@@ -13,9 +28,13 @@ export default function ReceivablesScreen() {
   const repos = useRepositories();
   const { active, settled } = useReceivables();
   const { data: transactions } = useTransactions();
+  const { wallets } = useWallets();
   const [done, setDone] = useState<string[]>([]);
+  const [settlement, setSettlement] = useState<SettlementDraft | null>(null);
+  const [settling, setSettling] = useState(false);
   const unpaid = active.filter(r => !done.includes(r.id));
   const outstanding = unpaid.reduce((sum, r) => sum + (r.amount - (r.paid ?? 0)), 0);
+  const destinationWallets = wallets.filter(wallet => wallet.kind === 'debit');
 
   // Pemasukan yang menandai pelunasan — dipakai untuk menunjukkan bukti transaksinya.
   const settlingTx = new Map(
@@ -24,14 +43,40 @@ export default function ReceivablesScreen() {
   const fmtDate = (iso?: string) =>
     iso ? new Date(iso).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
 
-  const settleNow = async (id: string, person: string) => {
+  const openSettlement = (id: string, person: string, amount: number) => {
+    const walletId = destinationWallets.find(wallet => wallet.id === ui.prefs.defaultWalletId)?.id
+      ?? destinationWallets[0]?.id;
+    if (!walletId) {
+      ui.notify(t('piutang.missingWallet'));
+      return;
+    }
+    setSettlement({
+      receivableId: id,
+      person,
+      amount,
+      walletId,
+      date: dateInputValue(),
+      note: `Pelunasan piutang ${person}`,
+    });
+  };
+
+  const settleNow = async () => {
+    if (!settlement) return;
+    setSettling(true);
     try {
-      await repos.commands.settleReceivable(id, ui.prefs.defaultWalletId || undefined);
-      setDone([...done, id]);
+      await repos.commands.settleReceivable(settlement.receivableId, {
+        walletId: settlement.walletId,
+        occurredAt: new Date(`${settlement.date}T12:00:00`).toISOString(),
+        note: settlement.note,
+      });
+      setDone((current) => [...current, settlement.receivableId]);
+      setSettlement(null);
       ui.refresh();
-      ui.notify(t('piutang.settledToast', { name: person }));
+      ui.notify(t('piutang.settledToast', { name: settlement.person }));
     } catch (caught) {
       ui.notify(caught instanceof Error ? caught.message : 'Pelunasan piutang gagal');
+    } finally {
+      setSettling(false);
     }
   };
 
@@ -62,7 +107,7 @@ export default function ReceivablesScreen() {
             </div>
             <div className="r">
               <div className="val">{money.fmt(left)}</div>
-              <button className="settle" onClick={(e) => { e.stopPropagation(); void settleNow(r.id, r.person); }}>
+              <button className="settle" onClick={(e) => { e.stopPropagation(); openSettlement(r.id, r.person, left); }}>
                 {t('piutang.settle')}
               </button>
             </div>
@@ -89,6 +134,63 @@ export default function ReceivablesScreen() {
           </div>
         );
       })}
+      {settlement && (
+        <div className="settlement-scrim" onClick={() => !settling && setSettlement(null)}>
+          <section
+            className="settlement-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="settlement-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="grab" />
+            <h3 id="settlement-title">{t('piutang.settleDialogTitle')}</h3>
+            <p>{t('piutang.settleDialogBody', { name: settlement.person })}</p>
+            <div className="settlement-amount">
+              <span>{t('piutang.settleAmount')}</span>
+              <b>{money.fmt(settlement.amount)}</b>
+            </div>
+            <form onSubmit={(event) => { event.preventDefault(); void settleNow(); }}>
+              <label className="settlement-field">
+                <span>{t('piutang.settleDate')}</span>
+                <input
+                  type="date"
+                  value={settlement.date}
+                  onClick={(event) => {
+                    try { event.currentTarget.showPicker(); } catch { /* native fallback */ }
+                  }}
+                  onChange={(event) => setSettlement({ ...settlement, date: event.target.value })}
+                  required
+                />
+              </label>
+              <label className="settlement-field">
+                <span>{t('piutang.settleWallet')}</span>
+                <select
+                  value={settlement.walletId}
+                  onChange={(event) => setSettlement({ ...settlement, walletId: event.target.value })}
+                >
+                  {destinationWallets.map((wallet) => <option key={wallet.id} value={wallet.id}>{wallet.name}</option>)}
+                </select>
+              </label>
+              <label className="settlement-field">
+                <span>{t('piutang.settleNote')}</span>
+                <input
+                  value={settlement.note}
+                  onChange={(event) => setSettlement({ ...settlement, note: event.target.value })}
+                />
+              </label>
+              <div className="settlement-actions">
+                <button type="button" className="settlement-cancel" disabled={settling} onClick={() => setSettlement(null)}>
+                  {t('common.cancel')}
+                </button>
+                <button className="cta compact" disabled={settling}>
+                  {settling ? t('common.saving') : t('piutang.settleConfirm')}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </>
   );
 }

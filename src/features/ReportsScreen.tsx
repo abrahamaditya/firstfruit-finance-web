@@ -5,6 +5,7 @@ import { useBudgets, useDashboard, useTransactions } from '../application/hooks'
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { Chevron, Download, TrendUp } from '../components/ui/icons';
 import { addDays, dayKey, startOfDay } from '../core/domain/calendar';
+import { isActualIncome } from '../core/domain/calculations';
 import { categoryPath } from '../core/domain/categories';
 import {
   amountStats, categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
@@ -126,7 +127,7 @@ export default function ReportsScreen() {
     transaction => !transaction.adjustment && inSelectedRange(transaction),
   );
   const expenses = transactions.filter(transaction => transaction.type === 'expense');
-  const incomeTransactions = transactions.filter(transaction => transaction.type === 'income');
+  const incomeTransactions = transactions.filter(isActualIncome);
   const transfers = transactions.filter(transaction => transaction.type === 'transfer');
   const income = incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   const spending = expenses.reduce((sum, transaction) => sum + transaction.amount, 0);
@@ -152,7 +153,7 @@ export default function ReportsScreen() {
   });
   const previousExpenses = previousTransactions.filter(item => item.type === 'expense');
   const previousIncomeTotal = previousTransactions
-    .filter(item => item.type === 'income')
+    .filter(isActualIncome)
     .reduce((sum, item) => sum + item.amount, 0);
   const previousSpending = previousExpenses.reduce((sum, item) => sum + item.amount, 0);
   const previousNet = previousIncomeTotal - previousSpending;
@@ -202,7 +203,7 @@ export default function ReportsScreen() {
   const sectors = categoryTree(flowTransactions, t('reports.uncategorized'));
   const previousSectorTotals = new Map<string, number>();
   previousTransactions
-    .filter(transaction => transaction.type === flow)
+    .filter(transaction => flow === 'income' ? isActualIncome(transaction) : transaction.type === 'expense')
     .forEach((transaction) => {
       const sector = transactionPath(transaction)[0] ?? t('reports.uncategorized');
       previousSectorTotals.set(sector, (previousSectorTotals.get(sector) ?? 0) + transaction.amount);
@@ -220,8 +221,9 @@ export default function ReportsScreen() {
     if (transaction.type === 'transfer') return;
     const key = dayKey(transaction.date);
     const entry = dailyMap.get(key) ?? { income: 0, expense: 0, count: 0 };
-    if (transaction.type === 'income') entry.income += transaction.amount;
-    else entry.expense += transaction.amount;
+    if (isActualIncome(transaction)) entry.income += transaction.amount;
+    else if (transaction.type === 'expense') entry.expense += transaction.amount;
+    else return;
     entry.count += 1;
     dailyMap.set(key, entry);
   });
@@ -424,7 +426,7 @@ export default function ReportsScreen() {
 
       <div className="metric-grid report-metrics">
         <div className="metric-card m-in">
-          <span>{t('reports.income')}</span>
+          <span>{t('reports.actualIncome')}</span>
           <b>{money.fmtCompact(income)}</b>
           <small>{selectedRangeLabel}</small>
         </div>
@@ -484,7 +486,7 @@ export default function ReportsScreen() {
           <span className="compare-title">{t('reports.vsPrevious')}</span>
           <div className="compare-items">
             {([
-              [t('reports.income'), income, previousIncomeTotal, true, false],
+              [t('reports.actualIncome'), income, previousIncomeTotal, true, false],
               [t('reports.expense'), spending, previousSpending, false, false],
               // Arus kas bersih boleh negatif, jadi tandanya harus ikut tercetak —
               // dua sisanya selalu ≥ 0 dan tidak perlu diberi tanda plus.

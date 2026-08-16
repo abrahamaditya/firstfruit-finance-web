@@ -9,6 +9,7 @@ export type TxNature = 'fixed' | 'unexpected';
 export type BillingCycle = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
 export type SubStatus = 'active' | 'paused' | 'cancelled' | 'ended';
 export type PlanStatus = 'draft' | 'active' | 'done';
+export type ReceivableStatus = 'open' | 'partial' | 'settled' | 'written_off';
 
 export interface Wallet {
   id: string; name: string; kind: WalletKind; medium?: WalletMedium; bank?: string;
@@ -52,6 +53,7 @@ export interface Subscription {
 }
 export interface Receivable {
   id: string; person: string; amount: number; source: string; date: string; settled: boolean;
+  status?: ReceivableStatus;
   paid?: number;            // akumulasi pembayaran; lunas saat paid >= amount
   settledAt?: string;       // kapan dilunasi
   settledByTxId?: string;   // transaksi pemasukan yang melunasinya

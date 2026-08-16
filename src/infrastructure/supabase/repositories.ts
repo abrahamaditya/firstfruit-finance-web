@@ -129,7 +129,8 @@ function mapReceivable(row: DbRow): Receivable {
     amount: amount(row.original_amount_minor),
     source: row.source_note || row.source_type,
     date: row.created_at,
-    settled: row.status === 'settled' || row.status === 'written_off',
+    settled: row.status === 'settled',
+    status: row.status,
     paid: amount(row.paid_minor),
     settledAt: row.settled_at ?? undefined,
     settledByTxId: row.settled_by_tx_id ?? undefined,
@@ -796,12 +797,16 @@ export function createSupabaseRepositories(
     return data[0].id as string;
   }
 
-  async function settleReceivable(receivableId: string, walletId?: string) {
+  async function settleReceivable(receivableId: string, options: {
+    walletId?: string;
+    occurredAt?: string;
+    note?: string;
+  } = {}) {
     const target = await receivables.get(receivableId);
     if (!target) throw new Error('Piutang tidak ditemukan');
     const remaining = target.amount - (target.paid ?? 0);
     if (remaining <= 0) return;
-    const destination = await defaultAssetWalletId(walletId);
+    const destination = await defaultAssetWalletId(options.walletId);
     const { error } = await supabase.rpc('post_transaction', {
       p_payload: {
         workspace_id: workspaceId,
@@ -809,12 +814,12 @@ export function createSupabaseRepositories(
         type: 'income',
         nature: 'non_recurring',
         amount_minor: remaining,
-        occurred_at: new Date().toISOString(),
+        occurred_at: options.occurredAt ?? new Date().toISOString(),
         source_wallet_id: destination,
         category_name: 'Pengembalian Piutang',
         recipient: target.person,
         settles_receivable_id: receivableId,
-        note: `Pelunasan piutang ${target.person}`,
+        note: options.note?.trim() || `Pelunasan piutang ${target.person}`,
       },
     });
     throwIfError(error, 'Gagal mencatat pelunasan piutang');

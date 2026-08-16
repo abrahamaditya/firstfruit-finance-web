@@ -1,4 +1,5 @@
 import { Budget, Transaction } from './types';
+import { isActualIncome } from './calculations';
 
 // ===== Mesin perencanaan keuangan =====
 // Semua fungsi di sini murni: input angka → output angka, tanpa React & tanpa I/O,
@@ -24,7 +25,7 @@ export function estimateMonthlyIncome(transactions: Transaction[], today: Date =
     const from = new Date(today);
     from.setDate(from.getDate() - days);
     return transactions
-      .filter((item) => !item.adjustment && item.type === 'income' && new Date(item.date) >= from)
+      .filter((item) => isActualIncome(item) && new Date(item.date) >= from)
       .reduce((sum, item) => sum + item.amount, 0);
   };
   const lastMonth = sumSince(31);

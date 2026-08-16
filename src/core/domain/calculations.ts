@@ -28,6 +28,17 @@ export function recomputeBalance(opening: number, txs: Transaction[], walletId: 
   return txs.reduce((bal, tx) => bal + balanceDelta(tx, walletId), opening);
 }
 
+/**
+ * Pelunasan piutang memang menambah saldo, tetapi bukan penghasilan baru: nilai itu
+ * sudah pernah tercatat saat uangnya dipinjamkan. Total pemasukan dan proyeksi income
+ * harus membedakannya dari gaji, usaha, hadiah, dan sumber penghasilan lainnya.
+ */
+export function isActualIncome(transaction: Transaction): boolean {
+  return !transaction.adjustment
+    && transaction.type === 'income'
+    && !transaction.settlesReceivableId;
+}
+
 export interface BudgetView extends Budget { velocity: number; over: boolean; remaining: number; }
 export function budgetView(b: Budget): BudgetView {
   const velocity = b.allocated > 0 ? b.spent / b.allocated : 0;

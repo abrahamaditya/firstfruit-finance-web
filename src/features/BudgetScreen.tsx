@@ -1,15 +1,17 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBudgets, useDashboard } from '../application/hooks';
-import { Check, Plus, Warn } from '../components/ui/icons';
+import { useBudgets, useDashboard, useTransactions } from '../application/hooks';
+import { Check, Chevron, Plus, Warn } from '../components/ui/icons';
 
 export default function BudgetScreen() {
   const ui = useUI();
   const money = useMoney();
   const t = useT();
   const { budgets: allBudgets } = useBudgets();
+  const { data: transactions } = useTransactions();
   const d = useDashboard();
+  const [expandedBudgetId, setExpandedBudgetId] = React.useState<string | null>(null);
   const activePeriodId = d.period?.id;
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const budgets = activePeriodId
@@ -21,6 +23,13 @@ export default function BudgetScreen() {
   const spent = budgets.reduce((s, b) => s + b.spent, 0);
   const remaining = allocated - spent;
   const progress = allocated ? Math.round((spent / allocated) * 100) : 0;
+  const transactionsByBudget = React.useMemo(() => transactions.reduce((groups, transaction) => {
+    if (!transaction.budgetId) return groups;
+    const current = groups.get(transaction.budgetId) ?? [];
+    current.push(transaction);
+    groups.set(transaction.budgetId, current);
+    return groups;
+  }, new Map<string, typeof transactions>()), [transactions]);
 
   // Simulasi kecil: sisa anggaran dibagi sisa hari periode.
   const daysLeft = Math.max(1, d.progress?.daysLeft ?? 1);
@@ -102,6 +111,53 @@ export default function BudgetScreen() {
               <span>{b.remaining > 0 ? `≈ ${money.fmt(Math.round(b.remaining / daysLeft))}/${t('budget.dayShort')}` : t('budget.noneLeft')}</span>
               <span>{b.remaining >= 0 ? `${money.fmt(b.remaining)} ${t('budget.leftSuffix')}` : `${money.fmt(b.remaining)} ${t('budget.deficit')}`}</span>
             </div>
+            {(() => {
+              const linkedTransactions = transactionsByBudget.get(b.id) ?? [];
+              const expanded = expandedBudgetId === b.id;
+              return (
+                <>
+                  <button
+                    type="button"
+                    className="budget-transactions-toggle"
+                    aria-expanded={expanded}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setExpandedBudgetId((current) => current === b.id ? null : b.id);
+                    }}
+                  >
+                    <span>{linkedTransactions.length} {t('budget.transactions')}</span>
+                    <Chevron />
+                  </button>
+                  {expanded && (
+                    <div className="budget-transactions" onClick={(event) => event.stopPropagation()}>
+                      {linkedTransactions.length === 0 ? (
+                        <span className="budget-transactions-empty">{t('budget.noTransactions')}</span>
+                      ) : linkedTransactions.map((transaction) => {
+                        const title = transaction.merchant || transaction.note || transaction.labels.at(-1) || t('budget.transaction');
+                        const date = new Date(transaction.date).toLocaleDateString(locale, {
+                          day: 'numeric', month: 'short', year: 'numeric',
+                        });
+                        return (
+                          <button
+                            type="button"
+                            className="budget-transaction"
+                            key={transaction.id}
+                            onClick={() => ui.openItem(
+                              title,
+                              transaction.type === 'transfer' ? 'transfer' : 'transaksi',
+                              transaction.id,
+                            )}
+                          >
+                            <span><b>{title}</b><small>{date}</small></span>
+                            <b>{money.fmt(transaction.amount)}</b>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         ))}
       </div>

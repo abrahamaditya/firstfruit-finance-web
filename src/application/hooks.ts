@@ -6,6 +6,7 @@ import {
 } from '../core/domain/types';
 import {
   totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet, remainingBudget,
+  isActualIncome,
   totalReserved, reservedInWallet,
 } from '../core/domain/calculations';
 import {
@@ -175,8 +176,12 @@ export function useSubscriptions() {
 
 export function useReceivables() {
   const { data, loading } = useCollection<Receivable>(r => r.receivables);
-  const active = data.filter(r => !r.settled);
-  return { receivables: data, active, settled: data.filter(r => r.settled), total: active.reduce((s, r) => s + r.amount, 0), loading };
+  // `written_off` adalah penghapusan administratif, bukan uang yang sudah diterima.
+  // Data lama tanpa status tetap mempertahankan perilaku sebelumnya lewat `settled`.
+  const active = data.filter(r => r.status ? r.status === 'open' || r.status === 'partial' : !r.settled);
+  const settled = data.filter(r => r.status ? r.status === 'settled' : r.settled);
+  const writtenOff = data.filter(r => r.status === 'written_off');
+  return { receivables: data, active, settled, writtenOff, total: active.reduce((s, r) => s + r.amount, 0), loading };
 }
 
 export function usePlans() { return useCollection<Plan>(r => r.plans); }
@@ -282,7 +287,7 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
       return !tx.adjustment && tx.type !== 'transfer' && at >= from && at <= to;
     })
     : [];
-  const income = inPeriod.filter(tx => tx.type === 'income').reduce((sum, tx) => sum + tx.amount, 0);
+  const income = inPeriod.filter(isActualIncome).reduce((sum, tx) => sum + tx.amount, 0);
   const expense = inPeriod.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
 
   // Anggaran tanpa `periodId` hanya bisa berasal dari periode berjalan (data lama).
