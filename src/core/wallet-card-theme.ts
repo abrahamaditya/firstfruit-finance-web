@@ -1,4 +1,5 @@
 import type { Wallet } from './domain/types';
+import { walletProduct } from './wallet-products';
 
 type ThemableWallet = Pick<Wallet, 'id' | 'name' | 'kind' | 'medium' | 'bank'>;
 
@@ -8,29 +9,6 @@ export interface WalletCardTheme {
   /** Nilai data-pattern kartu — menentukan hiasan latar (lihat globals.css). */
   pattern: string;
 }
-
-// Merek yang dikenal memakai warnanya sendiri: kartu yang meniru warna aslinya jauh lebih
-// cepat dikenali daripada warna acak, dan pengguna sudah hafal biru BCA atau ungu OVO.
-const BRAND_THEMES: Array<{ names: string[]; theme: string }> = [
-  { names: ['blu'], theme: 'sky' },
-  { names: ['bca'], theme: 'ocean' },
-  { names: ['gopay'], theme: 'emerald' },
-  { names: ['ovo'], theme: 'violet' },
-  { names: ['dana'], theme: 'sky' },
-  { names: ['shopeepay', 'shopee pay'], theme: 'sunset' },
-  { names: ['livin', 'mandiri'], theme: 'royal' },
-  { names: ['bni'], theme: 'sunset' },
-  { names: ['bri'], theme: 'ocean' },
-  { names: ['bsi'], theme: 'teal' },
-  { names: ['jago'], theme: 'sunset' },
-  { names: ['seabank'], theme: 'sky' },
-  { names: ['jenius', 'btpn'], theme: 'teal' },
-  { names: ['permata'], theme: 'emerald' },
-  { names: ['cimb', 'niaga'], theme: 'plum' },
-  { names: ['danamon'], theme: 'ocean' },
-  { names: ['flazz'], theme: 'ocean' },
-  { names: ['linkaja', 'link aja'], theme: 'sunset' },
-];
 
 // Dompet tanpa merek yang dikenal tetap harus berbeda satu sama lain, jadi diambil
 // bergilir dari daftar ini lewat sidik nama/id-nya.
@@ -59,11 +37,19 @@ export function walletCardTheme(wallet: ThemableWallet): WalletCardTheme {
   // Tunai memegang warna merek aplikasi. Ia satu-satunya dompet yang tidak mewakili
   // lembaga mana pun, jadi tidak ada warna "aslinya" yang bisa ditiru.
   if (medium === 'cash') return { theme: 'mint', pattern };
+  // Semua produk BCA memakai komposisi kartu generik yang sama, tetapi warna kartu
+  // mengikuti varian fisiknya agar Paspor Blue/Gold/Platinum tidak terasa identik.
+  if (wallet.bank === 'BCA') {
+    if (wallet.kind === 'credit') return { theme: 'bca-credit', pattern };
+    const name = wallet.name.toLocaleLowerCase('id-ID');
+    if (name.includes('platinum')) return { theme: 'bca-platinum', pattern };
+    if (name.includes('gold')) return { theme: 'bca-gold', pattern };
+    return { theme: 'bca-blue', pattern };
+  }
   if (wallet.kind === 'credit') {
     return { theme: CREDIT_THEMES[seed % CREDIT_THEMES.length], pattern };
   }
 
-  const identity = `${wallet.name} ${wallet.bank ?? ''}`.toLowerCase();
-  const brand = BRAND_THEMES.find((entry) => entry.names.some((name) => identity.includes(name)));
-  return { theme: brand?.theme ?? FALLBACK_THEMES[seed % FALLBACK_THEMES.length], pattern };
+  const product = walletProduct(medium, wallet.bank);
+  return { theme: product?.theme ?? FALLBACK_THEMES[seed % FALLBACK_THEMES.length], pattern };
 }

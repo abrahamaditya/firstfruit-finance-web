@@ -3,8 +3,9 @@ import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
 import { useDashboard, useTransactions, useSubscriptions, useReminders, useSavings } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
-import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar } from '../components/ui/icons';
-import { walletBrandInitial, walletBrandLogo } from '../core/wallet-branding';
+import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar, ChevronR } from '../components/ui/icons';
+import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
+import { isActualIncome } from '../core/domain/calculations';
 import { categoryTone } from '../core/domain/categories';
 
 const randomScramble = (value: string, lockedDigits = 0) => {
@@ -136,7 +137,7 @@ function WalletMarquee({ label, renderSet }: {
           s.velocity *= Math.pow(0.0016, delta);
         } else {
           s.velocity = 0;
-          if (!s.hover && now >= s.hold && !reduced.matches) s.offset += MARQUEE_SPEED * delta;
+          if (!s.hover && now >= s.hold && !reduced.matches) s.offset -= MARQUEE_SPEED * delta;
         }
       }
       const period = s.setWidth || 1;
@@ -254,7 +255,7 @@ export default function HomeScreen() {
   midnight.setHours(0, 0, 0, 0);
   const todayNet = txs
     .filter(t => !t.adjustment && t.type !== 'transfer' && new Date(t.date) >= midnight)
-    .reduce((sum, t) => sum + (t.type === 'income' ? t.amount : -t.amount), 0);
+    .reduce((sum, t) => sum + (isActualIncome(t) ? t.amount : t.type === 'expense' ? -t.amount : 0), 0);
   const sevenDaysAgo = new Date(midnight);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
   const sevenDaySpending = txs
@@ -314,15 +315,23 @@ export default function HomeScreen() {
   const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
   const walletName = (id?: string) => d.wallets.find((wallet) => wallet.id === id)?.name;
   const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
-  const walletCategoryRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
-  const walletBalances = [...d.wallets].sort((a, b) => {
-    const aPrimary = a.id === ui.prefs.defaultWalletId ? 0 : 1;
-    const bPrimary = b.id === ui.prefs.defaultWalletId ? 0 : 1;
-    if (aPrimary !== bPrimary) return aPrimary - bPrimary;
-    const aMedium = a.medium ?? (a.kind === 'credit' ? 'credit' : 'bank');
-    const bMedium = b.medium ?? (b.kind === 'credit' ? 'credit' : 'bank');
-    return (walletCategoryRank[aMedium] ?? 99) - (walletCategoryRank[bMedium] ?? 99)
-      || a.name.localeCompare(b.name, locale);
+  // Urutan saldo di Beranda mengikuti carousel Dompet. Dompet yang belum pernah masuk
+  // daftar urutan tetap disisipkan setelahnya menurut urutan bawaan yang stabil.
+  const debitWallets = d.wallets.filter((wallet) => wallet.kind === 'debit');
+  const creditWallets = d.wallets.filter((wallet) => wallet.kind === 'credit');
+  const primaryDebit = debitWallets.find((wallet) => wallet.id === ui.prefs.defaultWalletId)
+    ?? debitWallets[0];
+  const defaultWalletOrder = primaryDebit
+    ? [primaryDebit, ...debitWallets.filter((wallet) => wallet.id !== primaryDebit.id), ...creditWallets]
+    : creditWallets;
+  const walletOrderRank = new Map(ui.prefs.walletOrder.map((id, index) => [id, index]));
+  const walletBalances = [...defaultWalletOrder].sort((a, b) => {
+    const aRank = walletOrderRank.get(a.id);
+    const bRank = walletOrderRank.get(b.id);
+    if (aRank == null && bRank == null) return defaultWalletOrder.indexOf(a) - defaultWalletOrder.indexOf(b);
+    if (aRank == null) return 1;
+    if (bRank == null) return -1;
+    return aRank - bRank;
   });
   const walletTicker = (duplicate = false) => (
     <div className="home-wallet-set" aria-hidden={duplicate || undefined}>
@@ -341,10 +350,10 @@ export default function HomeScreen() {
             title={`${wallet.name} · ${amount}`}
             aria-label={`${wallet.name} · ${amount}`}
           >
-            <span className={`home-wallet-mark${logo ? ' has-image' : ''}`}>
+            <span className={`home-wallet-mark${logo ? ' has-image' : ''}${wallet.medium === 'cash' ? ' is-cash' : ''}`}>
               {logo
                 ? <img src={logo} alt="" aria-hidden="true" />
-                : walletBrandInitial(wallet)}
+                : walletProductInitial(wallet)}
             </span>
             <span className="home-wallet-copy">
               <small>{wallet.name}</small>
@@ -458,6 +467,12 @@ export default function HomeScreen() {
           )}
         </div>
         <div className="home-wallet-card">
+          <div className="home-wallet-card-head">
+            <span>{tr('home.walletBalances')}</span>
+            <button type="button" onClick={() => ui.go('wallets')}>
+              {tr('common.seeAll')}<ChevronR />
+            </button>
+          </div>
           {walletBalances.length > 0 ? (
             <WalletMarquee label={tr('home.walletBalances')} renderSet={walletTicker} />
           ) : (
@@ -495,6 +510,11 @@ export default function HomeScreen() {
             <div className="mid">
               <div className="t1">{transactionTitle(t)}</div>
               <div className="t2">
+                {t.type === 'income' && (
+                  <span className="chip" data-cat="income">
+                    {isActualIncome(t) ? tr('reports.actualIncome') : tr('tx.receivableIncome')}
+                  </span>
+                )}
                 {(t.note ? t.labels : t.labels.slice(0, -1))
                   .map((label) => (
                     <span className="chip" data-cat={categoryTone(label)} key={label}>{label}</span>

@@ -140,11 +140,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
  */
 .row,.card,.plan,.chart-card,.transaction-insight-card,.category-report-card,.cat-card,.planning-overview,.pace-card,.calc-card,
 .bill-total,.receipt-card,.profile-edit,.setg,.metric-card,.ps-card,.closing-steps,.search-box,
-.mini-metrics>div,.wbreak>div,.plan-context>div,.note,.saving-empty,.inline-add{border:1px solid var(--line)}
+.mini-metrics>div,.wbreak>div,.note,.saving-empty,.inline-add{border:1px solid var(--line)}
 .card,.plan,.chart-card,.transaction-insight-card,.category-report-card,.cat-card,.planning-overview,.calc-card,.bill-total,
 .setg,.closing-steps{border-radius:20px}
 .row,.metric-card,.ps-card,.receipt-card,.pace-card,.profile-edit,.mini-metrics>div,
-.wbreak>div,.plan-context>div,.note,.saving-empty,.inline-add{border-radius:16px}
+.wbreak>div,.note,.saving-empty,.inline-add{border-radius:16px}
 
 .sec{display:flex;align-items:center;justify-content:space-between;margin:30px 2px 14px}
 .sec.first{margin-top:10px}
@@ -268,7 +268,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    tidak sudut bawahnya menyembul kotak. (Shadow luar tidak ikut terpotong.) */
 .brk-card{background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:var(--shadow)}
 .brk-cells{display:flex;gap:14px;padding:15px}
-.brk-cells>div{min-width:0}
+.brk-cells>div{flex:1 1 0;min-width:0}
 .brk-cells>div+div{padding-left:14px;border-left:1px solid var(--line)}
 .brk-cells span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);white-space:nowrap;margin-bottom:4px}
 .brk-cells b{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
@@ -277,11 +277,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .card-foot .brk-bar+span{display:block;margin-top:7px;font-size:10.5px;font-weight:700}
 .home-summary-row{display:grid;grid-template-columns:1fr;gap:10px;align-items:stretch}
 .home-summary-row .brk-card{max-width:none;min-width:0}
-.home-wallet-card{min-width:0;display:flex;align-items:center;overflow:hidden}
+.home-wallet-card{min-width:0;display:flex;flex-direction:column;align-items:stretch;overflow:hidden;background:var(--surface);border:1px solid var(--line);border-radius:16px}.home-wallet-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px 0}.home-wallet-card-head>span{font-size:10px;font-weight:750;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.055em}.home-wallet-card-head button{display:flex;align-items:center;gap:3px;padding:3px 0;border:0;background:none;color:var(--mint);font-family:var(--sans);font-size:10px;font-weight:750;cursor:pointer}.home-wallet-card-head button svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
 /* touch-action:pan-y menyerahkan gulir vertikal halaman ke peramban, tapi menahan gerak
    mendatar untuk diri sendiri — tanpa itu jari yang menyeret dompet malah men-scroll halaman
    dan pointer event kita diputus oleh pointercancel. */
-.home-wallet-marquee{width:100%;overflow:hidden;touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
+.home-wallet-marquee{width:100%;box-sizing:border-box;padding-inline:14px;overflow:hidden;touch-action:pan-y;cursor:grab;user-select:none;-webkit-user-select:none;mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent)}
 .home-wallet-marquee.is-dragging{cursor:grabbing}
 /* Deret yang muat seluruhnya tidak berjalan, jadi tidak perlu kursor seret maupun
    pudar di tepi yang justru menyamarkan nama dompet pertama dan terakhir. */
@@ -290,27 +290,22 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .home-wallet-set{display:flex;align-items:center;gap:16px;flex:0 0 auto;padding:12px 16px 12px 0}
 .home-wallet-item{display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap}
 .home-wallet-mark{width:30px;height:30px;display:grid;place-items:center;overflow:hidden;border-radius:9px;background:var(--surface-2);color:var(--ink);font-size:8px;font-weight:800}
-.home-wallet-mark.has-image{background:#fff}
+.home-wallet-mark.has-image{background:#fff}.home-wallet-mark.is-cash{background:transparent}
 .home-wallet-mark img{width:100%;height:100%;display:block;object-fit:cover;-webkit-user-drag:none}
 .home-wallet-copy{display:flex;flex-direction:column;align-items:flex-start;gap:1px}
 .home-wallet-copy small{max-width:120px;overflow:hidden;text-overflow:ellipsis;color:var(--ink-faint);font-size:9px;font-weight:700;line-height:1.2}
 .home-wallet-copy .home-wallet-nominal{font-family:var(--nominal);font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.2}
 .home-wallet-empty{display:grid;place-items:center;width:100%;min-height:64px;padding:12px;color:var(--ink-faint);font-size:11px;text-align:center}
-/* Ringkasan tidak boleh menyusut lebih sempit daripada nominal di dalamnya: padding kanan
-   kartu harus selalu utuh. Ketika ruang terbatas, kolom wallet yang mengalah hingga 0.
-   Ambang desktop memperhitungkan sidebar + padding viewport; di bawahnya kedua blok
-   ditumpuk agar kartu ringkasan tidak meluap dari layar. */
-@media (min-width:1100px){
-  .home-summary-row{grid-template-columns:minmax(min-content,1.55fr) minmax(0,.8fr)}
-}
+/* Ringkasan dan saldo dompet selalu bertumpuk. Daftar dompet kehilangan konteks dan
+   mudah terpotong bila dipaksa menjadi kolom sempit di sisi kanan ringkasan. */
 
 .row{display:flex;align-items:center;gap:13px;padding:13px 15px;background:var(--surface);border-radius:18px;margin-bottom:8px;cursor:pointer;transition:transform .14s}
 .row:active{transform:scale(.99)}
 .row .ic{width:42px;height:42px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;background:var(--surface-2);color:var(--ink)}
 .row .ic.in{color:var(--pos)} .row .ic.out{color:var(--neg)}
 .row .ic svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.row .lg{width:42px;height:42px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff}
-.row .lg.has-logo{overflow:hidden;background:#fff}.row .lg.has-logo img{width:100%;height:100%;display:block;object-fit:cover}
+.row .lg{position:relative;width:42px;height:42px;border-radius:13px;flex:0 0 auto;display:grid;place-items:center;font-weight:800;font-size:13px;color:#fff}
+.row .lg.has-logo{overflow:visible;background:#fff}.row .lg.is-cash{background:transparent}.row .lg-primary{width:100%;height:100%;display:block;object-fit:cover;border-radius:13px}.row .lg-network{position:absolute;right:-6px;bottom:-5px;width:21px!important;height:16px!important;display:block;object-fit:contain;background:#fff;border:0;border-radius:6px;padding:0;box-shadow:0 2px 5px rgba(0,0,0,.22);z-index:1}
 .row .mid{flex:1;min-width:0}
 .row .t1{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .t2{font-size:12px;color:var(--ink-soft);margin-top:3px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
@@ -318,7 +313,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .row .val{font-weight:700;font-size:14px;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
 .row .val.in{color:var(--pos)} .row .val.out{color:var(--neg)}
 .row .subt{font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:2px}
-.tx-wallet-label{display:block;max-width:150px;margin-top:4px;color:var(--ink-faint);font-size:9.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.beneficiary-row{flex-wrap:wrap}.beneficiary-row .r{display:grid;justify-items:end;gap:5px}
+.beneficiary-transactions-toggle{display:inline-flex;align-items:center;justify-content:flex-end;gap:5px;padding:0;border:0;background:transparent;color:var(--ink-faint);font:inherit;font-size:10.5px;font-weight:700;cursor:pointer}
+.beneficiary-transactions-toggle:hover{color:var(--mint)}.beneficiary-transactions-toggle svg{width:14px;height:14px;transition:transform .18s ease}.beneficiary-transactions-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.beneficiary-transactions{flex:0 0 calc(100% - 55px);margin:1px 0 0 55px}
+.tx-amount-line{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0}.tx-wallet-label{display:inline-flex;max-width:132px;align-items:center;gap:4px;color:var(--ink-faint);font-size:10px;font-weight:650;white-space:nowrap;overflow:hidden}.tx-wallet-label>small{font:inherit;color:var(--ink-faint)}.tx-wallet-label>i{font-style:normal;color:var(--ink-faint);font-size:11px}.tx-wallet-ref{display:inline-flex;align-items:center;gap:4px;min-width:0}.tx-wallet-ref>span:last-child{overflow:hidden;text-overflow:ellipsis}.tx-wallet-mark{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden;border-radius:5px;background:var(--surface-2);color:var(--ink);font-size:6px;font-weight:800;line-height:1}.tx-wallet-mark.has-image{background:#fff}.tx-wallet-mark.is-cash{background:transparent}.tx-wallet-mark img{width:100%;height:100%;display:block;object-fit:contain}
 .chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft)}
 /* SVG tanpa ukuran eksplisit memakai dimensi bawaan browser (300×150px). Chip pelunasan
    piutang memuat ikon panah, jadi ukurannya harus mengikuti tinggi teks, bukan membesar
@@ -416,11 +415,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 /* Tumpukan kartu: carousel scroll-snap horizontal, yang "tenggelam" di ujung track diurus
    mask — kartu memudar habis persis di tepi potong, bukan terpotong tajam.
    `--peek-s`/`--peek-e` = lebar zona pudar awal/akhir, sekaligus padding track. Ponsel pakai
-   keduanya (satu kartu per layar, snap tengah, slide 100% content box → padding otomatis
-   membuat kartu aktif center). Desktop hanya sisi akhir (lihat media query).
+   keduanya (satu kartu per layar). Nilai sisi awal disetel bersama padding slide agar
+   tepi kiri kartu aktif tepat sejajar dengan konten halaman. Desktop memakai perhitungan
+   yang sama dengan ruang shadow tambahan (lihat media query).
    Di kedua mode, kartu ke-n berhenti di scrollLeft = n × lebar slide — dipakai oleh JS. */
 .card-stack{margin-top:6px}
-.card-track{--peek-s:28px;--peek-e:28px;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;
+.wallet-carousel-toolbar{display:flex;justify-content:flex-start;gap:7px;margin:0 4px 2px}.wallet-carousel-toolbar button{width:30px;height:30px;display:grid;place-items:center;padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink-soft);cursor:pointer;transition:background .15s,color .15s}.wallet-carousel-toolbar button:hover{background:var(--surface-2);color:var(--ink)}.wallet-carousel-toolbar button.active{border-color:color-mix(in srgb,var(--mint) 40%,var(--line));background:color-mix(in srgb,var(--mint) 15%,var(--surface));color:var(--mint)}.wallet-carousel-toolbar svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.card-track{--peek-s:20px;--peek-e:28px;display:flex;overflow-x:auto;scroll-snap-type:x mandatory;overscroll-behavior-x:contain;scrollbar-width:none;-webkit-overflow-scrolling:touch;
   /* keluar dari padding .viewport supaya zona pudar jatuh tepat di tepi layar */
   margin-inline:-20px;padding-inline:var(--peek-s) var(--peek-e);
   -webkit-mask-image:linear-gradient(90deg,transparent 0,#000 var(--peek-s),#000 calc(100% - var(--peek-e)),transparent 100%);
@@ -430,11 +431,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    track memotong kedua sumbu (begitu satu sumbu auto, sumbu lain ikut), jadi apa pun yang
    melewati kotak slide hilang. Glow tema gelap (0 16px 40px -16px) menjangkau 20px ke bawah
    dan 4px ke samping — bawah wajib >=20px, samping 7px sudah cukup. */
-.card-slide{flex:0 0 100%;scroll-snap-align:center;scroll-snap-stop:always;padding:6px 7px 24px}
+.card-slide{flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always;padding:6px 0 24px}
 /* Jarak ke titik indikator dikecilkan karena ruang glow di atas sudah menyediakannya. */
-.card-dots{display:flex;justify-content:center;gap:6px;margin-top:2px}
+.card-dots{display:flex;justify-content:center;gap:6px;margin:2px 0 38px}
 .card-dots button{width:7px;height:7px;padding:0;border:0;border-radius:99px;background:var(--surface-3);cursor:pointer;transition:width .2s,background .2s}
 .card-dots button.on{width:20px;background:var(--mint)}
+.all-wallets-overview{min-height:188px;padding:20px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,var(--surface) 0%,var(--surface-2) 100%);box-shadow:0 12px 28px -22px rgba(0,0,0,.65);cursor:pointer;transition:transform .25s,opacity .25s}.all-wallets-overview.behind{transform:scale(.93);opacity:.72}.all-wallets-overview.behind.before{transform-origin:100% 50%}.all-wallets-overview.behind.after{transform-origin:0 50%}.all-wallets-overview-head{display:flex;align-items:center;gap:10px}.all-wallets-overview-icon{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:color-mix(in srgb,var(--mint) 16%,var(--surface));color:var(--mint)}.all-wallets-overview-icon svg{width:18px;height:18px}.all-wallets-overview-head>span:nth-child(2){display:flex;flex-direction:column;gap:2px;min-width:0}.all-wallets-overview-head small{color:var(--ink-faint);font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}.all-wallets-overview-head strong{font-family:var(--nominal);font-size:17px}.all-wallets-overview-head>b{margin-left:auto;display:grid;place-items:center;width:25px;height:25px;border-radius:99px;background:var(--surface-3);font-family:var(--nominal);font-size:11px}.all-wallets-overview-balance{margin-top:25px}.all-wallets-overview-balance span{display:block;color:var(--ink-faint);font-size:10px;font-weight:700}.all-wallets-overview-balance strong{display:block;margin-top:5px;font-family:var(--nominal);font-size:24px;font-variant-numeric:tabular-nums}.all-wallets-overview-stats{display:flex;gap:22px;margin-top:18px}.all-wallets-overview-stats span{display:flex;flex-direction:column;gap:3px}.all-wallets-overview-stats small{color:var(--ink-faint);font-size:9.5px;font-weight:700}.all-wallets-overview-stats b{font-family:var(--nominal);font-size:12px;font-variant-numeric:tabular-nums}.all-wallets-overview-stats b.out{color:var(--neg)}
 .paycard{background:var(--grad);border-radius:24px;padding:22px;color:var(--on-grad);box-shadow:var(--glow);position:relative;overflow:hidden;cursor:pointer;transition:transform .25s,transform-origin .25s,opacity .25s}
 /* Mengecil menjauhi tepi layar, bukan ke titik tengahnya sendiri — supaya lebar
    intipan tetap utuh dan kartu terbaca "tenggelam" di balik ujung layar. */
@@ -453,13 +455,19 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .paycard[data-theme]{background:linear-gradient(150deg,var(--card-a) 0%,var(--card-b) 100%);
   color:var(--card-ink);box-shadow:0 14px 30px -17px var(--card-glow)}
 .paycard[data-theme="mint"]{background:var(--grad);color:var(--on-grad);--card-glow:rgba(43,204,142,.48)}
-.paycard[data-theme="ocean"]{--card-a:#0C61EA;--card-b:#0A2E86;--card-ink:#F2F7FF;--card-glow:rgba(28,79,187,.62)}
-.paycard[data-theme="sky"]{--card-a:#0671A1;--card-b:#06405F;--card-ink:#F0FAFF;--card-glow:rgba(14,131,197,.6)}
-.paycard[data-theme="emerald"]{--card-a:#1B7C59;--card-b:#02452F;--card-ink:#F0FFF8;--card-glow:rgba(6,142,97,.6)}
-.paycard[data-theme="teal"]{--card-a:#197A6E;--card-b:#083F45;--card-ink:#EFFFFD;--card-glow:rgba(13,124,124,.58)}
-.paycard[data-theme="violet"]{--card-a:#6F42F7;--card-b:#3F1387;--card-ink:#F8F4FF;--card-glow:rgba(87,32,168,.62)}
-.paycard[data-theme="plum"]{--card-a:#B509D0;--card-b:#61104D;--card-ink:#FFF4FD;--card-glow:rgba(139,26,116,.6)}
-.paycard[data-theme="sunset"]{--card-a:#A35804;--card-b:#7C2008;--card-ink:#FFF8F0;--card-glow:rgba(184,62,20,.6)}
+.paycard[data-theme="ocean"]{--card-a:#2075D6;--card-b:#0B347C;--card-ink:#F3F8FF;--card-glow:rgba(24,91,194,.6)}
+.paycard[data-theme="bca-blue"]{--card-a:#2674BD;--card-b:#123D78;--card-ink:#F4F9FF;--card-glow:rgba(25,93,177,.58)}
+.paycard[data-theme="bca-gold"]{--card-a:#C99A45;--card-b:#76551E;--card-ink:#FFF9EC;--card-glow:rgba(177,126,41,.54)}
+.paycard[data-theme="bca-platinum"]{--card-a:#777E89;--card-b:#343B47;--card-ink:#F7F9FC;--card-glow:rgba(74,83,99,.58)}
+.paycard[data-theme="bca-credit"]{--card-a:#656B75;--card-b:#252A32;--card-ink:#F7F8FA;--card-glow:rgba(29,33,40,.7)}
+.paycard[data-theme="sky"]{--card-a:#268EDB;--card-b:#07568A;--card-ink:#F1FAFF;--card-glow:rgba(24,134,211,.58)}
+.paycard[data-theme="aqua"]{--card-a:#37D0D6;--card-b:#087E92;--card-ink:#F2FFFF;--card-glow:rgba(31,195,203,.55)}
+.paycard[data-theme="gopay"]{--card-a:#3CC8F4;--card-b:#1478C7;--card-ink:#F3FCFF;--card-glow:rgba(30,163,222,.56)}
+.paycard[data-theme="emerald"]{--card-a:#159C6F;--card-b:#07523A;--card-ink:#F0FFF8;--card-glow:rgba(10,157,105,.56)}
+.paycard[data-theme="teal"]{--card-a:#168C82;--card-b:#0A4C51;--card-ink:#EFFFFD;--card-glow:rgba(20,138,133,.54)}
+.paycard[data-theme="violet"]{--card-a:#7650DC;--card-b:#3C207E;--card-ink:#FAF8FF;--card-glow:rgba(103,71,193,.58)}
+.paycard[data-theme="plum"]{--card-a:#9A38B9;--card-b:#54225E;--card-ink:#FFF7FF;--card-glow:rgba(131,42,150,.54)}
+.paycard[data-theme="sunset"]{--card-a:#D96825;--card-b:#8E2F19;--card-ink:#FFF8F2;--card-glow:rgba(194,76,27,.55)}
 /* Satu-satunya tema bertinta gelap selain mint: kuning tidak bisa digelapkan sampai
    putih terbaca tanpa berhenti jadi kuning, jadi arah kontrasnya yang dibalik. */
 .paycard[data-theme="amber"]{--card-a:#FCD34D;--card-b:#CF7709;--card-ink:#2A1A02;--card-glow:rgba(178,110,12,.58)}
@@ -490,8 +498,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .paycard[data-pattern="dots"]::before{inset:0;background-image:radial-gradient(rgba(255,255,255,.22) 1.3px,transparent 1.3px);background-size:15px 15px;
   mask-image:linear-gradient(105deg,transparent 32%,#000 100%);-webkit-mask-image:linear-gradient(105deg,transparent 32%,#000 100%)}
 .paycard[data-pattern="dots"]::after{display:none}
+/* Kartu blu mengikuti identitas fisiknya: bidang hitam matte dengan gelombang cyan
+   di bawah. Corak ini menimpa pattern generik supaya langsung terbaca sebagai blu. */
 .paycard .pt{display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
-.paycard .pb{font-weight:800;font-size:15px}
+.paycard .pb{font-family:var(--sans);font-weight:800;font-size:15px;letter-spacing:normal}
 /* Chip: kotaknya hanya wadah, gambarnya ada di komponen CardChip. Bayangan tipis di
    bawahnya membuatnya terbaca menonjol dari permukaan kartu, bukan tercetak rata. */
 .paycard .pchip{width:34px;height:26px;flex:0 0 auto;display:block;line-height:0;filter:drop-shadow(0 1px 1.5px rgba(0,0,0,.28))}
@@ -513,9 +523,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .pcard-edit:hover{background:rgba(255,255,255,.28)}
 .pcard-edit:active{transform:scale(.88)}
 .pcard-edit svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.wallet-balance-grid small{display:block;margin-top:5px;color:var(--ink-faint);font-size:9.5px;line-height:1.4}.wallet-period-summary{margin:12px 0 10px;padding:15px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}.wallet-period-head{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding:0 1px 12px}.wallet-period-head>div{min-width:0}.wallet-period-head span{display:block;color:var(--ink-faint);font-size:9px;font-weight:750;text-transform:uppercase;letter-spacing:.065em}.wallet-period-head strong{display:block;margin-top:3px;font-size:14px}.wallet-period-head>small{flex:0 0 auto;color:var(--ink-faint);font-size:9.5px}.wallet-flow-grid{display:grid;grid-template-columns:1fr;gap:9px}.wallet-flow-card{padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface-2)}.wallet-flow-card>span{display:block;color:var(--ink-faint);font-size:9.5px;font-weight:750}.wallet-flow-card>b{display:block;margin-top:5px;font-family:var(--nominal);font-size:19px;font-variant-numeric:tabular-nums}.wallet-flow-card.income>b{color:var(--pos)}.wallet-flow-card.expense>b{color:var(--neg)}.wallet-flow-card>div{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-top:10px;padding-top:9px;border-top:1px solid var(--line)}.wallet-flow-card>div+div{margin-top:7px;padding-top:0;border-top:0}.wallet-flow-card>div small{max-width:68%;color:var(--ink-faint);font-size:9.5px;line-height:1.35}.wallet-flow-card>div strong{flex:0 0 auto;font-family:var(--nominal);font-size:10.5px;font-variant-numeric:tabular-nums}.wallet-period-summary>p{margin:11px 1px 0;color:var(--ink-faint);font-size:9.5px;line-height:1.45}
+.card-reorder-controls{display:flex;align-items:center;gap:6px}.card-reorder-controls button{width:30px;height:30px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.2);color:inherit;cursor:pointer}.card-reorder-controls button:disabled{opacity:.3;cursor:not-allowed}.card-reorder-controls svg{width:14px;height:14px}.paycard.reordering{cursor:grab}.paycard.reordering:active{cursor:grabbing}
 .paycard .pn{font-size:18px;font-weight:700;letter-spacing:.14em;margin-top:28px;position:relative;z-index:1;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .paycard .pf{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px;position:relative;z-index:1}
-.paycard .pname{font-size:12px;font-weight:700;opacity:.85}.paycard .pbrand{font-weight:800;font-style:italic;font-size:17px}
+.paycard .wallet-title-logo{width:27px;height:27px;flex:0 0 auto;object-fit:contain}.paycard .wallet-title-initial{display:grid;place-items:center;min-width:27px;height:27px;flex:0 0 auto;border-radius:8px;background:rgba(255,255,255,.18);padding:0 5px;font-size:10px;font-style:normal}.paycard .pname{font-family:var(--nominal);font-size:12px;font-weight:700;letter-spacing:.025em;font-variant-numeric:tabular-nums;opacity:.85}.paycard .pbrand{display:flex;align-items:center}.paycard .pbrand-network{display:block;width:38px;max-height:22px;object-fit:contain}
+.wallet-focus{margin-top:8px}.wallet-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 0 10px}.wallet-focus-head>div{min-width:0}.wallet-focus-head>div>span{display:block;color:var(--ink-faint);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}.wallet-focus-head strong{display:block;margin-top:4px;font-family:var(--nominal);font-size:22px;line-height:1.15}.wallet-focus-head .ghost-btn.compact{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:8px 11px;font-size:11px}.wallet-focus-head .ghost-btn.compact svg{width:14px;height:14px}.wallet-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.wallet-meta span{padding:4px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft);font-size:9.5px;font-weight:700}.wallet-insight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:8px 0 10px}.wallet-insight-grid>div{min-width:0;padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.wallet-insight-grid span{display:block;color:var(--ink-faint);font-size:9.5px;font-weight:700}.wallet-insight-grid b{display:block;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--nominal);font-size:14px;font-variant-numeric:tabular-nums}.wallet-insight-grid b.in{color:var(--pos)}.wallet-insight-grid b.out{color:var(--neg)}.all-wallet-insights{margin-top:12px}.wallet-net-card{padding:18px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,var(--surface),var(--surface-2))}.wallet-net-card>span{display:block;color:var(--ink-faint);font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.06em}.wallet-net-card>b{display:block;margin-top:6px;font-family:var(--nominal);font-size:25px;font-variant-numeric:tabular-nums}.wallet-net-card>b.out,.wallet-breakdown-grid b.out{color:var(--neg)}.wallet-net-formula{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:13px;border-top:1px solid var(--line)}.wallet-net-formula>span{display:flex;flex-direction:column;gap:3px}.wallet-net-formula small{color:var(--ink-faint);font-size:9.5px;font-weight:700}.wallet-net-formula strong{font-family:var(--nominal);font-size:12px;font-variant-numeric:tabular-nums}.wallet-net-formula>i{color:var(--ink-faint);font-style:normal;font-size:15px}.wallet-breakdown-grid{display:grid;grid-template-columns:1fr;gap:9px;margin-top:9px}.wallet-breakdown-grid>div{min-width:0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.wallet-breakdown-grid>div>span{display:block;color:var(--ink-faint);font-size:9.5px;font-weight:700}.wallet-breakdown-grid b{display:block;margin-top:6px;font-family:var(--nominal);font-size:15px;font-variant-numeric:tabular-nums}.wallet-breakdown-grid small{display:block;margin-top:5px;color:var(--ink-faint);font-size:9.5px;line-height:1.4}.wallet-activity .t2{display:block;margin-top:3px}.qa-btn.active .qa-ic{background:color-mix(in srgb,var(--mint) 18%,var(--surface-2));color:var(--mint)}
 .manage .mrow{display:flex;align-items:center;gap:13px;padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .manage button.mrow{width:100%;border-top:0;border-left:0;border-right:0;background:transparent;color:var(--ink);text-align:left}
 .manage .mrow:last-child{border-bottom:0}
@@ -532,7 +545,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .chart-card .ct{display:flex;justify-content:space-between;align-items:center;padding:0 4px 8px}
 .chart-card .cv{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .chart-card .cd{font-size:12px;font-weight:700;color:var(--pos)}
-.chart svg{width:100%;height:auto;display:block}
+.chart{position:relative;isolation:isolate}.chart svg{width:100%;height:auto;display:block;cursor:crosshair;touch-action:manipulation}.chart-hover-point line{stroke:var(--ink-faint);stroke-width:1;stroke-dasharray:3 4;opacity:.75}.chart-tooltip{position:absolute;z-index:2;pointer-events:none;transform:translate(-50%,-108%);min-width:max-content;padding:7px 9px 6px;border:1px solid var(--line);border-radius:10px;background:var(--surface-3);box-shadow:0 10px 24px rgba(0,0,0,.28)}.chart-tooltip.at-start{transform:translate(0,-108%)}.chart-tooltip.at-end{transform:translate(-100%,-108%)}.chart-tooltip span,.chart-tooltip b{display:block}.chart-tooltip span{color:var(--ink-faint);font-size:9px;font-weight:700}.chart-tooltip b{margin-top:2px;font-family:var(--nominal);font-variant-numeric:tabular-nums;font-size:12px}
 
 .transaction-insight-card{background:var(--surface);border-radius:22px;padding:16px}
 .transaction-insight-feature{padding:2px 2px 14px;border-bottom:1px solid var(--line)}
@@ -545,6 +558,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .transaction-insight-grid>div:last-child{grid-column:1/-1}
 /* Varian isi genap: tidak ada sel ganjil yang perlu direntangkan penuh. */
 .transaction-insight-grid.wide>div:last-child{grid-column:auto}
+.credit-insight-grid.credit-insight-count-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:899px){.credit-insight-grid.credit-insight-count-4{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .transaction-insight-grid b{display:block;margin-top:5px;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:var(--nominal);font-variant-numeric:tabular-nums}
 .transaction-insight-grid small{display:block;margin-top:2px;color:var(--ink-soft);font-size:10px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .transaction-insight-note{margin-top:10px;padding:9px 11px;border-radius:12px;background:rgba(91,233,170,.09);color:var(--mint);font-size:11px;font-weight:700}
@@ -636,11 +651,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .cal-date{font-size:12px;font-weight:700;width:22px;height:20px;display:grid;place-items:center;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .cal-marks{display:flex;gap:3px;min-height:5px}
 .cal-marks .mk{width:5px;height:5px;border-radius:50%}
-.mk.todo{background:var(--info)}.mk.bill{background:var(--warn)}.mk.out{background:var(--neg)}.mk.in{background:var(--pos)}
+.mk.todo{background:var(--info)}.mk.bill{background:var(--warn)}.mk.out{background:var(--neg)}.mk.in{background:var(--pos)}.mk.real-in{background:color-mix(in srgb,var(--pos) 72%,var(--info))}
 .cal-grid.week .cal-day{min-height:86px}
 .cal-amt{display:flex;flex-direction:column;gap:1px;margin-top:2px}
 .cal-amt em{font-style:normal;font-size:9px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
-.cal-amt em.in{color:var(--pos)}.cal-amt em.out{color:var(--neg)}
+.cal-amt em.in{color:var(--pos)}.cal-amt em.real-in{color:color-mix(in srgb,var(--pos) 72%,var(--info))}.cal-amt em.out{color:var(--neg)}
 .cal-check{width:26px;height:26px;flex:0 0 auto;border:2px solid var(--surface-3);border-radius:9px;background:transparent;color:var(--on-grad);display:grid;place-items:center;cursor:pointer;margin-left:8px}
 .cal-check.on{background:var(--emerald);border-color:var(--emerald)}
 .cal-check svg{width:14px;height:14px;stroke-width:3}
@@ -657,18 +672,41 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .pace-note.warn{border-color:var(--warn)}
 
 /* ===== Kalkulator rencana keuangan ===== */
-.plan-context{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
-.plan-context>div{background:var(--surface);border-radius:16px;padding:12px 13px;min-width:0}
-.plan-context>div.wide{grid-column:1/-1;background:linear-gradient(135deg,rgba(91,233,170,.13),rgba(35,199,136,.03));border:1px solid rgba(91,233,170,.14)}
-.plan-context span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);margin-bottom:5px}
-.plan-context b{font-size:14.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
-.plan-context b small{font-size:10.5px;color:var(--ink-soft);font-weight:700}
+.plan-context{margin-top:12px;background:var(--surface);border:1px solid var(--line);border-radius:22px;overflow:hidden}
+.financial-condition-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;padding:22px 24px 20px;background:linear-gradient(135deg,rgba(91,233,170,.12),transparent 62%)}
+.plan-context.is-tight .financial-condition-head{background:linear-gradient(135deg,rgba(239,134,118,.11),transparent 62%)}
+.financial-condition-head>div>span{display:block;font-size:10.5px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:7px}
+.financial-condition-head b{display:block;font-size:31px;line-height:1.08;font-weight:850;font-variant-numeric:tabular-nums;font-family:var(--nominal);letter-spacing:-.03em}
+.financial-condition-head p{margin-top:8px;font-size:11px;line-height:1.45;color:var(--ink-faint)}
+.financial-condition-status{flex:0 0 auto;padding:7px 11px;border-radius:99px;background:rgba(91,233,170,.11);color:var(--pos);font-size:10.5px;font-weight:800}
+.plan-context.is-tight .financial-condition-status{background:rgba(239,134,118,.11);color:var(--neg)}
+.financial-condition-breakdown{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.financial-condition-breakdown>div{min-width:0;padding:16px 20px}
+.financial-condition-breakdown>div+div{border-left:1px solid var(--line)}
+.financial-condition-breakdown span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);margin-bottom:6px}
+.financial-condition-breakdown b{display:block;font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.financial-condition-equation{display:flex;align-items:baseline;justify-content:space-between;gap:20px;padding:15px 24px}
+.financial-condition-equation>span{flex:0 0 auto;font-size:10px;font-weight:750;color:var(--ink-faint)}
+.financial-condition-equation>b{min-width:0;text-align:right;font-size:12px;line-height:1.5;color:var(--ink-soft);font-weight:750;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
+.financial-condition-equation em{font-style:normal;color:var(--pos)}
+.plan-context.is-tight .financial-condition-equation em{color:var(--neg)}
+.financial-condition-note{display:flex;align-items:flex-start;gap:9px;margin:0 24px 20px;padding:11px 12px;border-radius:12px;font-size:11.5px;font-weight:600;line-height:1.5}
+.financial-condition-note svg{width:16px;height:16px;flex:0 0 auto;margin-top:1px}
+.financial-condition-note.ok{background:rgba(91,233,170,.09);color:var(--pos)}
+.financial-condition-note.warn{background:rgba(239,134,118,.09);color:var(--neg)}
+@media(max-width:620px){
+  .financial-condition-head{padding:18px 16px 16px;gap:10px}.financial-condition-head b{font-size:26px}.financial-condition-status{font-size:9.5px;padding:6px 8px}
+  .financial-condition-breakdown{grid-template-columns:1fr 1fr}.financial-condition-breakdown>div{padding:13px 16px}.financial-condition-breakdown>div:nth-child(3){border-left:0;border-top:1px solid var(--line)}.financial-condition-breakdown>div:nth-child(4){border-top:1px solid var(--line)}
+  .financial-condition-equation{display:block;padding:14px 16px}.financial-condition-equation>b{display:block;text-align:left;margin-top:5px}
+  .financial-condition-note{margin:0 16px 16px}
+}
 .calc-card{background:var(--surface);border-radius:22px;padding:18px}
 .calc-lead{font-size:12px;color:var(--ink-soft);line-height:1.5;margin-bottom:14px}
 .calc-card .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .calc-card .input-field input,.calc-card .input-field select{background:var(--surface-2)}
 .calc-toggle{margin-top:12px}
 .calc-breakdown{margin-top:14px;background:var(--surface-2);border-radius:14px;padding:12px 14px}
+.calc-breakdown.afford-legacy{display:none}
 .calc-breakdown>div{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;font-size:12px;color:var(--ink-soft)}
 .calc-breakdown>div b{font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
 .calc-breakdown>div.total{border-top:1px solid var(--line);margin-top:5px;padding-top:9px;color:var(--ink);font-weight:700}
@@ -828,8 +866,27 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 .report-actions{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .report-range{margin:0}.report-actions>.addg svg{width:14px}
+.report-executive{margin-top:16px;border:1px solid rgba(91,233,170,.16);border-radius:22px;overflow:hidden;background:linear-gradient(140deg,rgba(91,233,170,.11),transparent 46%),var(--surface)}
+.report-executive.deficit{border-color:rgba(239,134,118,.16);background:linear-gradient(140deg,rgba(239,134,118,.11),transparent 46%),var(--surface)}
+.report-executive-main{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:20px 22px 17px}
+.report-executive-main>div>span{display:block;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft)}
+.report-executive-main b{display:block;margin-top:7px;font-size:29px;line-height:1.05;font-family:var(--nominal);font-variant-numeric:tabular-nums;color:var(--pos)}
+.report-executive.deficit .report-executive-main b{color:var(--neg)}
+.report-executive-main small{display:block;margin-top:7px;color:var(--ink-faint);font-size:10.5px;font-weight:650}
+.report-executive-status{padding:7px 11px;border-radius:99px;background:rgba(91,233,170,.11);color:var(--pos);font-size:10.5px;font-weight:800}
+.report-executive.deficit .report-executive-status{background:rgba(239,134,118,.11);color:var(--neg)}
+.report-executive-formula{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr);align-items:center;padding:15px 22px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.report-executive-formula>div{min-width:0}.report-executive-formula span{display:block;font-size:9.5px;font-weight:700;color:var(--ink-faint);margin-bottom:5px}.report-executive-formula b{display:block;font-size:14px;font-family:var(--nominal);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.report-executive-formula>i{padding:0 14px;color:var(--ink-faint);font-size:14px;font-style:normal;font-weight:800}
+@media(max-width:620px){
+  .report-executive-main{padding:18px 16px 15px}.report-executive-main b{font-size:25px}
+  .report-executive-formula{grid-template-columns:1fr;padding:4px 16px}.report-executive-formula>div{padding:10px 0}.report-executive-formula>div+div{border-top:1px solid var(--line)}.report-executive-formula>i{display:none}
+}
 .metric-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px}
-.report-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+.report-metrics,.period-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+.report-metric-section{margin-top:22px}
+.report-metric-heading{display:flex;align-items:end;justify-content:space-between;gap:18px;margin:0 3px 10px}.report-metric-heading>div{min-width:0}.report-metric-heading span,.report-metric-heading small{display:block}.report-metric-heading span{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}.report-metric-heading small{margin-top:3px;font-size:10.5px;font-weight:650;color:var(--ink-faint)}.report-metric-heading p{max-width:620px;margin:0;color:var(--ink-faint);font-size:10.5px;line-height:1.45;text-align:right}
+.report-real-flow{margin-top:24px}.report-real-metrics{grid-template-columns:1fr}.report-secondary-summary{margin-top:26px}.report-secondary-summary .report-metric-section{margin-top:0}.report-budget-summary{display:flex;align-items:end}.report-budget-summary .metric-card{min-height:0;width:100%}
+@media(max-width:620px){.report-metric-heading{display:block;margin-bottom:9px}.report-metric-heading p{margin-top:6px;text-align:left}.report-real-metrics{grid-template-columns:1fr}.report-secondary-metrics{grid-template-columns:1fr}.report-secondary-summary{display:block}.report-budget-summary{margin-top:12px}}
 .metric-card{background:var(--surface);border-radius:18px;padding:15px;min-width:0}
 .metric-card>span,.metric-card>small{display:block;font-size:10.5px;color:var(--ink-faint);font-weight:700}
 .metric-card>b{display:block;font-size:15px;margin:7px 0 3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
@@ -839,9 +896,13 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .metric-card.m-in{background:linear-gradient(180deg,rgba(91,233,170,.12),transparent 70%),var(--surface)}
 .metric-card.m-in::before{background:var(--pos)}.metric-card.m-in>b{color:var(--pos)}
 .metric-card.m-in>span{color:var(--pos);opacity:.85}
+.metric-card.m-real-in{background:linear-gradient(180deg,rgba(91,233,170,.09),rgba(138,182,249,.05) 70%),var(--surface)}
+.metric-card.m-real-in::before{background:color-mix(in srgb,var(--pos) 72%,var(--info))}.metric-card.m-real-in>b,.metric-card.m-real-in>span{color:color-mix(in srgb,var(--pos) 72%,var(--info))}
 .metric-card.m-out{background:linear-gradient(180deg,rgba(239,134,118,.12),transparent 70%),var(--surface)}
 .metric-card.m-out::before{background:var(--neg)}.metric-card.m-out>b{color:var(--neg)}
 .metric-card.m-out>span{color:var(--neg);opacity:.85}
+.metric-card.m-real-out{background:linear-gradient(180deg,rgba(239,134,118,.09),rgba(245,194,107,.05) 70%),var(--surface)}
+.metric-card.m-real-out::before{background:color-mix(in srgb,var(--neg) 76%,var(--warn))}.metric-card.m-real-out>b,.metric-card.m-real-out>span{color:color-mix(in srgb,var(--neg) 76%,var(--warn))}
 .metric-card.m-net{background:linear-gradient(180deg,rgba(138,182,249,.12),transparent 70%),var(--surface)}
 .metric-card.m-net::before{background:var(--info)}.metric-card.m-net>b{color:var(--info)}
 .metric-card.m-net>span{color:var(--info);opacity:.85}
@@ -866,10 +927,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .dr-bars{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px}
 .dr-bar{height:6px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .dr-bar i{display:block;height:100%;border-radius:99px}
-.dr-bar i.in{background:var(--pos)}.dr-bar i.out{background:var(--neg)}
+.dr-bar i.in{background:var(--pos)}.dr-bar i.real-in{background:color-mix(in srgb,var(--pos) 72%,var(--info))}.dr-bar i.out{background:var(--neg)}.dr-bar i.real-out{background:color-mix(in srgb,var(--neg) 76%,var(--warn))}
 .dr-nums{flex:0 0 auto;text-align:right;display:flex;flex-direction:column;gap:1px}
 .dr-nums span{font-size:10.5px;font-weight:700;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
-.dr-nums span.in{color:var(--pos)}.dr-nums span.out{color:var(--neg)}
+.dr-nums span.in{color:var(--pos)}.dr-nums span.real-in{color:color-mix(in srgb,var(--pos) 72%,var(--info))}.dr-nums span.out{color:var(--neg)}.dr-nums span.real-out{color:color-mix(in srgb,var(--neg) 76%,var(--warn))}
 .dr-nums em{font-style:normal;font-size:11.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .chart-card .cd{display:flex;align-items:center;gap:4px}.chart-card .cd svg{width:13px}
 .chart-card .cd.negative{color:var(--neg)}
@@ -892,8 +953,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .compare-items{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:9px}
 .compare-item{min-width:0}
 .compare-item>span{display:block;font-size:9.5px;color:var(--ink-faint);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.compare-item b{display:block;margin-top:3px;font-size:13px;font-family:var(--nominal);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.compare-item em{display:inline-block;margin-top:3px;font-style:normal;font-size:9.5px;font-weight:700;border-radius:99px;padding:2px 6px}
+.compare-value{display:flex;align-items:center;gap:6px;min-width:0;margin-top:3px}.compare-item b{display:block;min-width:0;font-size:13px;font-family:var(--nominal);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.compare-item em{display:inline-block;flex:0 0 auto;font-style:normal;font-size:9.5px;font-weight:700;border-radius:99px;padding:2px 6px}
 .compare-item small{display:block;margin-top:3px;font-size:9px;color:var(--ink-faint);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* Warna mengikuti maknanya, bukan arah panah: pengeluaran naik itu merah, pemasukan naik hijau. */
 .compare-item em.up{color:var(--neg);background:rgba(239,134,118,.1)}
@@ -901,17 +961,21 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .compare-item em.flat{color:var(--ink-soft);background:var(--surface-2)}
 
 /* ===== Pola hari dalam seminggu ===== */
-.weekday-card{background:var(--surface);border-radius:22px;padding:14px;margin-top:6px}
-.weekday-row{display:grid;grid-template-columns:34px 1fr auto;gap:9px;align-items:center;padding:5px 0}
+.weekday-filter{display:flex;align-items:center;gap:8px;min-width:0}.weekday-filter>span{font-size:10px;color:var(--ink-faint);font-weight:700;white-space:nowrap}.weekday-select-wrap{position:relative;display:block;min-width:154px;max-width:250px}.weekday-filter select{width:100%;appearance:none;border:1px solid var(--line);border-radius:10px;background:var(--surface-2);color:var(--ink);padding:7px 38px 7px 12px;font:700 11px var(--sans);outline:0}.weekday-select-wrap>svg{position:absolute;right:13px;top:50%;width:15px;height:15px;transform:translateY(-50%);pointer-events:none;color:var(--ink)}.weekday-filter select:focus{border-color:rgba(91,233,170,.55);box-shadow:0 0 0 3px rgba(91,233,170,.08)}
+@media(max-width:620px){.sec:has(.weekday-filter){align-items:flex-end;gap:9px;flex-wrap:wrap}.sec:has(.weekday-filter) .t{width:100%}.weekday-filter{width:100%;justify-content:space-between}.weekday-select-wrap{flex:1;max-width:none}}
+@media(max-width:620px){.weekday-row{grid-template-columns:30px minmax(0,1fr) 116px 16px;gap:7px}}
+.weekday-card{background:var(--surface);border-radius:22px;padding:14px;margin-top:6px}.weekday-group+.weekday-group{border-top:1px solid transparent}.weekday-group.open{padding:4px 0 7px;border-color:var(--line)}
+.weekday-row{width:100%;display:grid;grid-template-columns:34px minmax(0,1fr) 142px 18px;gap:9px;align-items:center;padding:5px 0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}.weekday-row:hover .weekday-name,.weekday-row:focus-visible .weekday-name{color:var(--ink)}.weekday-row:focus-visible{outline:2px solid var(--mint);outline-offset:3px;border-radius:7px}
 .weekday-name{font-size:10.5px;font-weight:800;color:var(--ink-soft);text-transform:capitalize}
 .weekday-bar{height:8px;border-radius:99px;background:var(--surface-2);overflow:hidden}
 .weekday-bar i{display:block;height:100%;min-width:3px;border-radius:99px;background:var(--info)}
-.weekday-row.peak .weekday-bar i{background:var(--warn)}
-.weekday-row.peak .weekday-name,.weekday-row.peak .weekday-value{color:var(--warn)}
+.weekday-group.peak .weekday-bar i{background:var(--warn)}
+.weekday-group.peak .weekday-name,.weekday-group.peak .weekday-value{color:var(--warn)}
 .weekday-value{font-size:11px;font-weight:800;font-family:var(--nominal);font-variant-numeric:tabular-nums;text-align:right}
-/* Jumlah kemunculan hari itu di rentang — pembagi rata-ratanya, ditaruh di baris kedua
-   kolom kanan supaya tidak mendorong bar menyempit di layar ponsel. */
-.weekday-count{grid-column:3;font-size:8.5px;color:var(--ink-faint);font-weight:650;text-align:right;margin-top:-4px}
+/* Jumlah transaksi dan nominal rata-ratanya ditaruh di baris kedua kolom kanan,
+   supaya total hari itu tetap menjadi angka yang paling mudah dipindai. */
+.weekday-count{grid-column:3;font-size:8.5px;color:var(--ink-faint);font-weight:650;text-align:right;margin-top:-4px}.weekday-caret{grid-column:4;grid-row:1 / span 2;width:14px;height:14px;color:var(--ink-faint);transition:transform .18s}.weekday-group.open .weekday-caret{transform:rotate(180deg)}
+.weekday-details.budget-transactions{margin:8px 0 2px;border-left:0;padding:7px}.weekday-details .budget-transaction>b.negative{color:var(--neg)}
 .weekday-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
 .weekday-summary>div{min-width:0;background:var(--surface-2);border-radius:13px;padding:10px}
 .weekday-summary span{display:block;font-size:9.5px;color:var(--ink-faint);font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -931,6 +995,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .sector-caret{width:15px;flex:0 0 auto;margin-top:4px;color:var(--ink-faint);stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;transition:transform .18s}
 .sector.open .sector-caret{transform:rotate(180deg)}
 .sector-children{padding:2px 1px 12px 34px}
+.sector-transactions.budget-transactions{margin:2px 1px 12px 34px}
+.sector-transactions .budget-transaction>b.negative{color:var(--neg)}
 .sector-child{padding:8px 0}
 .sector-child+.sector-child{border-top:1px solid var(--line)}
 .sector-child-head{display:flex;align-items:baseline;gap:8px}
@@ -1023,7 +1089,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .card,.plan,.chart-card,.transaction-insight-card,.category-report-card,.cat-card,.planning-overview,.calc-card,.bill-total,
 .setg,.closing-steps,.brk-card,.period-picker{border-radius:16px}
 .row,.metric-card,.ps-card,.receipt-card,.pace-card,.profile-edit,.mini-metrics>div,
-.wbreak>div,.plan-context>div,.note,.saving-empty,.inline-add{border-radius:14px}
+.wbreak>div,.note,.saving-empty,.inline-add{border-radius:14px}
 .profile-card,.closing-hero{border-radius:18px}
 
 /* Track carousel memang harus scrollable, jadi shadow diberi ruang di DALAM area scroll.
@@ -1169,6 +1235,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .date-field-value{position:absolute;z-index:2;left:15px;right:48px;top:50%;transform:translateY(-50%);
   color:var(--ink);font-size:13.333px;font-weight:600;text-transform:capitalize;white-space:nowrap;
   overflow:hidden;text-overflow:ellipsis;pointer-events:none;user-select:none;-webkit-user-select:none}
+.date-field-placeholder{color:var(--ink-faint);font-weight:500}
 .date-field-icon{position:absolute;z-index:2;right:15px;top:50%;width:18px;height:18px;
   transform:translateY(-50%);color:var(--ink-soft);pointer-events:none}
 /* Dropdown saran (tempat transaksi) — dibuat sendiri agar seragam dengan select lain. */
@@ -1247,7 +1314,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .pill-count{font-size:10px;font-weight:700;color:var(--ink-faint);background:var(--surface-2);border-radius:99px;padding:1px 6px;min-width:18px;text-align:center}
 /* Penanda dompet di pill filter: logo merek kalau ada, kalau tidak inisial namanya. */
 .filter-pills.sub-filter .pill-mark{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden;border-radius:5px;background:var(--surface-2);color:var(--ink);font-size:6px;font-weight:800;line-height:1}
-.filter-pills.sub-filter .pill-mark.has-image{background:#fff}
+.filter-pills.sub-filter .pill-mark.has-image{background:#fff}.filter-pills.sub-filter .pill-mark.is-cash{background:transparent}
 .filter-pills.sub-filter .pill-mark img{width:100%;height:100%;display:block;object-fit:cover}
 .filter-pills.sub-filter button.on .pill-count{background:rgba(91,233,170,.18);color:var(--mint)}
 /* Dompet tanpa transaksi tetap ditawarkan, cuma diredupkan — masih bisa dipilih, dan
@@ -1269,6 +1336,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 
 @media (min-width:900px){
   body{align-items:stretch;padding:0}
+  .wallet-breakdown-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .wallet-flow-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
   .app{max-width:none;width:100%;height:100dvh;min-height:0;border-radius:0;background:var(--bg);border:0;box-shadow:none}
   .sidebar{width:256px;flex:0 0 auto;display:flex;flex-direction:column;min-height:0;overflow:hidden;padding:24px 16px 18px;border-right:1px solid var(--line);background:rgba(17,20,18,.78)}
   /* `flex:0 0 auto` di tiap bagian: tanpa itu flexbox memampatkan tingginya
@@ -1340,6 +1409,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .side-avatar{width:34px;height:34px;border-radius:50%;background:var(--surface-3);display:grid;place-items:center;color:var(--mint);font-weight:800;font-size:12px}
   .topbar{height:92px;grid-template-columns:1fr 44px;padding:18px 0}
   .topbar:has(.header-back){grid-template-columns:44px 1fr 44px;column-gap:14px}
+  .topbar.budget-topbar{grid-template-columns:1fr 44px}
+  .topbar.budget-topbar .header-back{display:none}
   .avatar-btn{display:none}
   .page-heading{text-align:left}
   .page-heading span{display:block;margin-bottom:4px}
@@ -1356,8 +1427,12 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
      kanan = zona pudar, jadi di ujung scroll kartu terakhir berhenti sebelum ikut pudar. */
   :root{--card-w:clamp(300px,32vw,430px)}
   .card-stack{max-width:none}
-  .card-track{--peek-s:0px;--peek-e:56px;margin-inline:0 -48px}
+  .card-track{--peek-s:14px;--peek-e:56px;margin-inline:calc(-1 * var(--peek-s)) -48px}
   .card-slide{flex:0 0 var(--card-w);scroll-snap-align:start;scroll-snap-stop:normal}
+  /* Spacer ini memberi ruang scroll setelah kartu terakhir. Tanpanya, ketika area layar
+     lebih lebar daripada kartu, `scrollLeft` mentok terlalu dini dan kartu kredit terakhir
+     tidak pernah bisa sejajar ke awal/menjadi aktif. */
+  .card-track::after{content:"";flex:0 0 max(0px,calc(100% - var(--peek-e) - var(--card-w)))}
   /* Kartu non-aktif di sini muat utuh, jadi tidak perlu dikecilkan — cukup diredupkan
      supaya tetap terlihat mana yang dirujuk bagian "Kelola kartu" di bawah. */
   .paycard.behind{transform:none;opacity:.62}
@@ -1379,7 +1454,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .brk-cells{gap:20px}
   .brk-cells>div+div{padding-left:20px}
   .brk-cells b{font-size:15px}
-  .metric-grid{gap:12px}.report-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .metric-grid{gap:12px}.report-real-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.report-secondary-summary{display:grid;grid-template-columns:2fr 1fr;gap:12px}.report-secondary-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.period-metrics{grid-template-columns:repeat(4,minmax(0,1fr))}
   .metric-card{padding:18px}.metric-card>b{font-size:19px}
   .report-columns{grid-template-columns:1fr 1fr;gap:18px}
   .health-grid{grid-template-columns:repeat(4,minmax(0,1fr))}

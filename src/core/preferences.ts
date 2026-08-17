@@ -10,6 +10,7 @@ export interface Preferences {
   email: string;
   defaultWalletId: string;
   homeTools: string[];
+  walletOrder: string[];
 }
 
 export const DEFAULT_HOME_TOOLS = ['log', 'transfer', 'split', 'budget'];
@@ -25,6 +26,7 @@ export const DEFAULT_PREFS: Preferences = {
   email: '',
   defaultWalletId: '',
   homeTools: DEFAULT_HOME_TOOLS,
+  walletOrder: [],
 };
 
 export const identityFromUser = (user: Pick<User, 'email' | 'user_metadata'>) => ({

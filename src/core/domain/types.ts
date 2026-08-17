@@ -10,6 +10,7 @@ export type BillingCycle = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'cust
 export type SubStatus = 'active' | 'paused' | 'cancelled' | 'ended';
 export type PlanStatus = 'draft' | 'active' | 'done';
 export type ReceivableStatus = 'open' | 'partial' | 'settled' | 'written_off';
+export type BeneficiaryKind = 'person' | 'group';
 
 export interface Wallet {
   id: string; name: string; kind: WalletKind; medium?: WalletMedium; bank?: string;
@@ -31,7 +32,7 @@ export interface Transaction {
   // dari belanja nyata. Ditandai agar bisa dikecualikan dari analisa perilaku.
   adjustment?: boolean;
   adjustmentReason?: string;
-  note?: string; recipient?: string; isReceivable?: boolean;
+  note?: string; recipient?: string; beneficiaryId?: string; isReceivable?: boolean;
   owedAmount?: number;          // nominal transaksi yang menjadi piutang
   subscriptionId?: string; date: string;
 }
@@ -64,6 +65,10 @@ export interface Receivable {
 export interface Saving {
   id: string; name: string; walletId: string; balance: number;
   target?: number; targetDate?: string; emoji?: string; archived?: boolean;
+  ownership: 'self' | 'other'; beneficiaryId?: string; recipientName?: string;
+}
+export interface Beneficiary {
+  id: string; name: string; kind: BeneficiaryKind; note?: string; archived?: boolean;
 }
 export interface Plan { id: string; title: string; target: number; saved: number; targetDate?: string; status: PlanStatus; }
 // Pengingat / to-do berbasis tanggal yang tampil di kalender bersama jatuh tempo langganan.

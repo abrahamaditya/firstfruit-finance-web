@@ -21,7 +21,8 @@ import {
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { periodProgress } from '../core/domain/calculations';
-import { CardNetwork, WalletKind, WalletMedium } from '../core/domain/types';
+import { BeneficiaryKind, CardNetwork, WalletKind, WalletMedium } from '../core/domain/types';
+import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
   CATEGORY_CUSTOM,
   CategoryOption,
@@ -79,6 +80,7 @@ import SplitScreen from '../features/SplitScreen';
 import PlanningScreen from '../features/PlanningScreen';
 import ReportsScreen from '../features/ReportsScreen';
 import CalendarScreen from '../features/CalendarScreen';
+import PeopleScreen from '../features/PeopleScreen';
 import PeriodScreen from '../features/PeriodScreen';
 import ProfileScreen from '../features/ProfileScreen';
 import { usePeriods } from '../application/hooks';
@@ -94,6 +96,7 @@ export type Tab =
   | 'planning'
   | 'reports'
   | 'calendar'
+  | 'people'
   | 'period'
   | 'profile';
 export type CreateType =
@@ -109,7 +112,8 @@ export type CreateType =
   | 'tabungan'
   | 'sisihkan'
   | 'ambil'
-  | 'reminder';
+  | 'reminder'
+  | 'beneficiary';
 
 interface CreateDescriptor {
   type: CreateType;
@@ -129,7 +133,7 @@ const FORM_DRAFT_KEY = 'firstfruit.form-draft';
 const CREATE_TYPES = new Set<CreateType>([
   'wallet', 'subscription', 'planning', 'piutang', 'budget', 'periode',
   'orang', 'transfer', 'transaksi', 'tabungan', 'sisihkan', 'ambil',
-  'reminder',
+  'reminder', 'beneficiary',
 ]);
 
 const formStorageKeys = (
@@ -238,7 +242,7 @@ const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
     keys: ['pillar', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory', 'receivableId'],
   },
   { title: 'Anggaran', keys: ['includeBudget', 'budgetId'] },
-  { title: 'Pihak yang ditalangi', keys: ['debtor'] },
+  { title: 'Pihak terkait', keys: ['expenseFor', 'beneficiaryId'] },
   { title: 'Keterangan', keys: ['note'] },
 ];
 
@@ -247,9 +251,9 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   transaksi: TRANSACTION_FORM_SECTIONS,
   transfer: TRANSACTION_FORM_SECTIONS,
   wallet: [
-    { title: 'Identitas dompet', keys: ['name', 'medium'] },
+    { title: 'Identitas dompet', keys: ['medium', 'bank', 'pasporVariant'] },
     { title: 'Nilai keuangan', keys: ['balance', 'creditLimit'] },
-    { title: 'Detail rekening', keys: ['bank', 'cardNetwork', 'last4', 'phone'] },
+    { title: 'Detail rekening', keys: ['cardNetwork', 'last4', 'phone'] },
   ],
   subscription: [
     { title: 'Informasi langganan', keys: ['name', 'amount', 'cycle'] },
@@ -277,7 +281,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
     { title: 'Pembagian', keys: ['share'] },
   ],
   tabungan: [
-    { title: 'Tujuan tabungan', keys: ['emoji', 'name'] },
+    { title: 'Tujuan tabungan', keys: ['emoji', 'name', 'ownership', 'beneficiaryId'] },
     { title: 'Penyimpanan', keys: ['walletId'] },
     { title: 'Target tabungan', keys: ['target', 'targetDate'] },
   ],
@@ -286,6 +290,10 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   reminder: [
     { title: 'Informasi pengingat', keys: ['title', 'date'] },
     { title: 'Detail tambahan', keys: ['amount', 'note'] },
+  ],
+  beneficiary: [
+    { title: 'Identitas pihak', keys: ['name', 'kind'] },
+    { title: 'Keterangan', keys: ['note'] },
   ],
 };
 
@@ -340,6 +348,7 @@ const toolNavigation: Array<{ tab: Tab; label: string; icon: React.ReactNode }> 
   { tab: 'planning', label: 'nav.planning', icon: <Target /> },
   { tab: 'reports', label: 'nav.reports', icon: <Chart /> },
   { tab: 'calendar', label: 'nav.calendar', icon: <Calendar /> },
+  { tab: 'people', label: 'nav.people', icon: <User /> },
 ];
 
 // Layar yang tidak punya tombol sendiri di bilah bawah — diwakili tombol "Lainnya".
@@ -420,11 +429,18 @@ interface NotifEntry {
 }
 const EXPENSE_PILLAR_OPTIONS: CategoryOption[] = [
   { value: 'Needs', label: 'Needs — Kebutuhan Pokok' },
-  { value: 'Wants', label: 'Wants — Keinginan, Gaya Hidup, & Sosial' },
-  { value: 'Giving', label: 'Giving — Ibadah & Pemberian' },
+  { value: 'Wants', label: 'Wants — Keinginan & Gaya Hidup' },
+  { value: 'Giving', label: 'Giving — Persembahan & Taburan' },
   { value: 'Savings', label: 'Savings — Tabungan & Investasi' },
-  { value: 'Piutang', label: 'Piutang — Talangan yang Harus Kembali' },
+  { value: 'Receivables', label: 'Receivables — Talangan yang Harus Kembali' },
 ];
+
+export const BENEFICIARY_KINDS: CategoryOption[] = [
+  { value: 'person', label: 'Orang' },
+  { value: 'group', label: 'Kelompok' },
+];
+export const beneficiaryKindLabel = (kind: string) =>
+  BENEFICIARY_KINDS.find((entry) => entry.value === kind)?.label ?? kind;
 
 const CATEGORY_KEYS = { l1: 'catL1', l2: 'catL2', l3: 'catL3', custom: 'catCustom' } as const;
 
@@ -438,10 +454,10 @@ const spreadCategory = (label?: string, txType?: string) => {
     return path.length === 1
       ? {
           category: path[0],
-          pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? path[0] : '',
+          pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0]) ? path[0] : '',
           subCategory: '',
           categoryDetail: '',
-          incomeCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? '' : path[0],
+          incomeCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0]) ? '' : path[0],
           incomePillar: '',
           catL1: CATEGORY_CUSTOM,
           catL2: '',
@@ -452,9 +468,9 @@ const spreadCategory = (label?: string, txType?: string) => {
   }
   return {
     category: label ?? '',
-    pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? path[0] : '',
-    subCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0]) ? path[1] ?? '' : '',
-    categoryDetail: ['Needs', 'Wants', 'Giving', 'Savings', 'Piutang'].includes(path[0])
+    pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0]) ? path[0] : '',
+    subCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0]) ? path[1] ?? '' : '',
+    categoryDetail: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0])
       ? path[2] ?? (path[1] === 'Social' || path[1] === 'Giving' ? '' : 'none')
       : '',
     incomePillar: txType === 'income' ? path[0] ?? '' : '',
@@ -510,11 +526,22 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
       nature: 'fixed',
       payer: '',
       incomeNature: 'fixed',
+      expenseFor: 'self',
+      beneficiaryId: '',
     };
   }
   if (key === 'pillar') {
-    return { ...form, pillar: value, subCategory: '', categoryDetail: '', debtor: '' };
+    return {
+      ...form,
+      pillar: value,
+      subCategory: '',
+      categoryDetail: '',
+      expenseFor: value === 'Giving' || value === 'Receivables' ? 'other' : form.expenseFor,
+      beneficiaryId: '',
+    };
   }
+  if (key === 'expenseFor') return { ...form, expenseFor: value, beneficiaryId: value === 'other' ? form.beneficiaryId : '' };
+  if (key === 'ownership') return { ...form, ownership: value, beneficiaryId: value === 'other' ? form.beneficiaryId : '' };
   if (key === 'subCategory') {
     return { ...form, subCategory: value, categoryDetail: '' };
   }
@@ -542,7 +569,19 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
     return { ...form, toWalletId: value, savingId: value === form.walletId ? '' : 'none' };
   }
   if (key === 'medium') {
-    return { ...form, medium: value, cardNetwork: '' };
+    return {
+      ...form,
+      medium: value,
+      bank: '',
+      cardNetwork: '',
+      last4: '',
+      phone: '',
+      creditLimit: '',
+      pasporVariant: '',
+    };
+  }
+  if (key === 'bank') {
+    return { ...form, bank: value, pasporVariant: '' };
   }
   if (key === CATEGORY_KEYS.l1) return { ...form, catL1: value, catL2: '', catL3: '', catCustom: '' };
   if (key === CATEGORY_KEYS.l2) return { ...form, catL2: value, catL3: '' };
@@ -577,6 +616,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [savingOptions, setSavingOptions] = useState<Array<{ value: string; label: string; walletId: string }>>([]);
   const [budgetOptions, setBudgetOptions] = useState<CategoryOption[]>([]);
   const [receivableOptions, setReceivableOptions] = useState<CategoryOption[]>([]);
+  const [beneficiaryOptions, setBeneficiaryOptions] = useState<CategoryOption[]>([]);
   const [noteSuggestions, setNoteSuggestions] = useState<string[]>([]);
   const [openSuggest, setOpenSuggest] = useState<string | null>(null);
   const [showTransactionDetails, setShowTransactionDetails] = useState(false);
@@ -668,6 +708,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const tools = Array.isArray(row?.home_tools)
         ? row.home_tools.filter((id: string) => HOME_SHORTCUTS.some((entry) => entry.id === id))
         : DEFAULT_HOME_TOOLS;
+      const walletOrder = Array.isArray(row?.wallet_order)
+        ? row.wallet_order.filter((id: unknown): id is string => typeof id === 'string')
+        : DEFAULT_PREFS.walletOrder;
       const storedName = profileResult.data?.display_name?.trim() ?? '';
       const resolvedName = resolveDisplayName(user, storedName);
       setPrefs({
@@ -680,6 +723,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         email: sessionIdentity.email,
         defaultWalletId: row?.default_wallet_id ?? DEFAULT_PREFS.defaultWalletId,
         homeTools: tools,
+        walletOrder,
       });
       // Akun lama mungkin sudah terlanjur dibootstrap dengan nama placeholder.
       // Simpan nama autentik agar reload berikutnya memakai satu sumber yang konsisten.
@@ -737,6 +781,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         hide_home_amounts: prefs.hideHomeAmounts,
         notifications_enabled: prefs.notifications,
         home_tools: prefs.homeTools,
+        wallet_order: prefs.walletOrder,
         updated_at: new Date().toISOString(),
       }, { onConflict: 'user_id,workspace_id' }).then(({ error }) => {
         if (error) console.error('Gagal menyimpan preferensi Supabase', error);
@@ -1022,6 +1067,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       'savings_goals',
       'receivables',
       'financial_plans',
+      'beneficiaries',
     ].forEach((table) => {
       channel = channel.on('postgres_changes', {
         event: '*',
@@ -1052,6 +1098,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const usesCreditCard = (form: Record<string, string>) =>
         isExpense(form)
         && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit');
+      const requiresBeneficiary = (form: Record<string, string>) =>
+        isExpense(form)
+        && (form.pillar === 'Giving' || form.pillar === 'Receivables' || form.expenseFor === 'other');
       const isBudgetable = (form: Record<string, string>) =>
         isExpense(form)
         || (isTransfer(form) && Boolean(form.toWalletId) && !isCreditPayment(form));
@@ -1138,7 +1187,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             type: 'select',
             optionsOf: (f) => Object.keys(PILLAR_EXPENSE_TREE[f.pillar] ?? {})
               .map((name) => ({ value: name, label: name })),
-            showIf: (f) => isExpense(f) && Boolean(f.pillar) && f.pillar !== 'Piutang',
+            showIf: (f) => isExpense(f) && Boolean(f.pillar) && f.pillar !== 'Receivables',
           },
           {
             key: 'categoryDetail',
@@ -1153,10 +1202,25 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               && (PILLAR_EXPENSE_TREE[f.pillar]?.[f.subCategory]?.length ?? 0) > 0,
           },
           {
-            key: 'debtor',
-            label: 'Kategori 3 / Sub-Field Khusus — Nama Pihak (Debitur)',
-            placeholder: 'Nama orang yang berhutang / ditalangi',
-            showIf: (f) => isExpense(f) && f.pillar === 'Piutang',
+            key: 'expenseFor',
+            label: 'Pengeluaran ini untuk',
+            type: 'segmented',
+            options: [
+              { value: 'self', label: 'Diri sendiri' },
+              { value: 'other', label: 'Orang / kelompok lain' },
+            ],
+            showIf: (f) => isExpense(f) && Boolean(f.pillar)
+              && f.pillar !== 'Giving' && f.pillar !== 'Receivables',
+          },
+          {
+            key: 'beneficiaryId',
+            label: 'Orang / kelompok',
+            type: 'select',
+            options: beneficiaryOptions.length > 0
+              ? beneficiaryOptions
+              : [{ value: '', label: 'Tambahkan pihak terkait terlebih dahulu' }],
+            showIf: requiresBeneficiary,
+            requiredIf: requiresBeneficiary,
           },
           {
             key: 'incomePillar',
@@ -1210,7 +1274,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         ],
         defaults: {
           txType: 'expense',
-          date: today,
+          date: '',
           amount: '',
           walletId: defaultWalletId,
           toWalletId: '',
@@ -1218,7 +1282,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           pillar: '',
           subCategory: '',
           categoryDetail: '',
-          debtor: '',
+          expenseFor: 'self',
+          beneficiaryId: '',
           incomeCategory: '',
           incomePillar: '',
           receivableId: '',
@@ -1233,19 +1298,40 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const configs: Record<CreateType, FormConfig> = {
         wallet: {
           title: 'dompet',
-          description: 'Tambahkan rekening bank, e-wallet, kartu kredit, atau uang tunai.',
+          description: 'Pilih jenis dompet, lalu pilih produk yang sesuai.',
           fields: [
-            { key: 'name', label: 'Nama dompet', placeholder: 'Contoh: BCA' },
             {
               key: 'medium',
               label: 'Jenis dompet',
               type: 'select',
               options: [
                 { value: 'bank', label: 'Rekening / kartu debit' },
+                { value: 'digital', label: 'Bank Digital' },
                 { value: 'credit', label: 'Kartu kredit' },
                 { value: 'ewallet', label: 'E-wallet' },
                 { value: 'cash', label: 'Uang tunai' },
               ],
+            },
+            {
+              key: 'pasporVariant',
+              label: 'Jenis Paspor BCA',
+              type: 'select',
+              options: [
+                { value: 'Blue', label: 'Blue' },
+                { value: 'Gold', label: 'Gold' },
+                { value: 'Platinum', label: 'Platinum' },
+              ],
+              showIf: (f) => f.medium === 'bank' && f.bank === 'BCA',
+            },
+            {
+              key: 'bank',
+              label: 'Produk dompet',
+              type: 'select',
+              optionsOf: (f) => walletProductsFor(f.medium).map((product) => ({
+                value: product.value,
+                label: product.label,
+              })),
+              showIf: (f) => Boolean(f.medium) && f.medium !== 'cash',
             },
             {
               key: 'balance',
@@ -1254,26 +1340,18 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               showIf: (f) => f.medium !== 'credit',
             },
             {
-              key: 'bank',
-              label: 'Bank / penerbit',
-              labelOf: (f) => (f.medium === 'ewallet' ? 'Penyedia e-wallet' : 'Bank / penerbit'),
-              placeholder: 'Contoh: BCA',
-              optional: true,
-              showIf: (f) => f.medium !== 'cash',
-            },
-            {
               key: 'cardNetwork',
               label: 'Jaringan kartu',
               type: 'select',
               optionsOf: (f) => [
                 { value: 'visa', label: 'Visa' },
                 { value: 'mastercard', label: 'Mastercard' },
-                ...(f.medium === 'bank' ? [{ value: 'gpn', label: 'GPN' }] : []),
+                { value: 'gpn', label: 'GPN' },
               ],
-              showIf: (f) => f.medium === 'bank' || f.medium === 'credit',
+              showIf: (f) => f.medium === 'bank' || f.medium === 'digital' || f.medium === 'credit',
             },
             // Rekening & kartu diidentifikasi 4 digit terakhir; e-wallet pakai nomor HP.
-            { key: 'last4', label: '4 digit terakhir', placeholder: '0000', optional: true, showIf: (f) => f.medium === 'bank' || f.medium === 'credit' },
+            { key: 'last4', label: '4 digit terakhir', placeholder: '0000', optional: true, showIf: (f) => f.medium === 'bank' || f.medium === 'digital' || f.medium === 'credit' },
             { key: 'phone', label: 'Nomor HP', placeholder: '08xxxxxxxxxx', optional: true, showIf: (f) => f.medium === 'ewallet' },
             { key: 'creditLimit', label: 'Limit kredit', type: 'number', showIf: (f) => f.medium === 'credit' },
           ],
@@ -1286,6 +1364,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             phone: '',
             cardNetwork: '',
             creditLimit: '',
+            pasporVariant: '',
           },
         },
         transaksi: transaksiConfig,
@@ -1314,7 +1393,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               label: 'Kategori 1 (Pilar utama)',
               type: 'select',
               optionsOf: (f) => {
-                const options = EXPENSE_PILLAR_OPTIONS.filter(option => option.value !== 'Piutang');
+                const options = EXPENSE_PILLAR_OPTIONS.filter(option => option.value !== 'Receivables');
                 return f.pillar && !options.some(option => option.value === f.pillar)
                   ? [
                       {
@@ -1356,9 +1435,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             pillar: '',
             subCategory: '',
             categoryDetail: '',
-            nextBillingDate: nextMonthValue,
+            nextBillingDate: '',
             endDate: '',
-            reminderDaysBefore: '3',
+            reminderDaysBefore: '',
           },
         },
         planning: {
@@ -1380,7 +1459,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               ],
             },
           ],
-          defaults: { title: '', target: '', saved: '0', targetDate: '', status: '' },
+          defaults: { title: '', target: '', saved: '', targetDate: '', status: '' },
         },
         piutang: {
           title: 'piutang',
@@ -1391,7 +1470,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'source', label: 'Sumber', placeholder: 'Pinjaman / split bill' },
             { key: 'date', label: 'Tanggal', type: 'date' },
           ],
-          defaults: { person: '', amount: '', source: 'Pinjaman', date: today },
+          defaults: { person: '', amount: '', source: '', date: '' },
         },
         budget: {
           title: 'anggaran',
@@ -1410,7 +1489,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'start', label: 'Tanggal mulai', type: 'date' },
             { key: 'end', label: 'Tanggal selesai', type: 'date' },
           ],
-          defaults: { alias: '', start: today, end: nextMonthValue },
+          defaults: { alias: '', start: '', end: '' },
         },
         orang: {
           title: 'peserta',
@@ -1423,15 +1502,34 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         },
         tabungan: {
           title: 'tabungan',
-          description: 'Buat tujuan tabungan. Saldo awal selalu Rp0 dan dananya ditambahkan melalui transaksi Transfer.',
+          description: 'Buat dana yang disisihkan untuk diri sendiri atau orang lain. Saldo awal selalu Rp0 dan dananya ditambahkan melalui transaksi Transfer.',
           fields: [
             { key: 'emoji', label: 'Ikon (emoji)', placeholder: '🎓' },
             { key: 'name', label: 'Nama tabungan', placeholder: 'Masukkan nama tabungan' },
+            {
+              key: 'ownership',
+              label: 'Dana ini untuk',
+              type: 'segmented',
+              options: [
+                { value: 'self', label: 'Diri sendiri' },
+                { value: 'other', label: 'Orang lain' },
+              ],
+            },
+            {
+              key: 'beneficiaryId',
+              label: 'Orang / kelompok penerima',
+              type: 'select',
+              options: beneficiaryOptions.length > 0
+                ? beneficiaryOptions
+                : [{ value: '', label: 'Tambahkan pihak terkait terlebih dahulu' }],
+              showIf: (f) => f.ownership === 'other',
+              requiredIf: (f) => f.ownership === 'other',
+            },
             { key: 'walletId', label: 'Disimpan di dompet', type: 'select', options: debitWallets },
             { key: 'target', label: 'Target', type: 'number' },
             { key: 'targetDate', label: 'Target tanggal', type: 'date' },
           ],
-          defaults: { emoji: '🎯', name: '', walletId: '', target: '', targetDate: '' },
+          defaults: { emoji: '', name: '', ownership: 'self', beneficiaryId: '', walletId: '', target: '', targetDate: '' },
         },
         sisihkan: {
           title: 'sisihkan',
@@ -1454,12 +1552,22 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'amount', label: 'Nominal', type: 'number', optional: true },
             { key: 'note', label: 'Catatan', placeholder: 'Detail tambahan', optional: true },
           ],
-          defaults: { title: '', date: today, amount: '', note: '' },
+          defaults: { title: '', date: '', amount: '', note: '' },
+        },
+        beneficiary: {
+          title: 'pihak terkait',
+          description: 'Simpan orang atau kelompok sekali, lalu gunakan kembali di transaksi dan tabungan.',
+          fields: [
+            { key: 'name', label: 'Nama', placeholder: 'Contoh: Jeje atau Keluarga' },
+            { key: 'kind', label: 'Jenis pihak', type: 'segmented', options: BENEFICIARY_KINDS },
+            { key: 'note', label: 'Catatan', placeholder: 'Hubungan atau keterangan tambahan', optional: true },
+          ],
+          defaults: { name: '', kind: 'person', note: '' },
         },
       };
       return configs[type];
     },
-    [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions,
+    [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions, beneficiaryOptions,
       noteSuggestions, prefs.defaultWalletId, create.isEdit],
   );
 
@@ -1542,6 +1650,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           .map((entry) => ({
             value: entry.id,
             label: `${entry.person} · ${formatIDR(entry.amount - (entry.paid ?? 0))} (${entry.source})`,
+          })),
+      ),
+    );
+  }, [repos, dataVersion]);
+
+  useEffect(() => {
+    repos.beneficiaries.list().then((people) =>
+      setBeneficiaryOptions(
+        people
+          .filter((person) => !person.archived)
+          .sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name))
+          .map((person) => ({
+            value: person.id,
+            label: person.name,
+            group: beneficiaryKindLabel(person.kind),
           })),
       ),
     );
@@ -1689,6 +1812,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       if (create.type === 'piutang') data = await repos.receivables.get(create.id!);
       if (create.type === 'budget') data = await repos.budgets.get(create.id!);
       if (create.type === 'reminder') data = await repos.reminders.get(create.id!);
+      if (create.type === 'beneficiary') data = await repos.beneficiaries.get(create.id!);
       if (create.type === 'periode') data = await repos.periods.get(create.id!);
       if (create.type === 'transaksi' || create.type === 'transfer') {
         data = await repos.transactions.get(create.id!);
@@ -1702,9 +1826,18 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             let value: unknown = record[field.key];
             if (field.key === 'txType') value = record.type;
             // Record dompet lama belum punya `medium` — turunkan dari `kind`.
-            if (field.key === 'medium') value = record.medium ?? (record.kind === 'credit' ? 'credit' : 'bank');
+            if (field.key === 'medium') {
+              value = record.bank === 'blu by BCA'
+                ? 'digital'
+                : record.medium ?? (record.kind === 'credit' ? 'credit' : 'bank');
+            }
+            if (field.key === 'pasporVariant') {
+              value = ['Blue', 'Gold', 'Platinum'].find((variant) =>
+                String(record.name ?? '').toLocaleLowerCase('id-ID').includes(variant.toLocaleLowerCase('id-ID')),
+              );
+            }
             if (field.key === 'payer') value = record.type === 'income' ? record.recipient : undefined;
-            if (field.key === 'debtor') value = record.recipient;
+            if (field.key === 'expenseFor') value = record.beneficiaryId ? 'other' : 'self';
             if (field.key === 'incomeNature') value = record.type === 'income' ? record.nature : undefined;
             if (field.key === 'nature') value = record.type === 'income' ? undefined : record.nature;
             if (field.key === 'owed') value = record.owedAmount;
@@ -1820,10 +1953,16 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
 
     try {
       if (create.type === 'wallet') {
-        const medium = (form.medium || 'bank') as WalletMedium;
+        const category = form.medium || 'bank';
+        const medium = (category === 'digital' ? 'bank' : category) as WalletMedium;
+        const product = walletProduct(category, form.bank);
         const before = shouldUpdate ? await repos.wallets.get(id!) : null;
         const payload = {
-          name: form.name.trim(),
+          name: medium === 'cash'
+            ? 'Uang Tunai'
+            : form.bank === 'BCA' && form.pasporVariant
+              ? `Paspor BCA ${form.pasporVariant}`
+              : product?.label ?? form.bank.trim(),
           // Akuntansi cuma mengenal aset vs liabilitas — e-wallet & tunai tetap 'debit'.
           kind: (medium === 'credit' ? 'credit' : 'debit') as 'debit' | 'credit',
           medium,
@@ -1875,7 +2014,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           return;
         }
         const amount = toNumber(form.amount);
-        const isPiutang = type === 'expense' && form.pillar === 'Piutang';
+        const isPiutang = type === 'expense' && form.pillar === 'Receivables';
         const category = isTransfer
           ? ''
           : type === 'income'
@@ -1883,7 +2022,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             : form.categoryDetail && form.categoryDetail !== 'none'
               ? form.categoryDetail
               : form.subCategory || form.pillar;
-        const recipient = isPiutang ? form.debtor.trim() : undefined;
+        const beneficiaryName = beneficiaryOptions.find((option) => option.value === form.beneficiaryId)?.label;
+        const recipient = form.beneficiaryId ? beneficiaryName : undefined;
         const settlesReceivableId = type === 'income'
           && form.incomeCategory === RECEIVABLE_SETTLEMENT_CATEGORY
           ? form.receivableId
@@ -1904,6 +2044,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           installmentTenorMonths,
           note: form.note.trim() || undefined,
           recipient,
+          beneficiaryId: form.beneficiaryId || undefined,
           isReceivable: isPiutang || undefined,
           owedAmount: isPiutang ? amount : undefined,
           settlesReceivableId,
@@ -1952,6 +2093,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           target: form.target ? toNumber(form.target) : undefined,
           targetDate: form.targetDate || undefined,
           emoji: form.emoji.trim() || '🎯',
+          ownership: form.ownership === 'other' ? 'other' as const : 'self' as const,
+          beneficiaryId: form.ownership === 'other' ? form.beneficiaryId : undefined,
+          recipientName: form.ownership === 'other'
+            ? beneficiaryOptions.find((option) => option.value === form.beneficiaryId)?.label
+            : undefined,
         };
         shouldUpdate ? await repos.savings.update(id!, payload) : await repos.savings.create(payload);
       }
@@ -2019,6 +2165,17 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         shouldUpdate ? await repos.reminders.update(id!, payload) : await repos.reminders.create(payload);
       }
 
+      if (create.type === 'beneficiary') {
+        const payload = {
+          name: form.name.trim(),
+          kind: form.kind as BeneficiaryKind,
+          note: form.note.trim() || undefined,
+        };
+        shouldUpdate
+          ? await repos.beneficiaries.update(id!, payload)
+          : await repos.beneficiaries.create(payload);
+      }
+
       if (create.type === 'periode') {
         const payload = {
           alias: form.alias.trim(),
@@ -2083,6 +2240,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       if (item.type === 'piutang') await repos.receivables.remove(item.id);
       if (item.type === 'budget') await repos.budgets.remove(item.id);
       if (item.type === 'reminder') await repos.reminders.remove(item.id);
+      if (item.type === 'beneficiary') await repos.beneficiaries.remove(item.id);
       if (item.type === 'periode') await repos.periods.remove(item.id);
       if (item.type === 'transaksi' || item.type === 'transfer') {
         await repos.transactions.remove(item.id);
@@ -2135,6 +2293,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     planning: <PlanningScreen />,
     reports: <ReportsScreen />,
     calendar: <CalendarScreen />,
+    people: <PeopleScreen />,
     // Key per periode: berpindah periode harus memulai layarnya bersih, termasuk
     // membatalkan panel tutup buku yang mungkin sedang terbuka.
     period: <PeriodScreen key={periodId ?? 'active'} />,
@@ -2251,7 +2410,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               terpaku di atas — dan itulah yang dulu membuatnya terasa sticky. Kini hanya
               .nav yang sengaja dipaku, lewat margin-top:auto. */}
           <div className="viewport">
-            <header className="topbar">
+            <header className={`topbar${tab === 'budget' ? ' budget-topbar' : ''}`}>
               {showBack ? (
                 <button className="header-back" onClick={goBack} aria-label="Kembali">
                   <ArrowLeft />
@@ -2436,6 +2595,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             item.type === 'piutang' ? 'piutang' :
             item.type === 'budget' ? 'budget' :
             item.type === 'reminder' ? 'calendar' :
+            item.type === 'beneficiary' ? 'people' :
             item.type === 'periode' ? 'period' : 'wallets'
           }.title`)}</p>
           {item.type === 'tabungan' && (
@@ -2645,6 +2805,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       )}
                       {field.type === 'date' && (
                         <Calendar className="date-field-icon" aria-hidden="true" />
+                      )}
+                      {field.type === 'date' && !form[field.key] && (
+                        <span className="date-field-value date-field-placeholder" aria-hidden="true">
+                          {field.placeholder || t('common.chooseDate')}
+                        </span>
                       )}
                       {field.type === 'date' && form[field.key] && (
                         <span className="date-field-value" aria-hidden="true">

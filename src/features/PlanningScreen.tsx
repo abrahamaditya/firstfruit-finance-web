@@ -5,7 +5,7 @@ import { usePlanningContext, usePlans } from '../application/hooks';
 import {
   affordability, goalPlan, monthlyCapacity, remainingPlanned, requiredPerMonth, surplusPlan, whatIfSpend,
 } from '../core/domain/planning';
-import { Plus, Info } from '../components/ui/icons';
+import { Plus, Info, Chevron } from '../components/ui/icons';
 
 type Method = 'goal' | 'afford' | 'whatif' | 'surplus';
 
@@ -48,18 +48,21 @@ export default function PlanningScreen() {
 
   const [method, setMethod] = useState<Method>('goal');
   // Setiap metode punya input sendiri agar berpindah metode tidak menghapus isian.
-  const [goalTarget, setGoalTarget] = useState(10_000_000);
+  const [goalTarget, setGoalTarget] = useState(0);
   const [goalSaved, setGoalSaved] = useState(0);
   const [goalPerMonth, setGoalPerMonth] = useState(0);
   const [goalMonths, setGoalMonths] = useState(0);
-  const [price, setPrice] = useState(3_500_000);
+  const [price, setPrice] = useState(0);
   const [withReceivables, setWithReceivables] = useState(false);
   const [whatIfBudgetId, setWhatIfBudgetId] = useState('');
-  const [extraSpend, setExtraSpend] = useState(150_000);
-  const [targetLeftover, setTargetLeftover] = useState(1_000_000);
+  const [budgetDropdownOpen, setBudgetDropdownOpen] = useState(false);
+  const [extraSpend, setExtraSpend] = useState(0);
+  const [targetLeftover, setTargetLeftover] = useState(0);
 
   const capacity = monthlyCapacity(context);
   const money0 = (value: number) => money.fmt(Math.round(value));
+  const moneySigned0 = (value: number) => money.fmtSigned(Math.round(value));
+  const financialCondition = context.financialCondition;
   const totalTarget = plans.reduce((sum, plan) => sum + plan.target, 0);
   const totalSaved = plans.reduce((sum, plan) => sum + plan.saved, 0);
   const savedPct = totalTarget ? Math.round((totalSaved / totalTarget) * 100) : 0;
@@ -83,12 +86,40 @@ export default function PlanningScreen() {
       <div className="sandbox-tag"><Sandbox /> {t('planning.sandboxTag')}</div>
 
       {/* Angka dasar yang dipakai semua simulasi — biar jelas hasilnya datang dari mana. */}
-      <div className="plan-context">
-        <div><span>{t('planning.cashAvailable')}</span><b>{money0(context.available)}</b></div>
-        <div><span>{t('planning.incomeMonthly')}</span><b className="positive">{money0(context.monthlyIncome)}</b></div>
-        <div><span>{t('planning.budgetMonthly')}</span><b className="negative">{money0(context.allocatedTotal)}</b></div>
-        <div><span>{t('planning.billsNextMonth')}</span><b className="negative">{money0(context.nextMonthBills)}</b></div>
-        <div className="wide"><span>{t('planning.capacity')}</span><b className={capacity > 0 ? 'positive' : 'negative'}>{money0(capacity)} <small>/{t('planning.perMonth')}</small></b></div>
+      <div className={`plan-context${financialCondition >= 0 ? ' is-positive' : ' is-tight'}`}>
+        <div className="financial-condition-head">
+          <div>
+            <span>{t('planning.financialCondition')}</span>
+            <b className={financialCondition >= 0 ? 'positive' : 'negative'}>{moneySigned0(financialCondition)}</b>
+            <p>{t('planning.financialConditionLead')}</p>
+          </div>
+          <span className="financial-condition-status">
+            {t(financialCondition >= 0 ? 'planning.conditionSafe' : 'planning.conditionDeficit')}
+          </span>
+        </div>
+
+        <div className="financial-condition-breakdown">
+          <div><span>{t('planning.assetBalance')}</span><b className="positive">+{money0(context.cashBalance)}</b></div>
+          <div><span>{t('planning.lockedSavings')}</span><b>−{money0(context.reserved)}</b></div>
+          <div><span>{t('planning.creditBill')}</span><b>−{money0(context.nextMonthBills)}</b></div>
+          <div><span>{t('planning.remainingBudget')}</span><b>−{money0(context.budgetRemaining)}</b></div>
+        </div>
+
+        <div className="financial-condition-equation">
+          <span>{t('planning.formula')}</span>
+          <b>
+            {money0(context.cashBalance)} − {money0(context.reserved)} − {money0(context.nextMonthBills)} − {money0(context.budgetRemaining)} = <em>{moneySigned0(financialCondition)}</em>
+          </b>
+        </div>
+
+        <div className={`financial-condition-note${financialCondition >= 0 ? ' ok' : ' warn'}`}>
+          <Info />
+          <span>
+            {financialCondition >= 0
+              ? t('planning.conditionSafeNote', { amount: money0(financialCondition) })
+              : t('planning.conditionDeficitNote', { amount: money0(Math.abs(financialCondition)) })}
+          </span>
+        </div>
       </div>
 
       <div className="sec"><span className="t">{t('planning.chooseMethod')}</span></div>
@@ -160,10 +191,18 @@ export default function PlanningScreen() {
           </label>
 
           <div className="calc-breakdown">
+            <div><span>{t('planning.financialCondition')}</span><b className={context.financialCondition >= 0 ? 'positive' : 'negative'}>{moneySigned0(context.financialCondition)}</b></div>
+            {withReceivables && <div><span>{t('planning.receivablesIncluded')}</span><b className="positive">+{money0(context.expectedReceivables)}</b></div>}
+            <div><span>{t('planning.itemPrice')}</span><b className="negative">-{money0(price)}</b></div>
+            <div className="total"><span>{t('planning.leftAfterPurchase')}</span><b className={afford.leftover >= 0 ? 'positive' : 'negative'}>{moneySigned0(afford.leftover)}</b></div>
+          </div>
+
+          <div className="calc-breakdown afford-legacy">
             <div><span>{t('planning.inflow')}</span><b className="positive">+{money0(afford.inflow)}</b></div>
             <div><span>{t('planning.budgetMonthly')}</span><b className="negative">−{money0(context.allocatedTotal)}</b></div>
             <div><span>{t('planning.billsNextMonth')}</span><b className="negative">−{money0(context.nextMonthBills)}</b></div>
-            <div className="total"><span>{t('planning.surplusNextMonth')}</span><b className={afford.surplus >= 0 ? 'positive' : 'negative'}>{money0(afford.surplus)}</b></div>
+            <div><span>{t('planning.itemPrice')}</span><b className="negative">−{money0(price)}</b></div>
+            <div className="total"><span>{t('planning.leftAfterPurchase')}</span><b className={afford.leftover >= 0 ? 'positive' : 'negative'}>{moneySigned0(afford.leftover)}</b></div>
           </div>
 
           <div className="calc-result">
@@ -174,9 +213,7 @@ export default function PlanningScreen() {
             </p>
             {!afford.affordable && (
               <div className="cr-note">
-                {afford.fromCash >= -afford.leftover
-                  ? t('planning.affordFromCash', { amount: money0(afford.fromCash) })
-                  : t('planning.affordImpossible')}
+                {t('planning.affordConditionNote')}
               </div>
             )}
           </div>
@@ -191,12 +228,48 @@ export default function PlanningScreen() {
           ) : (
             <>
               <div className="form-grid">
-                <label className="input-field">
-                  <span>{t('planning.pickBudget')}</span>
-                  <select value={whatIfBudget?.id ?? ''} onChange={(event) => setWhatIfBudgetId(event.target.value)}>
-                    {budgets.map((budget) => <option value={budget.id} key={budget.id}>{budget.category}</option>)}
-                  </select>
-                </label>
+                <div className="input-field">
+                  <span id="whatif-budget-label">{t('planning.pickBudget')}</span>
+                  <div
+                    className={`custom-select${budgetDropdownOpen ? ' open' : ''}`}
+                    onBlur={(event) => {
+                      if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) {
+                        setBudgetDropdownOpen(false);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="custom-select-trigger"
+                      aria-haspopup="listbox"
+                      aria-expanded={budgetDropdownOpen}
+                      aria-labelledby="whatif-budget-label"
+                      onClick={() => setBudgetDropdownOpen((open) => !open)}
+                    >
+                      <span>{whatIfBudget?.category ?? t('common.choose')}</span>
+                      <Chevron />
+                    </button>
+                    {budgetDropdownOpen && (
+                      <div className="suggest-list custom-select-list" role="listbox">
+                        {budgets.map((budget) => (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={budget.id === whatIfBudget?.id}
+                            className={budget.id === whatIfBudget?.id ? 'on' : ''}
+                            key={budget.id}
+                            onClick={() => {
+                              setWhatIfBudgetId(budget.id);
+                              setBudgetDropdownOpen(false);
+                            }}
+                          >
+                            <span>{budget.category}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <MoneyInput label={t('planning.extraSpend')} value={extraSpend} onChange={setExtraSpend} locale={numLocale} />
               </div>
               {whatIf && (

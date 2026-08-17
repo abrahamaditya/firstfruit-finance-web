@@ -6,6 +6,7 @@ import { useReminders, useSubscriptions, useTransactions, useWallets } from '../
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay, weekGrid } from '../core/domain/calendar';
 import { Check, ChevronR, Clock, Plus, Recur, Up, Down, TransferCard } from '../components/ui/icons';
+import { isActualIncome, isIncome } from '../core/domain/calculations';
 
 type View = 'month' | 'week';
 
@@ -76,13 +77,14 @@ export default function CalendarScreen() {
 
   const dayTotals = (key: string) => {
     const entry = byDay.get(key);
-    if (!entry) return { income: 0, expense: 0 };
+    if (!entry) return { income: 0, actualIncome: 0, expense: 0 };
     return entry.tx.reduce(
       (sum, item) => ({
-        income: sum.income + (!item.adjustment && item.type === 'income' ? item.amount : 0),
+        income: sum.income + (isIncome(item) ? item.amount : 0),
+        actualIncome: sum.actualIncome + (isActualIncome(item) ? item.amount : 0),
         expense: sum.expense + (!item.adjustment && item.type === 'expense' ? item.amount : 0),
       }),
-      { income: 0, expense: 0 },
+      { income: 0, actualIncome: 0, expense: 0 },
     );
   };
 
@@ -136,11 +138,13 @@ export default function CalendarScreen() {
                 {entry && entry.bills.length > 0 && <i className="mk bill" />}
                 {showTx && totals.expense > 0 && <i className="mk out" />}
                 {showTx && totals.income > 0 && <i className="mk in" />}
+                {showTx && totals.actualIncome > 0 && <i className="mk real-in" />}
               </span>
               {showTx && view === 'week' && (totals.income > 0 || totals.expense > 0) && (
                 <span className="cal-amt">
                   {totals.expense > 0 && <em className="out">-{money.fmtCompact(totals.expense)}</em>}
-                  {totals.income > 0 && <em className="in">+{money.fmtCompact(totals.income)}</em>}
+                  {totals.income > 0 && <em className="in" title={t('reports.income')}>+{money.fmtCompact(totals.income)}</em>}
+                  {totals.actualIncome > 0 && <em className="real-in" title={t('reports.actualIncome')}>Riil +{money.fmtCompact(totals.actualIncome)}</em>}
                 </span>
               )}
             </button>
@@ -194,6 +198,11 @@ export default function CalendarScreen() {
           <div className="mid">
             <div className="t1">{transactionTitle(item)}</div>
             <div className="t2">
+              {item.type === 'income' && (
+                <span className="chip" data-cat="income">
+                  {isActualIncome(item) ? t('reports.actualIncome') : t('tx.receivableIncome')}
+                </span>
+              )}
               {item.labels[0] && <span className="chip">{item.labels[0]}</span>}
               {item.merchant && <span className="chip">📍 {item.merchant}</span>}
             </div>

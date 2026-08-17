@@ -5,16 +5,16 @@ import { useBudgets, useDashboard, useTransactions } from '../application/hooks'
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { Chevron, Download, TrendUp } from '../components/ui/icons';
 import { addDays, dayKey, startOfDay } from '../core/domain/calendar';
-import { isActualIncome } from '../core/domain/calculations';
+import { actualExpenseAmount, isActualExpense, isActualIncome, isIncome } from '../core/domain/calculations';
 import { categoryPath } from '../core/domain/categories';
 import {
-  amountStats, categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
+  categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
   projectedSpending, runwayDays, transactionPath, weekdayPattern,
 } from '../core/domain/report-insights';
 import type { Transaction } from '../core/domain/types';
 
 type Range = 'daily' | 'activePeriod' | '3months' | '6months';
-type Flow = 'expense' | 'income';
+type Flow = 'expense' | 'actualExpense' | 'income' | 'actualIncome';
 
 const CATEGORY_COLORS = ['#5BE9AA', '#8AB6F9', '#F5C26B', '#EF8676', '#B69AF6', '#71D4E8', '#E99AD1', '#9BC982'];
 
@@ -26,6 +26,12 @@ interface TrendBucket {
 const cashDelta = (transaction: Pick<Transaction, 'type' | 'amount'>) => {
   if (transaction.type === 'income') return transaction.amount;
   if (transaction.type === 'expense') return -transaction.amount;
+  return 0;
+};
+
+const realCashflowDelta = (transaction: Transaction) => {
+  if (isActualIncome(transaction)) return transaction.amount;
+  if (isActualExpense(transaction)) return -actualExpenseAmount(transaction);
   return 0;
 };
 
@@ -86,7 +92,14 @@ const weekdayLabel = (weekday: number, locale: string, long = false) =>
 
 export default function ReportsScreen() {
   const ui = useUI();
-  const money = useMoney();
+  const moneyBase = useMoney();
+  // Laporan dipakai untuk membaca angka dan mengambil keputusan, sehingga semua nominal
+  // sengaja memakai format penuh. Komponen lain tetap boleh memakai format ringkas.
+  const money = {
+    ...moneyBase,
+    fmtCompact: moneyBase.fmt,
+    fmtCompactSigned: moneyBase.fmtSigned,
+  };
   const t = useT();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const { data: allTransactions } = useTransactions();
@@ -95,6 +108,9 @@ export default function ReportsScreen() {
   const [range, setRange] = useState<Range>('activePeriod');
   const [flow, setFlow] = useState<Flow>('expense');
   const [openSector, setOpenSector] = useState<string | null>(null);
+  const [openWeekday, setOpenWeekday] = useState<number | null>(null);
+  const [weekdayScope, setWeekdayScope] = useState('all');
+  const [hoveredChartIndex, setHoveredChartIndex] = useState<number | null>(null);
 
   const today = startOfDay(new Date());
   const activePeriodEnd = dashboard.period
@@ -127,11 +143,20 @@ export default function ReportsScreen() {
     transaction => !transaction.adjustment && inSelectedRange(transaction),
   );
   const expenses = transactions.filter(transaction => transaction.type === 'expense');
-  const incomeTransactions = transactions.filter(isActualIncome);
+  const incomeTransactions = transactions.filter(isIncome);
+  const actualIncomeTransactions = transactions.filter(isActualIncome);
   const transfers = transactions.filter(transaction => transaction.type === 'transfer');
+  const transferVolume = transfers.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const actualExpenseTransactions = expenses
+    .map(transaction => ({ ...transaction, amount: actualExpenseAmount(transaction) }))
+    .filter(transaction => transaction.amount > 0);
   const income = incomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const actualIncome = actualIncomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   const spending = expenses.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const netCashflow = income - spending;
+  const actualExpense = actualExpenseTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const cashIn = income + transferVolume;
+  const cashOut = spending + transferVolume;
+  const netCashflow = actualIncome - actualExpense;
   const activeBudgets = dashboard.period
     ? budgets.filter(budget => budget.periodId === dashboard.period?.id)
     : [];
@@ -141,7 +166,7 @@ export default function ReportsScreen() {
   const budgetUsage = totalBudget ? Math.round((usedBudget / totalBudget) * 100) : 0;
 
   const selectedRangeDays = calendarDays(rangeStart, rangeEnd);
-  const dailyAverage = Math.round(spending / selectedRangeDays);
+  const dailyAverage = Math.round(actualExpense / selectedRangeDays);
 
   // ===== Rentang sebelumnya, panjangnya persis sama =====
   // Pembanding harus sepanjang rentang aktif, bukan "bulan lalu": rentang 7 hari yang
@@ -152,11 +177,20 @@ export default function ReportsScreen() {
     return !transaction.adjustment && at >= previousRangeStart && at < rangeStart;
   });
   const previousExpenses = previousTransactions.filter(item => item.type === 'expense');
-  const previousIncomeTotal = previousTransactions
+  const previousTransfers = previousTransactions.filter(item => item.type === 'transfer');
+  const previousTransferVolume = previousTransfers.reduce((sum, item) => sum + item.amount, 0);
+  const previousIncomeTotal = previousTransactions.filter(isIncome)
+    .reduce((sum, item) => sum + item.amount, 0);
+  const previousActualIncomeTotal = previousTransactions
     .filter(isActualIncome)
     .reduce((sum, item) => sum + item.amount, 0);
   const previousSpending = previousExpenses.reduce((sum, item) => sum + item.amount, 0);
-  const previousNet = previousIncomeTotal - previousSpending;
+  const previousActualExpense = previousExpenses.reduce(
+    (sum, item) => sum + actualExpenseAmount(item), 0,
+  );
+  const previousCashIn = previousIncomeTotal + previousTransferVolume;
+  const previousCashOut = previousSpending + previousTransferVolume;
+  const previousNet = previousActualIncomeTotal - previousActualExpense;
   const deltaPercent = (current: number, previous: number) =>
     previous === 0 ? null : ((current - previous) / Math.abs(previous)) * 100;
   const formatDelta = (value: number | null) => value == null
@@ -166,7 +200,7 @@ export default function ReportsScreen() {
       })}%`;
 
   // ===== Kesehatan arus kas =====
-  const savingsRate = income > 0 ? Math.round((netCashflow / income) * 100) : null;
+  const savingsRate = actualIncome > 0 ? Math.round((netCashflow / actualIncome) * 100) : null;
   const runway = runwayDays(dashboard.liquidity, dailyAverage);
   const freeDays = noSpendDays(expenses, rangeStart, rangeEnd);
   const freeStreak = longestNoSpendStreak(expenses, rangeStart, rangeEnd);
@@ -174,18 +208,30 @@ export default function ReportsScreen() {
   // ===== Pola hari dalam seminggu =====
   // Hanya belanja berpola kebiasaan yang dihitung — lihat isHabitualExpense untuk
   // alasannya. Yang dibuang tetap dilaporkan angkanya supaya angkanya tidak misterius.
-  const habitualExpenses = expenses.filter(isHabitualExpense);
-  const excludedExpenses = expenses.filter(transaction => !isHabitualExpense(transaction));
+  const weekdayBudgetOptions = budgets
+    .filter(budget => expenses.some(transaction => transaction.budgetId === budget.id))
+    .sort((a, b) => a.category.localeCompare(b.category, locale));
+  const selectedWeekdayBudgetId = weekdayScope.startsWith('budget:')
+    ? weekdayScope.slice('budget:'.length)
+    : null;
+  const weekdayExpenses = weekdayScope === 'unbudgeted'
+    ? expenses.filter(transaction => !transaction.budgetId)
+    : selectedWeekdayBudgetId
+      ? expenses.filter(transaction => transaction.budgetId === selectedWeekdayBudgetId)
+      : expenses.filter(isHabitualExpense);
+  const excludedExpenses = weekdayScope === 'all'
+    ? expenses.filter(transaction => !isHabitualExpense(transaction))
+    : [];
   const excludedTotal = excludedExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const weekdays = weekdayPattern(habitualExpenses, rangeStart, rangeEnd);
-  const weekdayPeak = Math.max(...weekdays.map(entry => entry.average), 1);
+  const weekdays = weekdayPattern(weekdayExpenses, rangeStart, rangeEnd);
+  const weekdayPeak = Math.max(...weekdays.map(entry => entry.total), 1);
   // Yang disyaratkan hanya harinya pernah muncul di rentang. Belanja nol BUKAN alasan
   // untuk dikeluarkan dari peringkat — hari yang tiga kali muncul tanpa sekali pun belanja
   // justru jawaban paling benar untuk "hari paling hemat"; menyaringnya membuat kartu itu
   // menunjuk hari lain sementara grafik di atasnya jelas-jelas menampilkan Rp 0.
   const measuredWeekdays = weekdays.filter(entry => entry.occurrences > 0);
-  const priciestWeekday = [...measuredWeekdays].sort((a, b) => b.average - a.average)[0];
-  const leanestWeekday = [...measuredWeekdays].sort((a, b) => a.average - b.average)[0];
+  const priciestWeekday = [...measuredWeekdays].sort((a, b) => b.total - a.total)[0];
+  const leanestWeekday = [...measuredWeekdays].sort((a, b) => a.total - b.total)[0];
   const weekendDays = weekdays.filter(entry => entry.weekday === 0 || entry.weekday === 6);
   const workDays = weekdays.filter(entry => entry.weekday > 0 && entry.weekday < 6);
   const averageOf = (entries: typeof weekdays) => {
@@ -198,15 +244,29 @@ export default function ReportsScreen() {
   const weekendGap = deltaPercent(weekendAverage, workdayAverage);
 
   // ===== Kategori bertingkat =====
-  const flowTransactions = flow === 'expense' ? expenses : incomeTransactions;
-  const flowTotal = flow === 'expense' ? spending : income;
+  const expenseFlow = flow === 'expense' || flow === 'actualExpense';
+  const flowTransactions = flow === 'expense'
+    ? expenses
+    : flow === 'actualExpense'
+      ? actualExpenseTransactions
+      : flow === 'actualIncome' ? actualIncomeTransactions : incomeTransactions;
+  const flowTotal = flow === 'expense'
+    ? spending
+    : flow === 'actualExpense'
+      ? actualExpense
+      : flow === 'actualIncome' ? actualIncome : income;
   const sectors = categoryTree(flowTransactions, t('reports.uncategorized'));
   const previousSectorTotals = new Map<string, number>();
   previousTransactions
-    .filter(transaction => flow === 'income' ? isActualIncome(transaction) : transaction.type === 'expense')
+    .filter(transaction => flow === 'income'
+      ? isIncome(transaction)
+      : flow === 'actualIncome'
+        ? isActualIncome(transaction)
+        : flow === 'actualExpense' ? isActualExpense(transaction) : transaction.type === 'expense')
     .forEach((transaction) => {
       const sector = transactionPath(transaction)[0] ?? t('reports.uncategorized');
-      previousSectorTotals.set(sector, (previousSectorTotals.get(sector) ?? 0) + transaction.amount);
+      const amount = flow === 'actualExpense' ? actualExpenseAmount(transaction) : transaction.amount;
+      previousSectorTotals.set(sector, (previousSectorTotals.get(sector) ?? 0) + amount);
     });
   const activeCategoryCount = new Set(
     flowTransactions.map(transaction => transactionPath(transaction).join('›')),
@@ -215,68 +275,34 @@ export default function ReportsScreen() {
   const shownSectorTotal = sectors.slice(0, 8).reduce((sum, sector) => sum + sector.total, 0);
   const otherSectorTotal = Math.max(0, flowTotal - shownSectorTotal);
 
-  // Laporan harian: satu baris per tanggal yang ada aktivitasnya, terbaru di atas.
-  const dailyMap = new Map<string, { income: number; expense: number; count: number }>();
-  transactions.forEach((transaction) => {
-    if (transaction.type === 'transfer') return;
-    const key = dayKey(transaction.date);
-    const entry = dailyMap.get(key) ?? { income: 0, expense: 0, count: 0 };
-    if (isActualIncome(transaction)) entry.income += transaction.amount;
-    else if (transaction.type === 'expense') entry.expense += transaction.amount;
-    else return;
-    entry.count += 1;
-    dailyMap.set(key, entry);
-  });
-  const daily = [...dailyMap.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 31);
-  const dailyMax = Math.max(...daily.map(([, entry]) => Math.max(entry.income, entry.expense)), 1);
-
+  // Tetap dipakai untuk insight “hari terboros”, tanpa menampilkan tabel laporan harian.
   // ===== Sebaran nominal =====
-  const stats = amountStats(expenses);
-  const largestExpense = expenses.find(transaction => transaction.amount === stats.largest);
-  const largestExpenseLabel = largestExpense
-    ? largestExpense.note
-      || largestExpense.merchant
-      || largestExpense.labels.at(-1)
-      || t('reports.expense')
-    : '';
-  const busiestDay = [...dailyMap.entries()]
-    .filter(([, entry]) => entry.expense > 0)
-    .sort((a, b) => b[1].expense - a[1].expense)[0];
-  const busiestDayLabel = busiestDay
-    ? new Date(`${busiestDay[0]}T12:00:00`).toLocaleDateString(locale, {
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-      })
-    : '';
-  const unexpected = expenses.filter(transaction => transaction.nature === 'unexpected');
-  const unexpectedTotal = unexpected.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const unexpectedPercent = spending ? Math.round((unexpectedTotal / spending) * 100) : 0;
-  const savingsMoved = transfers
-    .filter(transaction => transaction.savingId)
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const transferVolume = transfers.reduce((sum, transaction) => sum + transaction.amount, 0);
-
-  const creditWalletIds = new Set(
-    dashboard.wallets.filter(wallet => wallet.kind === 'credit').map(wallet => wallet.id),
-  );
+  const creditWallets = dashboard.wallets.filter(wallet => wallet.kind === 'credit');
+  const creditWalletNames = creditWallets.map(wallet => wallet.name).join(', ');
+  const creditWalletIds = new Set(creditWallets.map(wallet => wallet.id));
+  // Khusus insight periode ini, tagihan bulan depan dibentuk dari seluruh transaksi
+  // yang terjadi pada kartu kredit di rentang laporan—bukan dari persentase pengeluaran.
   const creditExpenses = expenses.filter(transaction => creditWalletIds.has(transaction.walletId));
-  const creditSpending = creditExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const creditPercent = spending ? Math.round((creditSpending / spending) * 100) : 0;
+  const creditBillFromPeriod = creditExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const creditPayments = transfers.filter(transaction =>
+    !!transaction.toWalletId && creditWalletIds.has(transaction.toWalletId),
+  );
+  const creditPaymentsTotal = creditPayments.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const creditBillNextMonth = creditWallets.reduce((sum, wallet) => sum + Math.max(0, wallet.balance), 0);
+  const totalCreditLimit = creditWallets.reduce((sum, wallet) => sum + (wallet.creditLimit ?? 0), 0);
+  const creditLimitRemaining = creditWallets.reduce(
+    (sum, wallet) => sum + Math.max(0, (wallet.creditLimit ?? 0) - Math.max(0, wallet.balance)),
+    0,
+  );
   const installments = creditExpenses.filter(transaction => transaction.installmentTenorMonths);
   const installmentSpending = installments.reduce((sum, transaction) => sum + transaction.amount, 0);
 
   const walletNames = new Map(dashboard.wallets.map(wallet => [wallet.id, wallet.name]));
   const budgetNames = new Map(budgets.map(budget => [budget.id, budget.category]));
 
-  // ===== Sumber dana & tempat =====
+  // ===== Sumber dana =====
   const walletSlices = groupBy(expenses, transaction => transaction.walletId).slice(0, 8);
-  const merchantSlices = groupBy(
-    expenses,
-    transaction => transaction.merchant?.trim() || undefined,
-  ).slice(0, 8);
   const walletPeak = Math.max(...walletSlices.map(slice => slice.total), 1);
-  const merchantPeak = Math.max(...merchantSlices.map(slice => slice.total), 1);
 
   // ===== Realisasi anggaran & proyeksi =====
   const budgetRows = [...activeBudgets].sort((a, b) => b.spent - a.spent);
@@ -344,6 +370,23 @@ export default function ReportsScreen() {
   const areaPath = `${linePath} L640,190 L0,190 Z`;
   const lastChartPoint = chartPoints.at(-1) ?? { x: 640, y: chartBottom };
   const axisLabels = sampledAxisLabels(trendBuckets);
+  const safeHoveredChartIndex = hoveredChartIndex == null
+    ? null
+    : Math.min(hoveredChartIndex, chartPoints.length - 1);
+  const hoveredChartPoint = safeHoveredChartIndex == null
+    ? null
+    : chartPoints[safeHoveredChartIndex];
+  const hoveredChartBalance = safeHoveredChartIndex == null
+    ? null
+    : trendBalances[safeHoveredChartIndex];
+  const hoveredChartLabel = safeHoveredChartIndex === 0
+    ? t('reports.chartOpeningBalance')
+    : trendBuckets[(safeHoveredChartIndex ?? 1) - 1]?.label ?? '';
+  const pickChartPoint = (clientX: number, bounds: DOMRect) => {
+    if (!bounds.width || chartPoints.length === 0) return;
+    const position = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+    setHoveredChartIndex(Math.round(position * (chartPoints.length - 1)));
+  };
 
   const rangeOptions: Array<[Range, string]> = [
     ['daily', t('reports.daily')],
@@ -364,6 +407,8 @@ export default function ReportsScreen() {
         'Tanggal',
         'Hari',
         'Jenis',
+        'Klasifikasi pemasukan',
+        'Klasifikasi pengeluaran',
         'Sifat',
         'Catatan',
         'Tempat',
@@ -375,7 +420,8 @@ export default function ReportsScreen() {
         'Anggaran',
         'Tenor cicilan (bulan)',
         'Jumlah',
-        'Dampak arus kas',
+        'Dampak saldo',
+        'Dampak arus kas riil',
       ],
       ...transactions.map((transaction) => {
         const path = transaction.labels[0] ? categoryPath(transaction.labels[0]) : [];
@@ -384,6 +430,12 @@ export default function ReportsScreen() {
           at.toLocaleDateString('id-ID'),
           weekdayLabel(at.getDay(), 'id-ID', true),
           transaction.type,
+          transaction.type === 'income'
+            ? isActualIncome(transaction) ? 'Pemasukan riil' : 'Pelunasan piutang'
+            : '',
+          transaction.type === 'expense'
+            ? actualExpenseAmount(transaction) > 0 ? 'Pengeluaran riil' : 'Pembentukan piutang'
+            : transaction.type === 'transfer' ? 'Transfer' : '',
           transaction.nature === 'unexpected' ? 'tak terduga' : 'terencana',
           transaction.note || '',
           transaction.merchant || '',
@@ -396,6 +448,7 @@ export default function ReportsScreen() {
           transaction.installmentTenorMonths ? String(transaction.installmentTenorMonths) : '',
           String(transaction.amount),
           String(cashDelta(transaction)),
+          String(realCashflowDelta(transaction)),
         ];
       }),
     ];
@@ -424,34 +477,92 @@ export default function ReportsScreen() {
         <button className="addg" onClick={exportCsv}><Download />{t('reports.export')}</button>
       </div>
 
-      <div className="metric-grid report-metrics">
-        <div className="metric-card m-in">
-          <span>{t('reports.actualIncome')}</span>
-          <b>{money.fmtCompact(income)}</b>
-          <small>{selectedRangeLabel}</small>
+      <section className={`report-executive${dashboard.safeToSpend < 0 ? ' deficit' : ''}`}>
+        <div className="report-executive-main">
+          <div>
+            <span>{t('reports.freeCashflow')}</span>
+            <b>{money.fmtCompactSigned(dashboard.safeToSpend)}</b>
+            <small>{t('reports.currentFinancialPosition')}</small>
+          </div>
+          <span className="report-executive-status">
+            {t(dashboard.safeToSpend >= 0 ? 'reports.surplus' : 'reports.deficit')}
+          </span>
         </div>
-        <div className="metric-card m-out">
-          <span>{t('reports.expense')}</span>
-          <b>{money.fmtCompact(spending)}</b>
-          <small>{expenses.length} {t('reports.txCount')}</small>
+        <div className="report-executive-formula">
+          <div><span>{t('reports.netLiquidity')}</span><b>{money.fmtCompactSigned(dashboard.liquidity)}</b></div>
+          <i>−</i>
+          <div><span>{t('planning.lockedSavings')}</span><b className="negative">−{money.fmtCompact(dashboard.reserved)}</b></div>
+          <i>−</i>
+          <div><span>{t('planning.remainingBudget')}</span><b className="negative">−{money.fmtCompact(dashboard.allocated)}</b></div>
+          <i>=</i>
+          <div><span>{t('reports.freeCashflow')}</span><b className={dashboard.safeToSpend >= 0 ? 'positive' : 'negative'}>{money.fmtCompactSigned(dashboard.safeToSpend)}</b></div>
         </div>
-        <div className={`metric-card m-net${netCashflow < 0 ? ' negative-net' : ''}`}>
-          <span>{t('reports.netCashflow')}</span>
-          <b>{money.fmtCompactSigned(netCashflow)}</b>
-          <small>{t('reports.afterExpense')}</small>
+      </section>
+
+      <section className="report-metric-section report-real-flow">
+        <div className="report-metric-heading">
+          <div>
+            <span>{t('reports.realFlowSummary')}</span>
+            <small>{selectedRangeLabel}</small>
+          </div>
+          <p>{t('reports.realDefinition')}</p>
         </div>
-        <div className={`metric-card m-budget${remainingBudget < 0 ? ' over' : ''}`}>
-          <span>{t('reports.totalBudget')}</span>
-          <b>{money.fmtCompact(totalBudget)}</b>
-          <small>
-            {totalBudget
-              ? t('reports.budgetUsage', {
-                  percent: budgetUsage,
-                  remaining: money.fmtCompactSigned(remainingBudget),
-                })
-              : t('reports.noActiveBudget')}
-          </small>
+        <div className="metric-grid report-metrics report-real-metrics">
+          <div className="metric-card m-real-in">
+            <span>{t('reports.actualIncome')}</span>
+            <b>{money.fmtCompact(actualIncome)}</b>
+            <small>{actualIncomeTransactions.length} {t('reports.txCount')}</small>
+          </div>
+          <div className="metric-card m-real-out">
+            <span>{t('reports.actualExpense')}</span>
+            <b>{money.fmtCompact(actualExpense)}</b>
+            <small>{actualExpenseTransactions.length} {t('reports.txCount')}</small>
+          </div>
+          <div className={`metric-card m-net${netCashflow < 0 ? ' negative-net' : ''}`}>
+            <span>{t('reports.realNet')}</span>
+            <b>{money.fmtCompactSigned(netCashflow)}</b>
+            <small>{t('reports.actualIncomeMinusExpense')}</small>
+          </div>
         </div>
+      </section>
+
+      <div className="report-secondary-summary">
+        <section className="report-metric-section report-secondary-flow">
+          <div className="report-metric-heading compact">
+            <div>
+              <span>{t('reports.recordedFlow')}</span>
+              <small>{selectedRangeLabel}</small>
+            </div>
+            <p>{t('reports.grossFlowDefinition')}</p>
+          </div>
+          <div className="metric-grid report-metrics report-secondary-metrics">
+            <div className="metric-card m-in">
+              <span>{t('reports.income')}</span>
+              <b>{money.fmtCompact(cashIn)}</b>
+              <small>{t('reports.grossIncomeNote')}</small>
+            </div>
+            <div className="metric-card m-out">
+              <span>{t('reports.expense')}</span>
+              <b>{money.fmtCompact(cashOut)}</b>
+              <small>{t('reports.grossExpenseNote')}</small>
+            </div>
+          </div>
+        </section>
+
+        <section className="report-metric-section report-budget-summary">
+          <div className={`metric-card m-budget${remainingBudget < 0 ? ' over' : ''}`}>
+            <span>{t('reports.totalBudget')}</span>
+            <b>{money.fmtCompact(totalBudget)}</b>
+            <small>
+              {totalBudget
+                ? t('reports.budgetUsage', {
+                    percent: budgetUsage,
+                    remaining: money.fmtCompactSigned(remainingBudget),
+                  })
+                : t('reports.noActiveBudget')}
+            </small>
+          </div>
+        </section>
       </div>
 
       {/* ===== Kesehatan arus kas ===== */}
@@ -486,8 +597,10 @@ export default function ReportsScreen() {
           <span className="compare-title">{t('reports.vsPrevious')}</span>
           <div className="compare-items">
             {([
-              [t('reports.actualIncome'), income, previousIncomeTotal, true, false],
-              [t('reports.expense'), spending, previousSpending, false, false],
+              [t('reports.income'), cashIn, previousCashIn, true, false],
+              [t('reports.actualIncome'), actualIncome, previousActualIncomeTotal, true, false],
+              [t('reports.expense'), cashOut, previousCashOut, false, false],
+              [t('reports.actualExpense'), actualExpense, previousActualExpense, false, false],
               // Arus kas bersih boleh negatif, jadi tandanya harus ikut tercetak —
               // dua sisanya selalu ≥ 0 dan tidak perlu diberi tanda plus.
               [t('reports.netCashflow'), netCashflow, previousNet, true, true],
@@ -504,8 +617,10 @@ export default function ReportsScreen() {
                 return (
                   <div className="compare-item" key={label}>
                     <span>{label}</span>
-                    <b>{show(current)}</b>
-                    <em className={tone}>{formatDelta(change)}</em>
+                    <div className="compare-value">
+                      <b>{show(current)}</b>
+                      <em className={tone}>{formatDelta(change)}</em>
+                    </div>
                     <small>{t('reports.previousValue', { amount: show(previous) })}</small>
                   </div>
                 );
@@ -526,10 +641,23 @@ export default function ReportsScreen() {
           <div className={`cd ${chartTone}`}><TrendUp />{trendSummary}</div>
         </div>
         <div className="chart">
+          {hoveredChartPoint && hoveredChartBalance != null && (
+            <div
+              className={`chart-tooltip${safeHoveredChartIndex === 0 ? ' at-start' : safeHoveredChartIndex === chartPoints.length - 1 ? ' at-end' : ''}`}
+              style={{ left: `${(hoveredChartPoint.x / 640) * 100}%`, top: `${(hoveredChartPoint.y / 190) * 100}%` }}
+              role="status"
+            >
+              <span>{hoveredChartLabel}</span>
+              <b>{money.fmtSigned(hoveredChartBalance)}</b>
+            </div>
+          )}
           <svg
             viewBox="0 0 640 190"
             preserveAspectRatio="none"
             role="img"
+            onPointerMove={(event) => pickChartPoint(event.clientX, event.currentTarget.getBoundingClientRect())}
+            onPointerLeave={() => setHoveredChartIndex(null)}
+            onPointerDown={(event) => pickChartPoint(event.clientX, event.currentTarget.getBoundingClientRect())}
             aria-label={`${t('reports.balanceTrend')}: ${money.fmtSigned(openingBalance)} → ${money.fmtSigned(endBalance)}`}
           >
             <defs>
@@ -551,6 +679,12 @@ export default function ReportsScreen() {
               strokeLinejoin="round"
             />
             <circle cx={lastChartPoint.x} cy={lastChartPoint.y} r="6" fill={chartColor} />
+            {hoveredChartPoint && (
+              <g className="chart-hover-point">
+                <line x1={hoveredChartPoint.x} y1="20" x2={hoveredChartPoint.x} y2="170" />
+                <circle cx={hoveredChartPoint.x} cy={hoveredChartPoint.y} r="6" fill="var(--surface)" stroke={chartColor} strokeWidth="3" />
+              </g>
+            )}
           </svg>
         </div>
         <div className="chart-axis">
@@ -561,31 +695,91 @@ export default function ReportsScreen() {
       {/* ===== Pola hari dalam seminggu ===== */}
       <div className="sec">
         <span className="t">{t('reports.weekdayPattern')}</span>
-        <span className="daily-avg">{t('reports.weekdayScope')}</span>
+        <label className="weekday-filter">
+          <span>{t('reports.weekdayFilterLabel')}</span>
+          <span className="weekday-select-wrap">
+            <select
+              value={weekdayScope}
+              onChange={(event) => {
+                setWeekdayScope(event.target.value);
+                setOpenWeekday(null);
+              }}
+            >
+              <option value="all">{t('reports.weekdayFilterAll')}</option>
+              <option value="unbudgeted">{t('reports.weekdayFilterUnbudgeted')}</option>
+              {weekdayBudgetOptions.map(budget => (
+                <option value={`budget:${budget.id}`} key={budget.id}>
+                  {t('reports.weekdayFilterBudget', { name: budget.category })}
+                </option>
+              ))}
+            </select>
+            <Chevron />
+          </span>
+        </label>
       </div>
       <div className="weekday-card">
-        {habitualExpenses.length === 0 ? (
+        {weekdayExpenses.length === 0 ? (
           <div className="saving-empty">{t('reports.noData')}</div>
         ) : (
           <>
             <div className="weekday-rows">
               {weekdays.map((entry) => {
                 const peak = priciestWeekday?.weekday === entry.weekday;
+                const isOpen = openWeekday === entry.weekday;
+                const dayTransactions = weekdayExpenses
+                  .filter(transaction => new Date(transaction.date).getDay() === entry.weekday)
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 return (
-                  <div className={`weekday-row${peak ? ' peak' : ''}`} key={entry.weekday}>
-                    <span className="weekday-name">{weekdayLabel(entry.weekday, locale)}</span>
-                    <span className="weekday-bar">
-                      {/* Nol tidak boleh menyisakan isi apa pun: min-width pada .weekday-bar i
-                          membuat 0 tetap tampil sebagai secuil garis, dan itu membantah
-                          angka "Rp 0" di sebelahnya. */}
-                      {entry.average > 0 && (
-                        <i style={{ width: `${(entry.average / weekdayPeak) * 100}%` }} />
-                      )}
-                    </span>
-                    <span className="weekday-value">{money.fmtCompact(entry.average)}</span>
-                    <span className="weekday-count">
-                      {t('reports.weekdayOccurrence', { count: entry.occurrences })}
-                    </span>
+                  <div className={`weekday-group${peak ? ' peak' : ''}${isOpen ? ' open' : ''}`} key={entry.weekday}>
+                    <button
+                      type="button"
+                      className="weekday-row"
+                      onClick={() => setOpenWeekday(isOpen ? null : entry.weekday)}
+                      aria-expanded={isOpen}
+                    >
+                      <span className="weekday-name">{weekdayLabel(entry.weekday, locale)}</span>
+                      <span className="weekday-bar">
+                        {/* Nol tidak boleh menyisakan isi apa pun: min-width pada .weekday-bar i
+                            membuat 0 tetap tampil sebagai secuil garis, dan itu membantah
+                            angka "Rp 0" di sebelahnya. */}
+                        {entry.total > 0 && (
+                          <i style={{ width: `${(entry.total / weekdayPeak) * 100}%` }} />
+                        )}
+                      </span>
+                      <span className="weekday-value">{money.fmtCompact(entry.total)}</span>
+                      <span className="weekday-count">
+                        {t('reports.weekdayTransactionAverage', {
+                          count: entry.count,
+                          amount: money.fmt(entry.count ? Math.round(entry.total / entry.count) : 0),
+                        })}
+                      </span>
+                      <Chevron className="weekday-caret" />
+                    </button>
+                    {isOpen && (
+                      <div className="weekday-details budget-transactions">
+                        {dayTransactions.length === 0 ? (
+                          <span className="budget-transactions-empty">{t('reports.noData')}</span>
+                        ) : dayTransactions.map((transaction) => {
+                          const date = new Date(transaction.date);
+                          const category = transactionPath(transaction).at(-1) ?? t('reports.uncategorized');
+                          const name = transaction.merchant || transaction.note || category;
+                          return (
+                            <button
+                              type="button"
+                              className="budget-transaction"
+                              key={transaction.id}
+                              onClick={() => ui.openItem(name, 'transaksi', transaction.id)}
+                            >
+                              <span>
+                                <b>{name}</b>
+                                <small>{date.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })} · {category}</small>
+                              </span>
+                              <b className="negative">−{money.fmt(transaction.amount)}</b>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -594,12 +788,12 @@ export default function ReportsScreen() {
               <div>
                 <span>{t('reports.priciestWeekday')}</span>
                 <b>{priciestWeekday ? weekdayLabel(priciestWeekday.weekday, locale, true) : '—'}</b>
-                <small>{money.fmtCompact(priciestWeekday?.average ?? 0)}</small>
+                <small>{money.fmtCompact(priciestWeekday?.total ?? 0)}</small>
               </div>
               <div>
                 <span>{t('reports.leanestWeekday')}</span>
                 <b>{leanestWeekday ? weekdayLabel(leanestWeekday.weekday, locale, true) : '—'}</b>
-                <small>{money.fmtCompact(leanestWeekday?.average ?? 0)}</small>
+                <small>{money.fmtCompact(leanestWeekday?.total ?? 0)}</small>
               </div>
               <div>
                 <span>{t('reports.weekendGap')}</span>
@@ -619,42 +813,13 @@ export default function ReportsScreen() {
         )}
       </div>
 
-      <div className="sec">
-        <span className="t">{t('reports.dailyReport')}</span>
-        <span className="daily-avg">{t('reports.dailyAvg')} {money.fmtCompact(dailyAverage)}</span>
-      </div>
-      <div className="card daily-card">
-        {daily.length === 0 && <div className="saving-empty">{t('reports.noData')}</div>}
-        {daily.map(([key, entry]) => {
-          const date = new Date(`${key}T12:00:00`);
-          const net = entry.income - entry.expense;
-          return (
-            <div className="daily-row" key={key}>
-              <div className="dr-date">
-                <b>{date.toLocaleDateString(locale, { day: '2-digit' })}</b>
-                <span>{date.toLocaleDateString(locale, { weekday: 'short', month: 'short' })}</span>
-              </div>
-              <div className="dr-bars">
-                <div className="dr-bar"><i className="in" style={{ width: `${(entry.income / dailyMax) * 100}%` }} /></div>
-                <div className="dr-bar"><i className="out" style={{ width: `${(entry.expense / dailyMax) * 100}%` }} /></div>
-              </div>
-              <div className="dr-nums">
-                <span className="in">+{money.fmtCompact(entry.income)}</span>
-                <span className="out">−{money.fmtCompact(entry.expense)}</span>
-                <em className={net >= 0 ? 'positive' : 'negative'}>{money.fmtCompactSigned(net)}</em>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
       {/* ===== Kategori bertingkat ===== */}
       <div className="sec">
         <span className="t">{t('reports.sectorBreakdown')}</span>
         <span className="daily-avg">{t('reports.sectorHint')}</span>
       </div>
       <div className="filter-pills sub-filter flow-toggle">
-        {([['expense', t('reports.expense')], ['income', t('reports.income')]] as Array<[Flow, string]>)
+        {([['expense', t('reports.expense')], ['actualExpense', t('reports.actualExpense')], ['income', t('reports.income')], ['actualIncome', t('reports.actualIncome')]] as Array<[Flow, string]>)
           .map(([value, label]) => (
             <button
               key={value}
@@ -663,7 +828,11 @@ export default function ReportsScreen() {
             >
               {label}
               <span className="pill-count">
-                {value === 'expense' ? expenses.length : incomeTransactions.length}
+                {value === 'expense'
+                  ? expenses.length
+                  : value === 'actualExpense'
+                    ? actualExpenseTransactions.length
+                    : value === 'actualIncome' ? actualIncomeTransactions.length : incomeTransactions.length}
               </span>
             </button>
           ))}
@@ -671,7 +840,7 @@ export default function ReportsScreen() {
       <div className="category-report-card">
         {sectors.length === 0 ? (
           <div className="saving-empty">
-            {flow === 'expense' ? t('reports.noData') : t('reports.noIncomeData')}
+            {expenseFlow ? t('reports.noData') : t('reports.noIncomeData')}
           </div>
         ) : (
           <>
@@ -720,8 +889,13 @@ export default function ReportsScreen() {
                   ? 'new'
                   : change === 0
                     ? 'flat'
-                    : (change > 0) === (flow === 'income') ? 'down' : 'up';
-                const expandable = sector.children.length > 0;
+                    : (change > 0) === !expenseFlow ? 'down' : 'up';
+                const sectorTransactions = flowTransactions
+                  .filter(transaction => (transactionPath(transaction)[0] ?? t('reports.uncategorized')) === sector.name)
+                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                // Piutang tidak memiliki turunan kategori, tetapi detail transaksinya
+                // tetap perlu dapat dibuka agar nominal totalnya bisa ditelusuri.
+                const expandable = sector.children.length > 0 || sectorTransactions.length > 0;
                 const open = expandable && openSector === sector.name;
                 return (
                   <div className={`sector${open ? ' open' : ''}`} key={sector.name}>
@@ -738,9 +912,9 @@ export default function ReportsScreen() {
                           <strong>{money.fmt(sector.total)}</strong>
                         </span>
                         <span className="category-report-meta">
-                          <span>{share}% {flow === 'expense' ? t('reports.ofSpending') : t('reports.ofIncome')}</span>
+                          <span>{share}% {expenseFlow ? t('reports.ofSpending') : t('reports.ofIncome')}</span>
                           <span>{sector.count} {t('reports.txCount')}</span>
-                          {expandable && (
+                          {sector.children.length > 0 && (
                             <span>{t('reports.subcategoryCount', { count: sector.children.length })}</span>
                           )}
                           <em className={tone}>{formatDelta(change)}</em>
@@ -751,7 +925,7 @@ export default function ReportsScreen() {
                       </span>
                       {expandable && <Chevron className="sector-caret" />}
                     </button>
-                    {open && (
+                    {open && sector.children.length > 0 && (
                       <div className="sector-children">
                         {sector.children.map((child) => {
                           const childShare = sector.total
@@ -787,6 +961,32 @@ export default function ReportsScreen() {
                         })}
                       </div>
                     )}
+                    {open && sector.children.length === 0 && (
+                      <div className="sector-transactions budget-transactions">
+                        {sectorTransactions.map((transaction) => {
+                          const category = transactionPath(transaction).at(-1) ?? t('reports.uncategorized');
+                          const name = transaction.merchant || transaction.note || category;
+                          return (
+                            <button
+                              type="button"
+                              className="budget-transaction"
+                              key={transaction.id}
+                              onClick={() => ui.openItem(name, 'transaksi', transaction.id)}
+                            >
+                              <span>
+                                <b>{name}</b>
+                                <small>
+                                  {new Date(transaction.date).toLocaleDateString(locale, {
+                                    day: 'numeric', month: 'short', year: 'numeric',
+                                  })} Â· {category}
+                                </small>
+                              </span>
+                              <b className="negative">âˆ’{money.fmt(transaction.amount)}</b>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -795,7 +995,7 @@ export default function ReportsScreen() {
         )}
       </div>
 
-      {/* ===== Sumber dana & tempat ===== */}
+      {/* ===== Sumber dana ===== */}
       <div className="report-columns">
         <div>
           <div className="sec"><span className="t">{t('reports.walletBreakdown')}</span></div>
@@ -820,86 +1020,58 @@ export default function ReportsScreen() {
             ))}
           </div>
         </div>
-        <div>
-          <div className="sec"><span className="t">{t('reports.merchantBreakdown')}</span></div>
-          <div className="breakdown-card">
-            {merchantSlices.length === 0 ? (
-              <div className="saving-empty">{t('reports.noMerchant')}</div>
-            ) : merchantSlices.map((slice) => (
-              <div className="breakdown-row" key={slice.key}>
-                <div className="breakdown-head">
-                  <b>{slice.key}</b>
-                  <strong>{money.fmtCompact(slice.total)}</strong>
-                </div>
-                <div className="breakdown-bar">
-                  <i className="warm" style={{ width: `${(slice.total / merchantPeak) * 100}%` }} />
-                </div>
-                <div className="breakdown-meta">
-                  {slice.count} {t('reports.txCount')} · {t('reports.avgShort')}{' '}
-                  {money.fmtCompact(Math.round(slice.total / slice.count))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
-      {/* ===== Insight transaksi ===== */}
-      <div className="sec"><span className="t">{t('reports.transactionInsights')}</span></div>
+      {/* ===== Informasi kredit ===== */}
+      <div className="sec"><span className="t">{t('reports.creditInsights')}</span></div>
       <div className="transaction-insight-card">
-        {expenses.length === 0 ? (
-          <div className="saving-empty">{t('reports.noExpenseInsight')}</div>
+        {creditWallets.length === 0 ? (
+          <div className="saving-empty">{t('reports.noCreditInsight')}</div>
         ) : (
           <>
             <div className="transaction-insight-feature">
-              <span>{t('reports.largestExpense')}</span>
+              <span>{t('planning.billsNextMonth')}</span>
               <div>
-                <b>{largestExpenseLabel}</b>
-                <strong>{money.fmt(stats.largest)}</strong>
+                <b>{t('reports.creditBillsFromCards', { wallets: creditWalletNames })}</b>
+                <strong>{money.fmt(creditBillNextMonth)}</strong>
               </div>
             </div>
-            <div className="transaction-insight-grid wide">
+            <div className={`transaction-insight-grid wide credit-insight-grid credit-insight-count-${4 + (creditPayments.length > 0 ? 1 : 0) + (installments.length > 0 ? 1 : 0)}`}>
               <div>
-                <span>{t('reports.avgTransaction')}</span>
-                <b>{money.fmtCompact(stats.average)}</b>
-                <small>{expenses.length} {t('reports.txCount')}</small>
+                <span>{t('reports.creditTransactionsPeriod')}</span>
+                <b>{creditExpenses.length} {t('reports.txCount')}</b>
+                <small>{t('reports.creditTransactionValue', { amount: money.fmtCompact(creditBillFromPeriod) })}</small>
               </div>
               <div>
-                <span>{t('reports.medianTransaction')}</span>
-                <b>{money.fmtCompact(stats.median)}</b>
-                <small>{t('reports.smallestExpense')} {money.fmtCompact(stats.smallest)}</small>
+                <span>{t('reports.creditBillFromPeriod')}</span>
+                <b>{money.fmtCompact(creditBillFromPeriod)}</b>
+                <small>{t('reports.creditBillFromPeriodNote')}</small>
+              </div>
+              {creditPayments.length > 0 && (
+                <div>
+                  <span>{t('reports.creditPaymentPeriod')}</span>
+                  <b>{creditPayments.length} {t('reports.txCount')}</b>
+                  <small>{t('reports.creditPaymentValue', { amount: money.fmtCompact(creditPaymentsTotal) })}</small>
+                </div>
+              )}
+              <div>
+                <span>{t('reports.creditLimitRemaining')}</span>
+                <b>{money.fmtCompact(creditLimitRemaining)}</b>
+                <small>{t('reports.creditLimitTotal', { amount: money.fmtCompact(totalCreditLimit) })}</small>
               </div>
               <div>
-                <span>{t('reports.busiestDay')}</span>
-                <b>{busiestDayLabel}</b>
-                <small>{money.fmtCompact(busiestDay?.[1].expense ?? 0)}</small>
+                <span>{t('reports.creditCardsActive')}</span>
+                <b>{creditWallets.length} {t('reports.creditCardUnit')}</b>
+                <small>{t('reports.creditLimitTotal', { amount: money.fmtCompact(totalCreditLimit) })}</small>
               </div>
-              <div>
-                <span>{t('reports.creditShare')}</span>
-                <b>{creditPercent}%</b>
-                <small>{money.fmtCompact(creditSpending)}</small>
-              </div>
-              <div>
-                <span>{t('reports.unexpectedShare')}</span>
-                <b>{unexpectedPercent}%</b>
-                <small>{unexpected.length} {t('reports.txCount')} · {money.fmtCompact(unexpectedTotal)}</small>
-              </div>
-              <div>
-                <span>{t('reports.savingsMoved')}</span>
-                <b>{money.fmtCompact(savingsMoved)}</b>
-                <small>
-                  {t('reports.transferVolume')} {money.fmtCompact(transferVolume)}
-                </small>
-              </div>
+              {installments.length > 0 && (
+                <div>
+                  <span>{t('reports.creditInstallmentsPeriod')}</span>
+                  <b>{installments.length} {t('reports.txCount')}</b>
+                  <small>{t('reports.creditTransactionValue', { amount: money.fmtCompact(installmentSpending) })}</small>
+                </div>
+              )}
             </div>
-            {installments.length > 0 && (
-              <div className="transaction-insight-note">
-                {t('reports.installmentSummary', {
-                  count: installments.length,
-                  amount: money.fmtCompact(installmentSpending),
-                })}
-              </div>
-            )}
           </>
         )}
       </div>

@@ -36,10 +36,10 @@ Plan          (berdiri sendiri, sandbox rencana)
 | Field | Tipe | Wajib | Keterangan |
 | --- | --- | :-: | --- |
 | `id` | string | ✔ | |
-| `name` | string | ✔ | Nama tampilan, mis. "BCA". |
+| `name` | string | ✔ | Nama tampilan yang diturunkan dari produk terpilih, mis. "Debit BCA". |
 | `kind` | `debit` \| `credit` | ✔ | Klasifikasi akuntansi: aset vs liabilitas. |
 | `medium` | `bank` \| `credit` \| `ewallet` \| `cash` | | Bentuk fisik; menentukan field mana yang relevan. |
-| `bank` | string | | Bank penerbit / penyedia e-wallet. |
+| `bank` | string | | Produk bank/penerbit/e-wallet yang dipilih dari katalog sesuai `medium`; menjadi sumber identitas merek dan logo. |
 | `last4` | string | | 4 digit terakhir (bank & kartu kredit). **Nomor penuh tidak disimpan di klien.** |
 | `phone` | string | | Nomor HP pemilik akun e-wallet. |
 | `balance` | number | ✔ | Untuk `credit`, ini besar tagihan (positif = utang). |
@@ -69,6 +69,15 @@ Plan          (berdiri sendiri, sandbox rencana)
 | `adjustment` | boolean | | `true` untuk transaksi hasil penyesuaian saldo / penghapusan dompet. |
 | `adjustmentReason` | string | | Penjelasan singkat, mis. "Rp 1.000.000 → Rp 900.000". |
 | `date` | ISO string | ✔ | |
+
+Definisi angka pemasukan di seluruh UI:
+
+- **Pemasukan** menghitung semua transaksi `income`, termasuk pelunasan piutang. Pada
+  ringkasan satu dompet, transfer yang diterima juga termasuk arus masuk dompet tersebut.
+- **Pemasukan riil** hanya menghitung `income` tanpa `adjustment` dan tanpa
+  `settlesReceivableId`. Transfer tidak pernah menjadi pemasukan riil.
+- Arus kas bersih, rasio menabung, proyeksi pemasukan, dan kapasitas rencana memakai
+  pemasukan riil agar pengembalian aset atau perpindahan saldo tidak dianggap pendapatan baru.
 
 > Indeks PostgreSQL, composite foreign key, ledger, dan aturan immutability didefinisikan
 > pada versioned migrations, bukan di client.
@@ -177,7 +186,7 @@ Turunan (dihitung, tidak disimpan): `velocity`, `over`, `remaining` — lihat `b
 
 | Data | Lokasi | Keterangan |
 | --- | --- | --- |
-| Preferensi pengguna | `user_workspace_preferences` + `profiles` | tema, bahasa, mata uang, notifikasi, nama, dan `defaultWalletId`; tema saja dicache lokal untuk mencegah flash. |
+| Preferensi pengguna | `user_workspace_preferences` + `profiles` | tema, bahasa, mata uang, notifikasi, nama, `defaultWalletId`, dan urutan dompet; tema saja dicache lokal untuk mencegah flash. |
 | Kurs USD↔IDR | `localStorage` → `abraham.fx` | hasil cache API kurs harian. |
 | Status baca notifikasi | `notifications.read_at` | persisten per user dan tersinkron realtime. |
 | Split bill | `split_bills` dan child tables | peserta, nota, item, share, settlement, dan piutang hasil finalisasi. |

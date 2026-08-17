@@ -6,11 +6,15 @@ import { isActualIncome } from './calculations';
 // supaya gampang diuji dan dipakai ulang oleh layar mana pun.
 
 export interface PlanningContext {
-  available: number;          // uang yang benar-benar bisa dipakai (likuiditas − tabungan terkunci)
+  available: number;          // saldo aset setelah tabungan terkunci dan tagihan kredit disisihkan
+  financialCondition: number; // available dikurangi sisa anggaran yang belum terealisasi
+  cashBalance: number;        // saldo rekening, e-wallet, dan tunai sebelum tabungan dikunci
+  reserved: number;           // dana yang disisihkan di tabungan
+  budgetRemaining: number;    // alokasi anggaran yang belum terealisasi
   allocatedTotal: number;     // total alokasi anggaran periode berjalan
   spentTotal: number;         // realisasi anggaran
   monthlyIncome: number;      // estimasi pemasukan rutin per bulan
-  nextMonthBills: number;     // langganan + pengingat bernominal yang jatuh bulan depan
+  nextMonthBills: number;     // total tagihan berjalan dari transaksi kartu kredit
   expectedReceivables: number;// piutang aktif yang mungkin kembali
   daysLeft: number;           // sisa hari periode berjalan
   totalDays: number;
@@ -81,17 +85,18 @@ export function requiredPerMonth(target: number, alreadySaved: number, months: n
 // ===== Metode 2: sanggup beli bulan depan? =====
 export interface AffordabilityResult {
   price: number;
-  inflow: number;             // pemasukan + piutang yang diperhitungkan
-  outflow: number;            // anggaran + tagihan bulan depan
-  surplus: number;            // sisa sebelum beli
+  inflow: number;             // kondisi keuangan + piutang yang opsional diperhitungkan
+  outflow: number;            // harga barang
+  surplus: number;            // dana yang tersedia sebelum beli
   leftover: number;           // sisa setelah beli
   affordable: boolean;
-  fromCash: number;           // porsi yang harus diambil dari kas saat ini
+  fromCash: number;           // kompatibilitas tampilan lama; keputusan memakai kondisi keuangan
+  cashBacked: boolean;
 }
 export function affordability(price: number, context: PlanningContext, includeReceivables: boolean): AffordabilityResult {
-  const inflow = context.monthlyIncome + (includeReceivables ? context.expectedReceivables : 0);
-  const outflow = context.allocatedTotal + context.nextMonthBills;
-  const surplus = inflow - outflow;
+  const inflow = context.financialCondition + (includeReceivables ? context.expectedReceivables : 0);
+  const outflow = price;
+  const surplus = inflow;
   const leftover = surplus - price;
   return {
     price,
@@ -100,7 +105,8 @@ export function affordability(price: number, context: PlanningContext, includeRe
     surplus,
     leftover,
     affordable: leftover >= 0,
-    fromCash: leftover < 0 ? Math.min(context.available, -leftover) : 0,
+    fromCash: 0,
+    cashBacked: false,
   };
 }
 

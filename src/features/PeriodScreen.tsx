@@ -100,10 +100,15 @@ export default function PeriodScreen() {
         </button>
       </div>
 
-      <div className="metric-grid">
+      <div className="metric-grid period-metrics">
+        <div className="metric-card m-in">
+          <span>{t('reports.income')}</span>
+          <b>{money.fmtCompact(report.income)}</b>
+          <small>{t('period.inThisPeriod')}</small>
+        </div>
         <div className="metric-card m-in">
           <span>{t('reports.actualIncome')}</span>
-          <b>{money.fmtCompact(report.income)}</b>
+          <b>{money.fmtCompact(report.actualIncome)}</b>
           <small>{t('period.inThisPeriod')}</small>
         </div>
         <div className="metric-card m-out">

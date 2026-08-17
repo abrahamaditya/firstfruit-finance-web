@@ -1,4 +1,4 @@
-import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder } from '../core/domain/types';
+import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary } from '../core/domain/types';
 
 const iso = (daysFromNow: number) => { const d = new Date(); d.setDate(d.getDate() + daysFromNow); return d.toISOString(); };
 
@@ -15,13 +15,13 @@ export const seedTransactions: Transaction[] = [
   { id: 't2', type: 'transfer', nature: 'fixed', amount: 2_000_000, walletId: 'w_bca', toWalletId: 'w_blu', labels: [], note: 'Transfer ke blu', date: iso(0) },
   { id: 't3', type: 'expense', nature: 'unexpected', amount: 67_500, walletId: 'w_gopay', labels: ['Belanja Dapur'], merchant: 'Indomaret', budgetId: 'b1', note: 'Belanja mingguan', date: iso(0) },
   { id: 't4', type: 'income', nature: 'fixed', amount: 9_500_000, walletId: 'w_bca', labels: ['Gaji Pokok'], note: 'Gaji Februari', date: iso(-1) },
-  { id: 't5', type: 'expense', nature: 'fixed', amount: 500_000, walletId: 'w_bca', labels: ['Persembahan Mingguan'], budgetId: 'b2', recipient: 'Gereja', note: 'Persembahan', date: iso(-1) },
+  { id: 't5', type: 'expense', nature: 'fixed', amount: 500_000, walletId: 'w_bca', labels: ['Offering'], budgetId: 'b2', recipient: 'Gereja', note: 'Persembahan', date: iso(-1) },
   { id: 't6', type: 'expense', nature: 'fixed', amount: 186_000, walletId: 'w_cc', labels: ['Streaming Film'], subscriptionId: 's_netflix', note: 'Netflix Premium', date: iso(-1) },
-  { id: 't7', type: 'expense', nature: 'unexpected', amount: 150_000, walletId: 'w_bca', labels: ['Hadiah & Kado'], merchant: 'Shopee', note: 'Kado ultah Sarah', date: iso(-2) },
+  { id: 't7', type: 'expense', nature: 'unexpected', amount: 150_000, walletId: 'w_bca', labels: ['Social'], merchant: 'Shopee', note: 'Kado ultah Sarah', date: iso(-2) },
 ];
 export const seedBudgets: Budget[] = [
   { id: 'b1', category: 'Makanan & Minuman', allocated: 1_500_000, spent: 1_080_000 },
-  { id: 'b2', category: 'Rohani', allocated: 1_000_000, spent: 500_000 },
+  { id: 'b2', category: 'Offerings', allocated: 1_000_000, spent: 500_000 },
   { id: 'b3', category: 'Transportasi Umum', allocated: 500_000, spent: 155_000 },
   { id: 'b4', category: 'Kebutuhan Harian', allocated: 800_000, spent: 880_000 },
 ];
@@ -52,6 +52,10 @@ export const seedReminders: Reminder[] = [
   { id: 'rm3', title: 'Kirim invoice klien', date: iso(-1), done: true },
 ];
 export const seedSavings: Saving[] = [
-  { id: 'sv_jeje', name: 'Uang Kuliah Jeje', walletId: 'w_blu', balance: 2_000_000, target: 6_000_000, targetDate: '2026-12-01', emoji: '🎓' },
-  { id: 'sv_darurat', name: 'Dana Darurat', walletId: 'w_bca', balance: 5_000_000, emoji: '🛡️' },
+  { id: 'sv_jeje', name: 'Uang Kuliah Jeje', walletId: 'w_blu', balance: 2_000_000, target: 6_000_000, targetDate: '2026-12-01', emoji: '🎓', ownership: 'other', recipientName: 'Jeje' },
+  { id: 'sv_darurat', name: 'Dana Darurat', walletId: 'w_bca', balance: 5_000_000, emoji: '🛡️', ownership: 'self' },
+];
+export const seedBeneficiaries: Beneficiary[] = [
+  { id: 'beneficiary_jeje', name: 'Jeje', kind: 'person' },
+  { id: 'beneficiary_keluarga', name: 'Keluarga', kind: 'group' },
 ];

@@ -2,10 +2,11 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useSavings, useTransactions, useWallets } from '../application/hooks';
+import { useBeneficiaries, useSavings, useTransactions, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
-import { walletBrandInitial, walletBrandLogo } from '../core/wallet-branding';
+import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
 import { categoryTone } from '../core/domain/categories';
+import { isActualIncome } from '../core/domain/calculations';
 
 export default function TransactionsScreen() {
   const ui = useUI();
@@ -15,8 +16,20 @@ export default function TransactionsScreen() {
   const { data } = useTransactions();
   const { wallets } = useWallets();
   const { all: savings } = useSavings();
+  const { nameOf: beneficiaryName } = useBeneficiaries();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
   const walletById = new Map(wallets.map(wallet => [wallet.id, wallet]));
+  const walletReference = (entry: typeof wallets[number]) => {
+    const logo = walletBrandLogo(entry);
+    return (
+      <span className="tx-wallet-ref" title={entry.name}>
+        <span className={`tx-wallet-mark${logo ? ' has-image' : ''}${entry.medium === 'cash' ? ' is-cash' : ''}`} aria-hidden="true">
+          {logo ? <img src={logo} alt="" /> : walletProductInitial(entry)}
+        </span>
+        <span>{entry.name}</span>
+      </span>
+    );
+  };
   const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
   const transactionTitle = (transaction: typeof data[number]) => {
     if (transaction.type === 'transfer') {
@@ -29,21 +42,23 @@ export default function TransactionsScreen() {
     const now = new Date();
     const diff = Math.round((+new Date(now.toDateString()) - +new Date(date.toDateString())) / 86_400_000);
     const formatted = date.toLocaleDateString(locale, {
+      weekday: 'long',
       day: 'numeric',
       month: 'long',
       year: 'numeric',
     });
-    return `${diff === 0 ? tr('tx.today') + ' - ' : diff === 1 ? tr('tx.yesterday') + ' - ' : ''}${formatted}`;
+    return `${diff === 0 ? tr('tx.today') + ' · ' : diff === 1 ? tr('tx.yesterday') + ' · ' : ''}${formatted}`;
   };
   const formatAmount = (type: string, amount: number) =>
     `${type === 'income' ? '+' : type === 'expense' ? '-' : ''}${money.fmt(amount)}`;
-  const [filter, setFilter] = useState<'all' | 'expense' | 'income' | 'transfer'>('all');
+  const [filter, setFilter] = useState<'all' | 'expense' | 'income' | 'actualIncome' | 'transfer'>('all');
   const [wallet, setWallet] = useState('all');
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query.toLowerCase());
 
-  const matchesType = (transaction: { type: string }) => filter === 'all' || transaction.type === filter;
+  const matchesType = (transaction: typeof data[number]) => filter === 'all'
+    || (filter === 'actualIncome' ? isActualIncome(transaction) : transaction.type === filter);
   const byType = data.filter(matchesType);
 
   // Transfer dihitung di dua dompet sekaligus — uangnya memang lewat keduanya, jadi
@@ -112,6 +127,7 @@ export default function TransactionsScreen() {
           ['all', tr('tx.filterAll')],
           ['expense', tr('tx.filterExpense')],
           ['income', tr('tx.filterIncome')],
+          ['actualIncome', tr('tx.filterActualIncome')],
           ['transfer', tr('tx.filterTransfer')],
         ].map(([value, label]) => (
           <button
@@ -139,8 +155,8 @@ export default function TransactionsScreen() {
                 className={`${activeWallet === entry.id ? 'on' : ''}${count === 0 ? ' is-empty' : ''}`.trim()}
                 onClick={() => setWallet(entry.id)}
               >
-                <span className={`pill-mark${logo ? ' has-image' : ''}`} aria-hidden="true">
-                  {logo ? <img src={logo} alt="" /> : walletBrandInitial(entry)}
+                <span className={`pill-mark${logo ? ' has-image' : ''}${entry.medium === 'cash' ? ' is-cash' : ''}`} aria-hidden="true">
+                  {logo ? <img src={logo} alt="" /> : walletProductInitial(entry)}
                 </span>
                 {entry.name}
                 <span className="pill-count">{count}</span>
@@ -191,11 +207,19 @@ export default function TransactionsScreen() {
                 <div className="mid">
                   <div className="t1">{transactionTitle(transaction)}</div>
                   <div className="t2">
+                    {transaction.type === 'income' && (
+                      <span className="chip" data-cat="income">
+                        {isActualIncome(transaction) ? tr('reports.actualIncome') : tr('tx.receivableIncome')}
+                      </span>
+                    )}
                     {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
                       .map((label) => (
                         <span className="chip" data-cat={categoryTone(label)} key={label}>{label}</span>
                       ))}
                     {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
+                    {transaction.beneficiaryId && (
+                      <span className="chip">👤 {beneficiaryName(transaction.beneficiaryId) ?? transaction.recipient}</span>
+                    )}
                     {transaction.type === 'transfer' && transaction.savingId && (
                       <span className="chip saving-destination">
                         Tabungan · {savingName(transaction.savingId) ?? 'Tabungan'}
@@ -207,19 +231,20 @@ export default function TransactionsScreen() {
                     {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
                   </div>
                 </div>
-                <div className="r">
-                  <div className={`val ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                    {formatAmount(transaction.type, transaction.amount)}
-                  </div>
+                <div className="r tx-amount-line">
                   {sourceWallet && (
                     <span className="tx-wallet-label">
                       {transaction.type === 'transfer' && destinationWallet
-                        ? `${sourceWallet.name} → ${destinationWallet.name}`
-                        : transaction.type === 'income'
-                          ? `Ke ${sourceWallet.name}`
-                          : `Dari ${sourceWallet.name}`}
+                        ? <>{walletReference(sourceWallet)}<i aria-hidden="true">→</i>{walletReference(destinationWallet)}</>
+                        : <>
+                          <small>{transaction.type === 'income' ? 'Ke' : 'Dari'}</small>
+                          {walletReference(sourceWallet)}
+                        </>}
                     </span>
                   )}
+                  <div className={`val ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
+                    {formatAmount(transaction.type, transaction.amount)}
+                  </div>
                 </div>
               </div>
             );

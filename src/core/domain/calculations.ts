@@ -28,15 +28,39 @@ export function recomputeBalance(opening: number, txs: Transaction[], walletId: 
   return txs.reduce((bal, tx) => bal + balanceDelta(tx, walletId), opening);
 }
 
+/** Semua transaksi pemasukan yang benar-benar menambah saldo, termasuk pelunasan piutang. */
+export function isIncome(transaction: Transaction): boolean {
+  return !transaction.adjustment && transaction.type === 'income';
+}
+
 /**
- * Pelunasan piutang memang menambah saldo, tetapi bukan penghasilan baru: nilai itu
- * sudah pernah tercatat saat uangnya dipinjamkan. Total pemasukan dan proyeksi income
- * harus membedakannya dari gaji, usaha, hadiah, dan sumber penghasilan lainnya.
+ * Pemasukan riil hanya penghasilan baru. Pelunasan piutang menambah saldo, tetapi
+ * mengembalikan aset yang sudah dimiliki; transfer juga hanya memindahkan saldo.
  */
 export function isActualIncome(transaction: Transaction): boolean {
-  return !transaction.adjustment
-    && transaction.type === 'income'
-    && !transaction.settlesReceivableId;
+  return isIncome(transaction) && !transaction.settlesReceivableId;
+}
+
+/**
+ * Bagian pengeluaran yang benar-benar menjadi konsumsi. Uang yang dicatat sebagai
+ * piutang hanya berpindah bentuk menjadi aset tagihan, sehingga bukan beban riil.
+ * Transfer dan penyesuaian saldo juga tidak termasuk.
+ */
+export function actualExpenseAmount(transaction: Transaction): number {
+  if (transaction.adjustment || transaction.type !== 'expense') return 0;
+  return Math.max(0, transaction.amount - (transaction.owedAmount ?? 0));
+}
+
+export function isActualExpense(transaction: Transaction): boolean {
+  return actualExpenseAmount(transaction) > 0;
+}
+
+/** Arus masuk ke satu dompet: pemasukan biasa dan transfer yang diterima dompet itu. */
+export function isWalletIncome(transaction: Transaction, walletId: string): boolean {
+  return !transaction.adjustment && (
+    (transaction.type === 'income' && transaction.walletId === walletId)
+    || (transaction.type === 'transfer' && transaction.toWalletId === walletId)
+  );
 }
 
 export interface BudgetView extends Budget { velocity: number; over: boolean; remaining: number; }

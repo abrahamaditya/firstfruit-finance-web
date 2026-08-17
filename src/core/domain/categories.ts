@@ -107,23 +107,16 @@ export const PILLAR_EXPENSE_TREE: CategoryTree = {
     Entertainment: [],
     Shopping: [],
     Lifestyle: [],
-    Social: [
-      'Traktir Keluarga',
-      'Kado / Hadiah',
-      'Traktir Teman',
-    ],
   },
   Giving: {
-    Persepuluhan: [],
-    Persembahan: [],
-    Taburan: [],
-    'Memberi Keluarga': [],
+    Offerings: ['First Fruits', 'Tithe', 'Offering'],
+    Sowing: ['Family', 'Social'],
   },
   Savings: {
     'Emergency Fund': [],
     Investments: [],
   },
-  Piutang: {},
+  Receivables: {},
 };
 
 export const CATEGORY_CUSTOM = '__custom__';
@@ -156,15 +149,41 @@ const EXPENSE_INDEX = buildIndex(EXPENSE_TREE);
 const INCOME_INDEX = buildIndex(INCOME_TREE);
 const PILLAR_EXPENSE_INDEX = buildIndex(PILLAR_EXPENSE_TREE);
 
+// Nama lama tetap diarahkan ke struktur Giving baru agar draft lokal atau data lama
+// tidak kembali muncul sebagai kategori bebas setelah taksonomi database dimigrasikan.
+const LEGACY_GIVING_INDEX = new Map<string, string[]>([
+  ['buah sulung', ['Giving', 'Offerings', 'First Fruits']],
+  ['persepuluhan', ['Giving', 'Offerings', 'Tithe']],
+  ['perpuluhan', ['Giving', 'Offerings', 'Tithe']],
+  ['persembahan', ['Giving', 'Offerings', 'Offering']],
+  ['persembahan mingguan', ['Giving', 'Offerings', 'Offering']],
+  ['persembahan syukur', ['Giving', 'Offerings', 'Offering']],
+  ['taburan', ['Giving', 'Sowing', 'Social']],
+  ['memberi keluarga', ['Giving', 'Sowing', 'Family']],
+  ['traktir keluarga', ['Giving', 'Sowing', 'Family']],
+  ['kado / hadiah', ['Giving', 'Sowing', 'Social']],
+  ['hadiah & kado', ['Giving', 'Sowing', 'Social']],
+  ['traktir teman', ['Giving', 'Sowing', 'Social']],
+  ['kondangan & hajatan', ['Giving', 'Sowing', 'Social']],
+  ['donasi & sedekah', ['Giving', 'Sowing', 'Social']],
+  ['sumbangan bencana', ['Giving', 'Sowing', 'Social']],
+  ['uang saku keluarga', ['Giving', 'Sowing', 'Family']],
+  ['piutang', ['Receivables']],
+]);
+
 /** Jalur lengkap sebuah label. Label bebas (di luar taksonomi) berdiri sendiri. */
 export function categoryPath(label: string, flow?: 'expense' | 'income'): string[] {
   const key = label?.trim().toLowerCase();
   if (!key) return [];
   if (flow === 'income') return INCOME_INDEX.get(key) ?? [label.trim()];
   if (flow === 'expense') {
-    return PILLAR_EXPENSE_INDEX.get(key) ?? EXPENSE_INDEX.get(key) ?? [label.trim()];
+    return LEGACY_GIVING_INDEX.get(key)
+      ?? PILLAR_EXPENSE_INDEX.get(key)
+      ?? EXPENSE_INDEX.get(key)
+      ?? [label.trim()];
   }
-  return PILLAR_EXPENSE_INDEX.get(key)
+  return LEGACY_GIVING_INDEX.get(key)
+    ?? PILLAR_EXPENSE_INDEX.get(key)
     ?? EXPENSE_INDEX.get(key)
     ?? INCOME_INDEX.get(key)
     ?? [label.trim()];
@@ -195,7 +214,7 @@ const CATEGORY_TONES: Record<string, string> = {
   Kesehatan: 'health',
   Pendidikan: 'education',
   Keuangan: 'finance',
-  Piutang: 'finance',
+  Receivables: 'finance',
   'Sosial & Rohani': 'giving',
   Giving: 'giving',
   Savings: 'savings',
@@ -212,7 +231,12 @@ const CATEGORY_TONES: Record<string, string> = {
 export const categoryTone = (label: string): string | undefined =>
   CATEGORY_TONES[categoryTop(label)];
 
-const knownNames = new Set([...PILLAR_EXPENSE_INDEX.keys(), ...EXPENSE_INDEX.keys(), ...INCOME_INDEX.keys()]);
+const knownNames = new Set([
+  ...PILLAR_EXPENSE_INDEX.keys(),
+  ...LEGACY_GIVING_INDEX.keys(),
+  ...EXPENSE_INDEX.keys(),
+  ...INCOME_INDEX.keys(),
+]);
 export const isKnownCategory = (label: string) => knownNames.has(label?.trim().toLowerCase());
 
 /** Saran tempat transaksi — dipakai sebagai datalist, tetap boleh diisi bebas. */

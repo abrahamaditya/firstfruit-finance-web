@@ -65,6 +65,63 @@ export type Database = {
           },
         ]
       }
+      beneficiaries: {
+        Row: {
+          archived_at: string | null
+          created_at: string
+          created_by: string
+          id: string
+          kind: string
+          name: string
+          normalized_name: string | null
+          note: string | null
+          updated_at: string
+          version: number
+          workspace_id: string
+        }
+        Insert: {
+          archived_at?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          kind?: string
+          name: string
+          normalized_name?: string | null
+          note?: string | null
+          updated_at?: string
+          version?: number
+          workspace_id: string
+        }
+        Update: {
+          archived_at?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          kind?: string
+          name?: string
+          normalized_name?: string | null
+          note?: string | null
+          updated_at?: string
+          version?: number
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "beneficiaries_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_summary"
+            referencedColumns: ["workspace_id"]
+          },
+          {
+            foreignKeyName: "beneficiaries_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       budget_periods: {
         Row: {
           alias: string
@@ -952,12 +1009,15 @@ export type Database = {
       savings_goals: {
         Row: {
           archived_at: string | null
+          beneficiary_id: string | null
           created_at: string
           created_by: string
           current_balance_minor: number
           emoji: string | null
           id: string
           name: string
+          ownership: string
+          recipient_name: string | null
           target_date: string | null
           target_minor: number | null
           updated_at: string
@@ -967,12 +1027,15 @@ export type Database = {
         }
         Insert: {
           archived_at?: string | null
+          beneficiary_id?: string | null
           created_at?: string
           created_by: string
           current_balance_minor?: number
           emoji?: string | null
           id?: string
           name: string
+          ownership?: string
+          recipient_name?: string | null
           target_date?: string | null
           target_minor?: number | null
           updated_at?: string
@@ -982,12 +1045,15 @@ export type Database = {
         }
         Update: {
           archived_at?: string | null
+          beneficiary_id?: string | null
           created_at?: string
           created_by?: string
           current_balance_minor?: number
           emoji?: string | null
           id?: string
           name?: string
+          ownership?: string
+          recipient_name?: string | null
           target_date?: string | null
           target_minor?: number | null
           updated_at?: string
@@ -996,6 +1062,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "savings_goals_beneficiary_fk"
+            columns: ["workspace_id", "beneficiary_id"]
+            isOneToOne: false
+            referencedRelation: "beneficiaries"
+            referencedColumns: ["workspace_id", "id"]
+          },
           {
             foreignKeyName: "savings_goals_workspace_id_fkey"
             columns: ["workspace_id"]
@@ -1677,6 +1750,8 @@ export type Database = {
       transactions: {
         Row: {
           amount_minor: number
+          beneficiary_id: string | null
+          beneficiary_name_snapshot: string | null
           category_id: string | null
           category_name_snapshot: string | null
           created_at: string
@@ -1702,6 +1777,8 @@ export type Database = {
         }
         Insert: {
           amount_minor: number
+          beneficiary_id?: string | null
+          beneficiary_name_snapshot?: string | null
           category_id?: string | null
           category_name_snapshot?: string | null
           created_at?: string
@@ -1727,6 +1804,8 @@ export type Database = {
         }
         Update: {
           amount_minor?: number
+          beneficiary_id?: string | null
+          beneficiary_name_snapshot?: string | null
           category_id?: string | null
           category_name_snapshot?: string | null
           created_at?: string
@@ -1751,6 +1830,13 @@ export type Database = {
           workspace_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_beneficiary_fk"
+            columns: ["workspace_id", "beneficiary_id"]
+            isOneToOne: false
+            referencedRelation: "beneficiaries"
+            referencedColumns: ["workspace_id", "id"]
+          },
           {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
@@ -1835,6 +1921,7 @@ export type Database = {
           theme: string
           updated_at: string
           user_id: string
+          wallet_order: string[]
           workspace_id: string
         }
         Insert: {
@@ -1848,6 +1935,7 @@ export type Database = {
           theme?: string
           updated_at?: string
           user_id: string
+          wallet_order?: string[]
           workspace_id: string
         }
         Update: {
@@ -1861,6 +1949,7 @@ export type Database = {
           theme?: string
           updated_at?: string
           user_id?: string
+          wallet_order?: string[]
           workspace_id?: string
         }
         Relationships: [
@@ -2262,6 +2351,8 @@ export type Database = {
         Row: {
           adjustment_effect: string | null
           amount_minor: number | null
+          beneficiary_id: string | null
+          beneficiary_name_snapshot: string | null
           budget_id: string | null
           category_id: string | null
           category_name: string | null
@@ -2290,6 +2381,13 @@ export type Database = {
           workspace_id: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "transactions_beneficiary_fk"
+            columns: ["workspace_id", "beneficiary_id"]
+            isOneToOne: false
+            referencedRelation: "beneficiaries"
+            referencedColumns: ["workspace_id", "id"]
+          },
           {
             foreignKeyName: "transactions_category_id_fkey"
             columns: ["category_id"]
@@ -2383,6 +2481,10 @@ export type Database = {
       close_budget_period: { Args: { p_payload: Json }; Returns: string }
       create_manual_receivable: { Args: { p_payload: Json }; Returns: string }
       create_saving_goal: { Args: { p_payload: Json }; Returns: string }
+      create_saving_goal_with_beneficiary: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       create_wallet: { Args: { p_payload: Json }; Returns: string }
       create_wallet_with_network: { Args: { p_payload: Json }; Returns: string }
       create_workspace: { Args: { p_payload: Json }; Returns: string }
@@ -2402,11 +2504,19 @@ export type Database = {
         Returns: undefined
       }
       post_transaction: { Args: { p_payload: Json }; Returns: string }
+      post_transaction_with_beneficiary: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       remove_workspace_member: {
         Args: { p_user_id: string; p_workspace_id: string }
         Returns: undefined
       }
       replace_transaction: { Args: { p_payload: Json }; Returns: string }
+      replace_transaction_with_beneficiary: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       reverse_transaction: { Args: { p_payload: Json }; Returns: string }
       sync_budget_allocations: {
         Args: { p_period_id: string; p_workspace_id: string }
@@ -2417,6 +2527,10 @@ export type Database = {
         Returns: undefined
       }
       update_saving_goal: { Args: { p_payload: Json }; Returns: string }
+      update_saving_goal_with_beneficiary: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       update_wallet: { Args: { p_payload: Json }; Returns: string }
       update_wallet_with_network: { Args: { p_payload: Json }; Returns: string }
       update_workspace_settings: { Args: { p_payload: Json }; Returns: string }

@@ -94,6 +94,9 @@ export default async function Page() {
     homeTools: Array.isArray(preference?.home_tools)
       ? preference.home_tools.filter((id: unknown): id is string => typeof id === 'string')
       : DEFAULT_HOME_TOOLS,
+    walletOrder: Array.isArray(preference?.wallet_order)
+      ? preference.wallet_order.filter((id: unknown): id is string => typeof id === 'string')
+      : DEFAULT_PREFS.walletOrder,
   };
 
   return (

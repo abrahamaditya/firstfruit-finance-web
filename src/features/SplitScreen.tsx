@@ -15,8 +15,6 @@ const uid = () => Math.random().toString(36).slice(2, 9);
 
 const initialPeople: SplitPerson[] = [
   { id: ME, name: 'Saya', color: 'var(--emerald)' },
-  { id: 'budi', name: 'Budi', color: PALETTE[0] },
-  { id: 'citra', name: 'Citra', color: PALETTE[1] },
 ];
 
 const newItem = (people: SplitPerson[]): SplitItem => ({
@@ -31,7 +29,7 @@ export default function SplitScreen() {
   const repos = useRepositories();
   const [people, setPeople] = useState<SplitPerson[]>(initialPeople);
   const [receipts, setReceipts] = useState<Receipt[]>([
-    { id: uid(), name: 'Nota 1', payerId: ME, taxPercent: 0, items: [newItem(initialPeople)] },
+    { id: uid(), name: '', payerId: ME, taxPercent: 0, items: [newItem(initialPeople)] },
   ]);
   const [openReceipt, setOpenReceipt] = useState<string | null>(null);
   const [newName, setNewName] = useState('');
@@ -58,7 +56,7 @@ export default function SplitScreen() {
     );
 
   const addReceipt = () => {
-    const receipt: Receipt = { id: uid(), name: `Nota ${receipts.length + 1}`, payerId: ME, taxPercent: 0, items: [newItem(people)] };
+    const receipt: Receipt = { id: uid(), name: '', payerId: ME, taxPercent: 0, items: [newItem(people)] };
     setReceipts([...receipts, receipt]);
     setOpenReceipt(receipt.id);
   };

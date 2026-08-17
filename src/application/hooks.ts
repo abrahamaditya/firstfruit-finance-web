@@ -2,17 +2,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import {
-  Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder,
+  Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary,
 } from '../core/domain/types';
 import {
   totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet, remainingBudget,
-  isActualIncome,
+  isActualIncome, isIncome,
   totalReserved, reservedInWallet,
 } from '../core/domain/calculations';
 import {
   totalMonthlyBurden, isReminderDue, isEndingSoon, daysUntilBilling, daysUntilEnd,
 } from '../core/domain/subscription';
-import { billingDatesInRange } from '../core/domain/calendar';
 import { PlanningContext, estimateMonthlyIncome } from '../core/domain/planning';
 
 type CollectionCacheEntry<T> = {
@@ -130,6 +129,19 @@ export function useSavings() {
   };
 }
 
+/** Daftar orang/kelompok yang dapat dipakai ulang pada transaksi dan tabungan. */
+export function useBeneficiaries() {
+  const { data, loading, reload } = useCollection<Beneficiary>(r => r.beneficiaries);
+  const active = data.filter(entry => !entry.archived);
+  return {
+    beneficiaries: [...active].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)),
+    all: data,
+    nameOf: (id?: string) => id ? data.find(entry => entry.id === id)?.name : undefined,
+    loading,
+    reload,
+  };
+}
+
 // Hanya periode berstatus open yang aktif. Draft adalah periode berikutnya yang belum
 // berjalan, sedangkan fallback tanpa status dipertahankan untuk record lama.
 function findActivePeriod(periods: BudgetPeriod[]) {
@@ -188,15 +200,13 @@ export function usePlans() { return useCollection<Plan>(r => r.plans); }
 
 /**
  * Konteks angka untuk layar Rencana: menggabungkan kas, anggaran, pemasukan rutin,
- * dan tagihan bulan depan (langganan + pengingat bernominal) jadi satu objek.
+ * dan tagihan kartu kredit berjalan yang perlu disiapkan untuk bulan berikutnya.
  */
 export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
-  const { liquidity } = useWallets();
+  const { wallets } = useWallets();
   const { raw: budgets } = useBudgets();
   const { reserved } = useSavings();
   const { data: transactions } = useTransactions();
-  const { data: subscriptions } = useCollection<Subscription>(r => r.subscriptions);
-  const { reminders } = useReminders();
   const { total: receivableTotal } = useReceivables();
   const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
   const period = findActivePeriod(periods);
@@ -206,22 +216,29 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
     : [];
 
   const today = new Date();
-  const nextMonthStart = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  const nextMonthEnd = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-  const subsNextMonth = subscriptions.reduce(
-    (sum, sub) => sum + billingDatesInRange(sub, nextMonthStart, nextMonthEnd).length * sub.amount, 0,
-  );
-  const remindersNextMonth = reminders
-    .filter(r => !r.done && r.amount && new Date(r.date) >= nextMonthStart && new Date(r.date) <= nextMonthEnd)
-    .reduce((sum, r) => sum + (r.amount ?? 0), 0);
+  // Saldo dompet kredit adalah tagihan berjalan: transaksi belanja menambah saldo,
+  // sedangkan pembayaran kartu menguranginya. Memakai saldo ini membuat Rencana selalu
+  // konsisten dengan angka "Tagihan terpakai" pada halaman Dompet.
+  const creditBillNextMonth = wallets
+    .filter(wallet => wallet.kind === 'credit')
+    .reduce((sum, wallet) => sum + Math.max(0, wallet.balance), 0);
+  const cashBalance = wallets
+    .filter(wallet => wallet.kind !== 'credit')
+    .reduce((sum, wallet) => sum + wallet.balance, 0);
+  const allocatedTotal = periodBudgets.reduce((sum, budget) => sum + budget.allocated, 0);
+  const budgetRemaining = remainingBudget(periodBudgets);
 
   return {
     budgets: periodBudgets,
-    available: liquidity - reserved,
-    allocatedTotal: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),
+    cashBalance,
+    reserved,
+    budgetRemaining,
+    available: cashBalance - reserved - creditBillNextMonth,
+    financialCondition: cashBalance - reserved - creditBillNextMonth - budgetRemaining,
+    allocatedTotal,
     spentTotal: periodBudgets.reduce((sum, b) => sum + b.spent, 0),
     monthlyIncome: estimateMonthlyIncome(transactions, today),
-    nextMonthBills: Math.round(subsNextMonth + remindersNextMonth),
+    nextMonthBills: Math.round(creditBillNextMonth),
     expectedReceivables: receivableTotal,
     // Konteks simulasi tidak mengenal periode lewat tanggal — sisa negatif tidak punya
     // arti untuk "kalau saya belanja segini, per hari turun berapa", jadi dijepit di sini.
@@ -243,6 +260,7 @@ export interface PeriodReport {
   isActive: boolean;
   progress: ReturnType<typeof periodProgress> | null;
   income: number;
+  actualIncome: number;
   expense: number;
   net: number;
   txCount: number;
@@ -287,7 +305,8 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
       return !tx.adjustment && tx.type !== 'transfer' && at >= from && at <= to;
     })
     : [];
-  const income = inPeriod.filter(isActualIncome).reduce((sum, tx) => sum + tx.amount, 0);
+  const income = inPeriod.filter(isIncome).reduce((sum, tx) => sum + tx.amount, 0);
+  const actualIncome = inPeriod.filter(isActualIncome).reduce((sum, tx) => sum + tx.amount, 0);
   const expense = inPeriod.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
 
   // Anggaran tanpa `periodId` hanya bisa berasal dari periode berjalan (data lama).
@@ -306,8 +325,9 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
     isActive,
     progress: period ? periodProgress(period) : null,
     income,
+    actualIncome,
     expense,
-    net: income - expense,
+    net: actualIncome - expense,
     txCount: inPeriod.length,
     budgets: periodBudgets.map(budgetView),
     allocated: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),

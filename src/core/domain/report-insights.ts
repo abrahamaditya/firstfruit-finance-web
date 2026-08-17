@@ -76,6 +76,13 @@ const HABITUAL_EXCEPTIONS = new Set([
   'bensin', 'servis & sparepart', 'cuci kendaraan',
 ]);
 
+// Pengeluaran sosial/seremonial tidak menggambarkan ritme konsumsi pribadi. Nama lama
+// tetap dicakup agar data lokal yang belum tersinkron tidak mengubah pola hari belanja.
+const GIFT_LABELS = new Set([
+  'taburan', 'gift / cashflow lain', 'kado / hadiah', 'hadiah & kado',
+  'kondangan & hajatan', 'traktir teman', 'uang saku keluarga',
+]);
+
 /**
  * Apakah sebuah pengeluaran mencerminkan kebiasaan harian.
  *
@@ -85,9 +92,18 @@ const HABITUAL_EXCEPTIONS = new Set([
  * di sana. Kecualinya adalah belanja yang tetap mengikuti ritme harian walau dianggarkan:
  * makanan & minuman, serta biaya motor (bensin, servis, cuci).
  */
-export const isHabitualExpense = (transaction: Pick<Transaction, 'labels' | 'type' | 'budgetId'>) => {
+export const isHabitualExpense = (transaction: Pick<Transaction, 'labels' | 'type' | 'budgetId' | 'isReceivable' | 'owedAmount'>) => {
+  // Piutang adalah uang yang akan kembali dan bukan konsumsi pribadi. Begitu pula
+  // pembelian yang hanya sebagian menjadi piutang: pola harian tidak boleh menganggap
+  // total tagihan tersebut sebagai belanja kebiasaan.
+  if (transaction.isReceivable || (transaction.owedAmount ?? 0) > 0) return false;
+  const path = transactionPath(transaction);
+  // Seluruh Giving adalah pemberian, bukan konsumsi pribadi. Pemeriksaan kelompok
+  // besar ini juga otomatis mencakup kategori pemberian baru tanpa daftar manual.
+  if (path[0]?.trim().toLowerCase() === 'giving') return false;
+  if (path.some(segment => GIFT_LABELS.has(segment.trim().toLowerCase()))) return false;
   if (!transaction.budgetId) return true;
-  return transactionPath(transaction)
+  return path
     .some(segment => HABITUAL_EXCEPTIONS.has(segment.trim().toLowerCase()));
 };
 
