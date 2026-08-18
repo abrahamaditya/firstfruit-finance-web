@@ -2,7 +2,7 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBeneficiaries, useSavings, useTransactions, useWallets } from '../application/hooks';
+import { useSavings, useTransactions, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
 import { categoryTone } from '../core/domain/categories';
@@ -16,7 +16,6 @@ export default function TransactionsScreen() {
   const { data } = useTransactions();
   const { wallets } = useWallets();
   const { all: savings } = useSavings();
-  const { nameOf: beneficiaryName } = useBeneficiaries();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
   const walletById = new Map(wallets.map(wallet => [wallet.id, wallet]));
   const walletReference = (entry: typeof wallets[number]) => {
@@ -191,7 +190,7 @@ export default function TransactionsScreen() {
               : undefined;
             return (
               <div
-                className="row"
+                className="row transaction-row"
                 key={transaction.id}
                 onClick={() =>
                   ui.openItem(
@@ -213,13 +212,16 @@ export default function TransactionsScreen() {
                       </span>
                     )}
                     {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
-                      .map((label) => (
-                        <span className="chip" data-cat={categoryTone(label)} key={label}>{label}</span>
+                      .map((label, index, labels) => (
+                        <span
+                          className={`chip${index < labels.length - 1 ? ' tx-category-parent' : ''}`}
+                          data-cat={categoryTone(label)}
+                          key={label}
+                        >
+                          {label}
+                        </span>
                       ))}
                     {transaction.merchant && <span className="chip">📍 {transaction.merchant}</span>}
-                    {transaction.beneficiaryId && (
-                      <span className="chip">👤 {beneficiaryName(transaction.beneficiaryId) ?? transaction.recipient}</span>
-                    )}
                     {transaction.type === 'transfer' && transaction.savingId && (
                       <span className="chip saving-destination">
                         Tabungan · {savingName(transaction.savingId) ?? 'Tabungan'}

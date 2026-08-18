@@ -30,10 +30,8 @@ export default function WalletsScreen() {
   const debit = wallets.filter(w => w.kind === 'debit').sort(byCategoryThenName);
   const credit = wallets.filter(w => w.kind === 'credit').sort(byCategoryThenName);
   const walletName = (id: string) => wallets.find(w => w.id === id)?.name ?? 'dompet';
-  const savingOwner = (saving: typeof savings[number]) =>
-    saving.ownership === 'other' && saving.recipientName
-      ? t('wallets.savingForOther', { name: saving.recipientName })
-      : t('wallets.savingForSelf');
+  const savingOwnershipLabel = (ownership: 'self' | 'other') =>
+    ownership === 'other' ? t('wallets.savingForOther') : t('wallets.savingForSelf');
   const [hidden, setHidden] = useState(false);
   const [selectedWalletId, setSelectedWalletId] = useState<string | 'all'>('all');
   const walletOrder = ui.prefs.walletOrder;
@@ -431,7 +429,7 @@ export default function WalletsScreen() {
                 const pct = saving.target ? Math.min(100, Math.round((saving.balance / saving.target) * 100)) : null;
                 return (
                   <div className="plan" key={saving.id} onClick={() => ui.openItem(saving.name, 'tabungan', saving.id)}>
-                    <div className="ph"><div><div className="pt">{saving.emoji ? `${saving.emoji} ` : ''}{saving.name}</div><div className="pmeta">Disimpan dari {current.name} Â· {savingOwner(saving)}</div></div>{pct !== null && <span className="pstatus active">{pct}%</span>}</div>
+                    <div className="ph"><div><div className="pt">{saving.emoji ? `${saving.emoji} ` : ''}{saving.name}</div><div className="pmeta">Disimpan dari {current.name} · {savingOwnershipLabel(saving.ownership)}</div></div>{pct !== null && <span className="pstatus active">{pct}%</span>}</div>
                     <div className="ptg">{money.fmt(saving.balance)}{saving.target && <small> · target {money.fmtCompact(saving.target)}</small>}</div>
                     {pct !== null && <div className="pbar"><i style={{ width: `${pct}%` }} /></div>}
                   </div>
@@ -537,7 +535,7 @@ export default function WalletsScreen() {
         return (
           <div className="plan" key={s.id} onClick={() => ui.openItem(s.name, 'tabungan', s.id)}>
             <div className="ph">
-              <div><div className="pt">{s.emoji ? s.emoji + ' ' : ''}{s.name}</div><div className="pmeta">{t('wallets.savingIn')} {walletName(s.walletId)} Â· {savingOwner(s)}</div></div>
+              <div><div className="pt">{s.emoji ? s.emoji + ' ' : ''}{s.name}</div><div className="pmeta">{t('wallets.savingIn')} {walletName(s.walletId)} · {savingOwnershipLabel(s.ownership)}</div></div>
               {pct !== null && <span className="pstatus active">{pct}%</span>}
             </div>
             <div className="ptg">{money.fmt(s.balance)}{s.target ? <small> · {t('wallets.target')} {money.fmtCompact(s.target)}</small> : <small> · {t('wallets.noTarget')}</small>}</div>

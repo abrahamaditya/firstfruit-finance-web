@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import {
-  Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary,
+  Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder,
 } from '../core/domain/types';
 import {
   totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet, remainingBudget,
@@ -126,19 +126,6 @@ export function useSavings() {
     reload,
     reserved: totalReserved(active),
     reservedIn: (walletId: string) => reservedInWallet(walletId, active),
-  };
-}
-
-/** Daftar orang/kelompok yang dapat dipakai ulang pada transaksi dan tabungan. */
-export function useBeneficiaries() {
-  const { data, loading, reload } = useCollection<Beneficiary>(r => r.beneficiaries);
-  const active = data.filter(entry => !entry.archived);
-  return {
-    beneficiaries: [...active].sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name)),
-    all: data,
-    nameOf: (id?: string) => id ? data.find(entry => entry.id === id)?.name : undefined,
-    loading,
-    reload,
   };
 }
 

@@ -1,4 +1,4 @@
-import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary } from '../domain/types';
+import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder } from '../domain/types';
 import type { Receipt, SplitPerson } from '../domain/split';
 
 // Kontrak repository generik — domain/application tidak bergantung pada SDK database.
@@ -43,6 +43,5 @@ export interface DataRepositories {
   plans: Repository<Plan>;
   savings: Repository<Saving>;
   reminders: Repository<Reminder>;
-  beneficiaries: Repository<Beneficiary>;
   commands: FinanceCommands;
 }

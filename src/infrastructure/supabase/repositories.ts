@@ -4,7 +4,6 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
   Budget,
   BudgetPeriod,
-  Beneficiary,
   Plan,
   Receivable,
   Reminder,
@@ -68,6 +67,9 @@ function mapTransaction(row: DbRow): Transaction {
       : [],
     merchant: row.merchant ?? undefined,
     budgetId: row.budget_id ?? undefined,
+    benefitScope: row.benefit_scope === 'shared' || row.benefit_scope === 'other'
+      ? row.benefit_scope
+      : 'self',
     installmentTenorMonths: row.installment_tenor_months == null
       ? undefined
       : amount(row.installment_tenor_months),
@@ -76,7 +78,6 @@ function mapTransaction(row: DbRow): Transaction {
     adjustmentReason: rawType === 'adjustment' ? row.note ?? undefined : undefined,
     note: row.note ?? undefined,
     recipient: row.recipient ?? undefined,
-    beneficiaryId: row.beneficiary_id ?? undefined,
     isReceivable: amount(row.owed_amount_minor) > 0 || undefined,
     owedAmount: row.owed_amount_minor == null ? undefined : amount(row.owed_amount_minor),
     subscriptionId: row.subscription_id ?? undefined,
@@ -159,10 +160,8 @@ function mapSaving(row: DbRow): Saving {
     target: row.target_minor == null ? undefined : amount(row.target_minor),
     targetDate: row.target_date ?? undefined,
     emoji: row.emoji ?? undefined,
-    archived: Boolean(row.archived_at),
     ownership: row.ownership === 'other' ? 'other' : 'self',
-    beneficiaryId: row.beneficiary_id ?? undefined,
-    recipientName: row.recipient_name ?? undefined,
+    archived: Boolean(row.archived_at),
   };
 }
 
@@ -174,16 +173,6 @@ function mapReminder(row: DbRow): Reminder {
     note: row.note ?? undefined,
     done: row.status === 'done',
     amount: row.amount_minor == null ? undefined : amount(row.amount_minor),
-  };
-}
-
-function mapBeneficiary(row: DbRow): Beneficiary {
-  return {
-    id: row.id,
-    name: row.name,
-    kind: row.kind === 'group' ? 'group' : 'person',
-    note: row.note ?? undefined,
-    archived: Boolean(row.archived_at),
   };
 }
 
@@ -284,8 +273,10 @@ export function createSupabaseRepositories(
       installment_tenor_months: item.type === 'expense'
         ? item.installmentTenorMonths ?? null
         : null,
+      benefit_scope: item.type === 'expense' && (item.benefitScope === 'shared' || item.benefitScope === 'other')
+        ? item.benefitScope
+        : 'self',
       recipient: item.recipient ?? null,
-      beneficiary_id: item.beneficiaryId ?? null,
       owed_amount_minor: item.owedAmount ?? null,
       settles_receivable_id: item.settlesReceivableId ?? null,
       subscription_id: item.subscriptionId ?? null,
@@ -399,20 +390,24 @@ export function createSupabaseRepositories(
     },
     async create(item) {
       const payload = await postPayload(item);
-      const { data, error } = await supabase.rpc('post_transaction_with_beneficiary', { p_payload: payload });
+      const { data, error } = await supabase.rpc('post_transaction_with_benefit_scope', { p_payload: payload });
       throwIfError(error, 'Gagal memposting transaksi');
       return (await transactions.get(data as string))!;
     },
     async update(id, patch) {
       const before = await transactions.get(id);
       if (!before) throw new Error('Transaksi tidak ditemukan');
-      const replacement = await postPayload({ ...before, ...patch });
-      const { data, error } = await supabase.rpc('replace_transaction_with_beneficiary', {
+      const next = { ...before, ...patch };
+      const replacement = await postPayload(next);
+      const { data, error } = await supabase.rpc('replace_transaction_with_benefit_scope', {
         p_payload: {
           workspace_id: workspaceId,
           transaction_id: id,
           idempotency_key: idempotencyKey(),
           reason: 'Transaksi diedit',
+          benefit_scope: next.type === 'expense' && (next.benefitScope === 'shared' || next.benefitScope === 'other')
+            ? next.benefitScope
+            : 'self',
           replacement,
         },
       });
@@ -697,7 +692,7 @@ export function createSupabaseRepositories(
       return data ? mapSaving(data) : null;
     },
     async create(item) {
-      const { data, error } = await supabase.rpc('create_saving_goal_with_beneficiary', {
+      const { data, error } = await supabase.rpc('create_saving_goal', {
         p_payload: {
           workspace_id: workspaceId,
           idempotency_key: idempotencyKey(),
@@ -708,8 +703,6 @@ export function createSupabaseRepositories(
           target_date: item.targetDate ?? null,
           emoji: item.emoji ?? null,
           ownership: item.ownership,
-          beneficiary_id: item.beneficiaryId ?? null,
-          recipient_name: item.recipientName ?? null,
         },
       });
       throwIfError(error, 'Gagal membuat tabungan');
@@ -719,7 +712,7 @@ export function createSupabaseRepositories(
       const current = await savings.get(id);
       if (!current) throw new Error('Tabungan tidak ditemukan');
       const next = { ...current, ...patch };
-      const { error } = await supabase.rpc('update_saving_goal_with_beneficiary', {
+      const { error } = await supabase.rpc('update_saving_goal', {
         p_payload: {
           workspace_id: workspaceId,
           saving_id: id,
@@ -730,8 +723,6 @@ export function createSupabaseRepositories(
           target_date: next.targetDate ?? null,
           emoji: next.emoji ?? null,
           ownership: next.ownership,
-          beneficiary_id: next.beneficiaryId ?? null,
-          recipient_name: next.recipientName ?? null,
         },
       });
       throwIfError(error, 'Gagal memperbarui tabungan');
@@ -807,49 +798,6 @@ export function createSupabaseRepositories(
     },
   };
 
-  const beneficiaries: Repository<Beneficiary> = {
-    async list() {
-      const { data, error } = await supabase.from('beneficiaries').select('*')
-        .eq('workspace_id', workspaceId).order('kind').order('name');
-      throwIfError(error, 'Gagal memuat orang dan kelompok');
-      return (data ?? []).map(mapBeneficiary);
-    },
-    async get(id) {
-      const { data, error } = await supabase.from('beneficiaries').select('*')
-        .eq('workspace_id', workspaceId).eq('id', id).maybeSingle();
-      throwIfError(error, 'Gagal memuat pihak terkait');
-      return data ? mapBeneficiary(data) : null;
-    },
-    async create(item) {
-      const { data, error } = await supabase.from('beneficiaries').insert({
-        workspace_id: workspaceId,
-        name: item.name,
-        kind: item.kind,
-        note: item.note ?? null,
-        created_by: userId,
-      }).select('*').single();
-      throwIfError(error, 'Gagal menambahkan pihak terkait');
-      return mapBeneficiary(data!);
-    },
-    async update(id, patch) {
-      const changes: DbRow = {};
-      if (patch.name !== undefined) changes.name = patch.name;
-      if (patch.kind !== undefined) changes.kind = patch.kind;
-      if (patch.note !== undefined) changes.note = patch.note ?? null;
-      if (patch.archived !== undefined) changes.archived_at = patch.archived ? new Date().toISOString() : null;
-      const { data, error } = await supabase.from('beneficiaries').update(changes)
-        .eq('workspace_id', workspaceId).eq('id', id).select('*').single();
-      throwIfError(error, 'Gagal memperbarui pihak terkait');
-      return mapBeneficiary(data!);
-    },
-    async remove(id) {
-      const { error } = await supabase.from('beneficiaries')
-        .update({ archived_at: new Date().toISOString() })
-        .eq('workspace_id', workspaceId).eq('id', id);
-      throwIfError(error, 'Gagal mengarsipkan pihak terkait');
-    },
-  };
-
   async function defaultAssetWalletId(explicit?: string) {
     if (explicit) return explicit;
     const { data: preference } = await supabase.from('user_workspace_preferences')
@@ -900,7 +848,6 @@ export function createSupabaseRepositories(
     plans,
     savings,
     reminders,
-    beneficiaries,
     commands: {
       async closePeriod(periodId, options) {
         const { data, error } = await supabase.rpc('close_budget_period', {

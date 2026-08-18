@@ -6,11 +6,11 @@ export type WalletMedium = 'bank' | 'ewallet' | 'cash' | 'credit';
 export type CardNetwork = 'visa' | 'mastercard' | 'gpn';
 export type TxType = 'expense' | 'income' | 'transfer';
 export type TxNature = 'fixed' | 'unexpected';
+export type TransactionBenefitScope = 'self' | 'shared' | 'other';
 export type BillingCycle = 'weekly' | 'monthly' | 'quarterly' | 'yearly' | 'custom';
 export type SubStatus = 'active' | 'paused' | 'cancelled' | 'ended';
 export type PlanStatus = 'draft' | 'active' | 'done';
 export type ReceivableStatus = 'open' | 'partial' | 'settled' | 'written_off';
-export type BeneficiaryKind = 'person' | 'group';
 
 export interface Wallet {
   id: string; name: string; kind: WalletKind; medium?: WalletMedium; bank?: string;
@@ -22,6 +22,7 @@ export interface Wallet {
 }
 export interface Transaction {
   id: string; type: TxType; nature: TxNature; amount: number;
+  benefitScope?: TransactionBenefitScope;
   walletId: string; toWalletId?: string; labels: string[];
   merchant?: string;            // tempat transaksi: Indomaret, Shopee, kaki lima, …
   budgetId?: string;            // realisasi expense/transfer biasa; bukan pembayaran kartu
@@ -32,7 +33,7 @@ export interface Transaction {
   // dari belanja nyata. Ditandai agar bisa dikecualikan dari analisa perilaku.
   adjustment?: boolean;
   adjustmentReason?: string;
-  note?: string; recipient?: string; beneficiaryId?: string; isReceivable?: boolean;
+  note?: string; recipient?: string; isReceivable?: boolean;
   owedAmount?: number;          // nominal transaksi yang menjadi piutang
   subscriptionId?: string; date: string;
 }
@@ -64,11 +65,8 @@ export interface Receivable {
 // di sini "dikunci" — dikurangi dari saldo tersedia & tidak dihitung sebagai safe-to-spend.
 export interface Saving {
   id: string; name: string; walletId: string; balance: number;
+  ownership: 'self' | 'other';
   target?: number; targetDate?: string; emoji?: string; archived?: boolean;
-  ownership: 'self' | 'other'; beneficiaryId?: string; recipientName?: string;
-}
-export interface Beneficiary {
-  id: string; name: string; kind: BeneficiaryKind; note?: string; archived?: boolean;
 }
 export interface Plan { id: string; title: string; target: number; saved: number; targetDate?: string; status: PlanStatus; }
 // Pengingat / to-do berbasis tanggal yang tampil di kalender bersama jatuh tempo langganan.

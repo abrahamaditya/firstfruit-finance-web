@@ -1,4 +1,4 @@
-import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder, Beneficiary } from '../core/domain/types';
+import { Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder } from '../core/domain/types';
 
 const iso = (daysFromNow: number) => { const d = new Date(); d.setDate(d.getDate() + daysFromNow); return d.toISOString(); };
 
@@ -52,10 +52,6 @@ export const seedReminders: Reminder[] = [
   { id: 'rm3', title: 'Kirim invoice klien', date: iso(-1), done: true },
 ];
 export const seedSavings: Saving[] = [
-  { id: 'sv_jeje', name: 'Uang Kuliah Jeje', walletId: 'w_blu', balance: 2_000_000, target: 6_000_000, targetDate: '2026-12-01', emoji: '🎓', ownership: 'other', recipientName: 'Jeje' },
+  { id: 'sv_jeje', name: 'Uang Kuliah Jeje', walletId: 'w_blu', balance: 2_000_000, target: 6_000_000, targetDate: '2026-12-01', emoji: '🎓', ownership: 'other' },
   { id: 'sv_darurat', name: 'Dana Darurat', walletId: 'w_bca', balance: 5_000_000, emoji: '🛡️', ownership: 'self' },
-];
-export const seedBeneficiaries: Beneficiary[] = [
-  { id: 'beneficiary_jeje', name: 'Jeje', kind: 'person' },
-  { id: 'beneficiary_keluarga', name: 'Keluarga', kind: 'group' },
 ];

@@ -11,7 +11,7 @@ import {
   categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
   projectedSpending, runwayDays, transactionPath, weekdayPattern,
 } from '../core/domain/report-insights';
-import type { Transaction } from '../core/domain/types';
+import type { Transaction, TransactionBenefitScope } from '../core/domain/types';
 
 type Range = 'daily' | 'activePeriod' | '3months' | '6months';
 type Flow = 'expense' | 'actualExpense' | 'income' | 'actualIncome';
@@ -33,6 +33,12 @@ const realCashflowDelta = (transaction: Transaction) => {
   if (isActualIncome(transaction)) return transaction.amount;
   if (isActualExpense(transaction)) return -actualExpenseAmount(transaction);
   return 0;
+};
+
+const benefitScopeOf = (transaction: Transaction): TransactionBenefitScope => {
+  if (transaction.type !== 'expense') return 'self';
+  if (transactionPath(transaction)[0] === 'Giving') return 'other';
+  return transaction.benefitScope === 'shared' ? 'shared' : 'self';
 };
 
 const monthKey = (value: Date | string) => {
@@ -154,6 +160,23 @@ export default function ReportsScreen() {
   const actualIncome = actualIncomeTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
   const spending = expenses.reduce((sum, transaction) => sum + transaction.amount, 0);
   const actualExpense = actualExpenseTransactions.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const benefitRows: Array<{
+    scope: TransactionBenefitScope;
+    label: string;
+    color: string;
+    total: number;
+    count: number;
+  }> = [
+    { scope: 'self', label: t('reports.benefitSelf'), color: '#8AB6F9', total: 0, count: 0 },
+    { scope: 'shared', label: t('reports.benefitShared'), color: '#F5C26B', total: 0, count: 0 },
+    { scope: 'other', label: t('reports.benefitOther'), color: '#B69AF6', total: 0, count: 0 },
+  ];
+  expenses.forEach((transaction) => {
+    const row = benefitRows.find((item) => item.scope === benefitScopeOf(transaction));
+    if (!row) return;
+    row.total += transaction.amount;
+    row.count += 1;
+  });
   const cashIn = income + transferVolume;
   const cashOut = spending + transferVolume;
   const netCashflow = actualIncome - actualExpense;
@@ -409,6 +432,7 @@ export default function ReportsScreen() {
         'Jenis',
         'Klasifikasi pemasukan',
         'Klasifikasi pengeluaran',
+        'Pemanfaatan pengeluaran',
         'Sifat',
         'Catatan',
         'Tempat',
@@ -436,6 +460,11 @@ export default function ReportsScreen() {
           transaction.type === 'expense'
             ? actualExpenseAmount(transaction) > 0 ? 'Pengeluaran riil' : 'Pembentukan piutang'
             : transaction.type === 'transfer' ? 'Transfer' : '',
+          transaction.type === 'expense'
+            ? benefitScopeOf(transaction) === 'shared'
+              ? 'Dipakai bersama'
+              : benefitScopeOf(transaction) === 'other' ? 'Untuk orang lain' : 'Diri sendiri sepenuhnya'
+            : '',
           transaction.nature === 'unexpected' ? 'tak terduga' : 'terencana',
           transaction.note || '',
           transaction.merchant || '',
@@ -524,6 +553,43 @@ export default function ReportsScreen() {
             <small>{t('reports.actualIncomeMinusExpense')}</small>
           </div>
         </div>
+      </section>
+
+      <section className="report-metric-section report-benefit-summary">
+        <div className="report-metric-heading">
+          <div>
+            <span>{t('reports.benefitSummary')}</span>
+            <small>{selectedRangeLabel}</small>
+          </div>
+          <p>{t('reports.benefitSummaryLead')}</p>
+        </div>
+        {expenses.length === 0 ? (
+          <div className="saving-empty">{t('reports.benefitNoExpense')}</div>
+        ) : (
+          <div className="benefit-card">
+            <div className="benefit-total">
+              <span>{t('reports.benefitRecordedTotal')}</span>
+              <b>{money.fmtCompact(spending)}</b>
+            </div>
+            <div className="benefit-stack" aria-label={t('reports.benefitSummary')}>
+              {benefitRows.filter((row) => row.total > 0).map((row) => (
+                <i key={row.scope} style={{ width: `${(row.total / spending) * 100}%`, background: row.color }} />
+              ))}
+            </div>
+            <div className="benefit-rows">
+              {benefitRows.map((row) => {
+                const share = spending ? Math.round((row.total / spending) * 100) : 0;
+                return (
+                  <div className="benefit-row" key={row.scope}>
+                    <span><i style={{ background: row.color }} />{row.label}</span>
+                    <b>{money.fmtCompact(row.total)}</b>
+                    <small>{row.count} {t('reports.txCount')} · {share}% {t('reports.ofSpending')}</small>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="report-secondary-summary">
@@ -978,10 +1044,10 @@ export default function ReportsScreen() {
                                 <small>
                                   {new Date(transaction.date).toLocaleDateString(locale, {
                                     day: 'numeric', month: 'short', year: 'numeric',
-                                  })} Â· {category}
+                                  })} · {category}
                                 </small>
                               </span>
-                              <b className="negative">âˆ’{money.fmt(transaction.amount)}</b>
+                              <b className="negative">−{money.fmt(transaction.amount)}</b>
                             </button>
                           );
                         })}

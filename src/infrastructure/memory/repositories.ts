@@ -22,7 +22,6 @@ export function createMemoryRepositories(): DataRepositories {
   const plans = new MemoryRepo(seed.seedPlans);
   const savings = new MemoryRepo(seed.seedSavings);
   const reminders = new MemoryRepo(seed.seedReminders);
-  const beneficiaries = new MemoryRepo(seed.seedBeneficiaries);
   return {
     wallets,
     transactions,
@@ -33,7 +32,6 @@ export function createMemoryRepositories(): DataRepositories {
     plans,
     savings,
     reminders,
-    beneficiaries,
     commands: {
       async closePeriod(periodId, options) {
         const closed = await periods.get(periodId);
