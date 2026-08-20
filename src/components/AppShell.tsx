@@ -235,7 +235,7 @@ const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor'] },
   {
     title: 'Klasifikasi',
-    keys: ['pillar', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory', 'receivableId'],
+    keys: ['pillar', 'debtor', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory', 'receivableId'],
   },
   { title: 'Pemanfaatan', keys: ['benefitScope'] },
   { title: 'Anggaran', keys: ['includeBudget', 'budgetId'] },
@@ -518,6 +518,7 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
       pillar: value,
       subCategory: '',
       categoryDetail: '',
+      debtor: value === 'Receivables' ? form.debtor : '',
       benefitScope: value === 'Giving' ? 'other' : form.benefitScope === 'other' ? 'self' : form.benefitScope,
     };
   }
@@ -594,8 +595,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [debitWalletOptions, setDebitWalletOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [savingOptions, setSavingOptions] = useState<Array<{ value: string; label: string; walletId: string }>>([]);
   const [budgetOptions, setBudgetOptions] = useState<CategoryOption[]>([]);
+  const [periodBudgetTemplates, setPeriodBudgetTemplates] = useState<Array<{
+    id: string; category: string; allocated: number;
+  }>>([]);
+  const [periodBudgetSource, setPeriodBudgetSource] = useState('');
+  const [periodCopyBudgetIds, setPeriodCopyBudgetIds] = useState<string[]>([]);
   const [receivableOptions, setReceivableOptions] = useState<CategoryOption[]>([]);
   const [noteSuggestions, setNoteSuggestions] = useState<string[]>([]);
+  const [debtorSuggestions, setDebtorSuggestions] = useState<string[]>([]);
   const [openSuggest, setOpenSuggest] = useState<string | null>(null);
   const [showTransactionDetails, setShowTransactionDetails] = useState(false);
   const [toast, setToast] = useState('');
@@ -895,6 +902,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const showForm = (nextType: CreateType) => {
         setFormDraftReady(false);
         setShowTransactionDetails(isEdit && (nextType === 'transaksi' || nextType === 'transfer'));
+        if (nextType === 'periode' && !isEdit) {
+          setPeriodCopyBudgetIds(periodBudgetTemplates.map((budget) => budget.id));
+        }
         setCreate({
           type: nextType,
           isEdit: nextType === type ? isEdit : false,
@@ -923,7 +933,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
 
       showForm(type);
     },
-    [notify, repos],
+    [notify, periodBudgetTemplates, repos],
   );
 
   const openSavingTransfer = useCallback((savingId: string, savingName: string) => {
@@ -1156,6 +1166,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             showIf: isExpense,
           },
           {
+            key: 'debtor',
+            label: 'Nama pihak yang berutang',
+            placeholder: 'Pilih atau ketik nama',
+            requiredIf: (f) => isExpense(f) && f.pillar === 'Receivables',
+            showIf: (f) => isExpense(f) && f.pillar === 'Receivables',
+            suggestions: debtorSuggestions,
+          },
+          {
             key: 'subCategory',
             label: 'Kategori 2 (Sub-kategori)',
             type: 'select',
@@ -1245,6 +1263,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           pillar: '',
           subCategory: '',
           categoryDetail: '',
+          debtor: '',
           benefitScope: 'self',
           incomeCategory: '',
           incomePillar: '',
@@ -1510,7 +1529,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       return configs[type];
     },
     [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions,
-      noteSuggestions, prefs.defaultWalletId, create.isEdit],
+      noteSuggestions, debtorSuggestions, prefs.defaultWalletId, create.isEdit],
   );
 
   // Notifikasi dan status bacanya tersimpan per akun di PostgreSQL.
@@ -1585,7 +1604,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const unreadCount = notifications.filter((entry) => !readNotifs.includes(entry.id)).length;
 
   useEffect(() => {
-    repos.receivables.list().then((receivables) =>
+    repos.receivables.list().then((receivables) => {
       setReceivableOptions(
         receivables
           .filter((entry) => entry.status ? entry.status === 'open' || entry.status === 'partial' : !entry.settled)
@@ -1593,8 +1612,20 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             value: entry.id,
             label: `${entry.person} · ${formatIDR(entry.amount - (entry.paid ?? 0))} (${entry.source})`,
           })),
-      ),
-    );
+      );
+      // Nama dari piutang lama maupun yang masih aktif dapat dipilih ulang. Urutan
+      // repository sudah terbaru lebih dahulu; deduplikasi mempertahankan penulisan terbaru.
+      const seenDebtors = new Set<string>();
+      setDebtorSuggestions(
+        receivables.flatMap((entry) => {
+          const person = entry.person.trim();
+          const identity = person.toLocaleLowerCase('id-ID');
+          if (!person || seenDebtors.has(identity)) return [];
+          seenDebtors.add(identity);
+          return [person];
+        }),
+      );
+    });
   }, [repos, dataVersion]);
 
   useEffect(() => {
@@ -1627,6 +1658,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       .then(([budgets, txs, periods]) => {
       const activePeriod = periods.find(period => period.status === 'open')
         ?? periods.find(period => period.status == null && !period.closed);
+      const budgetSource = activePeriod
+        ?? periods.find((period) => period.status === 'closed' || period.closed);
+      setPeriodBudgetSource(budgetSource?.alias ?? '');
+      setPeriodBudgetTemplates(
+        budgetSource
+          ? budgets
+              .filter((budget) => budget.periodId === budgetSource.id)
+              .sort((a, b) => a.category.localeCompare(
+                b.category,
+                prefs.language === 'EN' ? 'en-US' : 'id-ID',
+                { sensitivity: 'base' },
+              ))
+              .map(({ id, category, allocated }) => ({ id, category, allocated }))
+          : [],
+      );
       setBudgetOptions(
         activePeriod
           ? budgets
@@ -1763,6 +1809,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               );
             }
             if (field.key === 'payer') value = record.type === 'income' ? record.recipient : undefined;
+            if (field.key === 'debtor') value = record.type === 'expense' ? record.recipient : undefined;
             if (field.key === 'incomeNature') value = record.type === 'income' ? record.nature : undefined;
             if (field.key === 'nature') value = record.type === 'income' ? undefined : record.nature;
             if (field.key === 'owed') value = record.owedAmount;
@@ -1969,7 +2016,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             ? 'other' as const
             : form.benefitScope === 'shared' ? 'shared' as const : 'self' as const,
           note: form.note.trim() || undefined,
-          recipient: undefined,
+          recipient: isPiutang ? form.debtor.trim() || undefined : undefined,
           isReceivable: isPiutang || undefined,
           owedAmount: isPiutang ? amount : undefined,
           settlesReceivableId,
@@ -2093,7 +2140,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           end: toIso(form.end),
           closed: false,
         };
-        shouldUpdate ? await repos.periods.update(id!, payload) : await repos.periods.create(payload);
+        shouldUpdate
+          ? await repos.periods.update(id!, payload)
+          : await repos.commands.createPeriod({
+              alias: payload.alias,
+              start: payload.start,
+              end: payload.end,
+              budgetIds: periodCopyBudgetIds,
+            });
       }
 
       setDataVersion((version) => version + 1);
@@ -2758,6 +2812,48 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 </React.Fragment>
               ))}
               </div>
+              {create.type === 'periode' && !create.isEdit && periodBudgetTemplates.length > 0 && (
+                <div className="budget-copy-picker period-create-copy">
+                  <div className="budget-copy-head">
+                    <div>
+                      <b>{t('closing.copyBudgetsTitle')}</b>
+                      <small>{t('period.copyBudgetSource', { name: periodBudgetSource })}</small>
+                    </div>
+                    <span>{t('closing.selectedBudgets', {
+                      selected: periodCopyBudgetIds.length,
+                      total: periodBudgetTemplates.length,
+                    })}</span>
+                  </div>
+                  <label className="budget-copy-all">
+                    <input
+                      type="checkbox"
+                      checked={periodCopyBudgetIds.length === periodBudgetTemplates.length}
+                      onChange={(event) => setPeriodCopyBudgetIds(
+                        event.target.checked ? periodBudgetTemplates.map((budget) => budget.id) : [],
+                      )}
+                    />
+                    <span>{t('closing.selectAllBudgets')}</span>
+                  </label>
+                  <div className="budget-copy-list">
+                    {periodBudgetTemplates.map((budget) => (
+                      <label key={budget.id}>
+                        <input
+                          type="checkbox"
+                          checked={periodCopyBudgetIds.includes(budget.id)}
+                          onChange={(event) => setPeriodCopyBudgetIds((currentIds) =>
+                            event.target.checked
+                              ? [...currentIds, budget.id]
+                              : currentIds.filter((id) => id !== budget.id),
+                          )}
+                        />
+                        <span>{budget.category}</span>
+                        <b>{formatMoney(budget.allocated, prefs.currency, rate)}</b>
+                      </label>
+                    ))}
+                  </div>
+                  <small className="budget-copy-footnote">{t('closing.copyBudgetsDesc')}</small>
+                </div>
+              )}
               {hasTransactionDetails && !showTransactionDetails && transactionDetailsToggle}
             </div>
             <div className="form-actions">

@@ -573,6 +573,10 @@ const D: Record<string, Entry> = {
     id: 'Periode ini sudah ditutup. Angkanya tersimpan sebagai arsip dan tidak bisa diubah lagi.',
     en: 'This period is closed. Its numbers are archived and can no longer change.',
   },
+  'period.copyBudgetSource': {
+    id: 'Salin dari {name}. Pilih anggaran yang ingin dibuat di periode ini.',
+    en: 'Copy from {name}. Choose which budgets to create in this period.',
+  },
 
   // Tutup buku
   'closing.lockAll': { id: 'Kunci semua transaksi', en: 'Lock all transactions' },
@@ -592,6 +596,14 @@ const D: Record<string, Entry> = {
   'closing.closedOnly': { id: '{name} ditutup tanpa periode baru', en: '{name} closed, no new period' },
   'closing.ctaNamed': { id: 'Tutup {from} & buka {to}', en: 'Close {from} & open {to}' },
   'closing.periodPrefix': { id: 'Periode', en: 'Period' },
+  'closing.copyBudgetsTitle': { id: 'Bawa anggaran ke periode baru', en: 'Carry budgets into the new period' },
+  'closing.copyBudgetsDesc': {
+    id: 'Pilih daftar anggaran yang ingin dibuat kembali. Transaksi dan realisasi lama tidak ikut.',
+    en: 'Choose which budgets to recreate. Previous transactions and spending are not copied.',
+  },
+  'closing.selectAllBudgets': { id: 'Pilih semua anggaran', en: 'Select all budgets' },
+  'closing.selectedBudgets': { id: '{selected} dari {total} dipilih', en: '{selected} of {total} selected' },
+  'closing.noBudgetsToCopy': { id: 'Tidak ada anggaran yang perlu dibawa.', en: 'There are no budgets to carry over.' },
 
   // Profil
   'profile.owner': { id: 'PEMILIK AKUN', en: 'ACCOUNT OWNER' },

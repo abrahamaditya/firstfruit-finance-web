@@ -33,6 +33,25 @@ export function createMemoryRepositories(): DataRepositories {
     savings,
     reminders,
     commands: {
+      async createPeriod(options) {
+        const hasOpen = (await periods.list()).some((period) => period.status === 'open');
+        const created = await periods.create({
+          alias: options.alias,
+          start: options.start,
+          end: options.end,
+          closed: false,
+          status: hasOpen ? 'draft' : 'open',
+        });
+        const selected = new Set(options.budgetIds ?? []);
+        const templates = (await budgets.list()).filter((budget) => selected.has(budget.id));
+        await Promise.all(templates.map(({ category, allocated }) => budgets.create({
+          category,
+          allocated,
+          spent: 0,
+          periodId: created.id,
+        })));
+        return created.id;
+      },
       async closePeriod(periodId, options) {
         const closed = await periods.get(periodId);
         await periods.update(periodId, { closed: true, status: 'closed' });
@@ -42,13 +61,24 @@ export function createMemoryRepositories(): DataRepositories {
         const end = new Date(start);
         end.setMonth(end.getMonth() + 1);
         end.setDate(end.getDate() - 1);
-        return (await periods.create({
+        const next = await periods.create({
           alias: options.nextAlias || 'Periode berikutnya',
           start: start.toISOString(),
           end: end.toISOString(),
           closed: false,
           status: 'open',
-        })).id;
+        });
+        const selected = options.budgetIds ? new Set(options.budgetIds) : null;
+        const sourceBudgets = (await budgets.list()).filter((budget) =>
+          budget.periodId === periodId && (!selected || selected.has(budget.id)),
+        );
+        await Promise.all(sourceBudgets.map(({ category, allocated }) => budgets.create({
+          category,
+          allocated,
+          spent: 0,
+          periodId: next.id,
+        })));
+        return next.id;
       },
       async adjustSaving(savingId, amount, action) {
         const goal = await savings.get(savingId);

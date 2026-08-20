@@ -23,6 +23,7 @@ export default function PeriodScreen() {
   const [asking, setAsking] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [copyBudgetIds, setCopyBudgetIds] = useState<string[]>([]);
 
   const current = report.period;
   // Tiga keadaan, bukan dua: draft belum pernah berjalan, jadi ia tidak bisa ditutup
@@ -47,7 +48,11 @@ export default function PeriodScreen() {
     if (!current) return;
     setClosing(true);
     try {
-      await repos.commands.closePeriod(current.id, { createNext, nextAlias });
+      await repos.commands.closePeriod(current.id, {
+        createNext,
+        nextAlias,
+        budgetIds: createNext ? copyBudgetIds : undefined,
+      });
       // Periode yang barusan ditutup tidak lagi jadi pilihan aktif — biarkan layar
       // kembali ke periode berjalan (kalau ada) lewat pilihan kosong.
       ui.selectPeriod(null);
@@ -194,7 +199,13 @@ export default function PeriodScreen() {
           {!asking ? (
             <>
               <div className="note"><Info /><span>{t('closing.dataNote')}</span></div>
-              <button className="cta" onClick={() => setAsking(true)}>
+              <button
+                className="cta"
+                onClick={() => {
+                  setCopyBudgetIds(report.budgets.map((budget) => budget.id));
+                  setAsking(true);
+                }}
+              >
                 <Lock />{t('period.closeCta', { name: current.alias })}
               </button>
             </>
@@ -239,6 +250,50 @@ export default function PeriodScreen() {
                 </div>
               </div>
 
+              {report.budgets.length > 0 ? (
+                <div className="budget-copy-picker">
+                  <div className="budget-copy-head">
+                    <div>
+                      <b>{t('closing.copyBudgetsTitle')}</b>
+                      <small>{t('closing.copyBudgetsDesc')}</small>
+                    </div>
+                    <span>{t('closing.selectedBudgets', {
+                      selected: copyBudgetIds.length,
+                      total: report.budgets.length,
+                    })}</span>
+                  </div>
+                  <label className="budget-copy-all">
+                    <input
+                      type="checkbox"
+                      checked={copyBudgetIds.length === report.budgets.length}
+                      onChange={(event) => setCopyBudgetIds(
+                        event.target.checked ? report.budgets.map((budget) => budget.id) : [],
+                      )}
+                    />
+                    <span>{t('closing.selectAllBudgets')}</span>
+                  </label>
+                  <div className="budget-copy-list">
+                    {report.budgets.map((budget) => (
+                      <label key={budget.id}>
+                        <input
+                          type="checkbox"
+                          checked={copyBudgetIds.includes(budget.id)}
+                          onChange={(event) => setCopyBudgetIds((currentIds) =>
+                            event.target.checked
+                              ? [...currentIds, budget.id]
+                              : currentIds.filter((id) => id !== budget.id),
+                          )}
+                        />
+                        <span>{budget.category}</span>
+                        <b>{money.fmt(budget.allocated)}</b>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="note"><Info /><span>{t('closing.noBudgetsToCopy')}</span></div>
+              )}
+
               <button
                 className="cta"
                 disabled={!confirmed || closing}
@@ -256,7 +311,7 @@ export default function PeriodScreen() {
               <button
                 className="ghost-cta subtle"
                 disabled={closing}
-                onClick={() => { setAsking(false); setConfirmed(false); }}
+                onClick={() => { setAsking(false); setConfirmed(false); setCopyBudgetIds([]); }}
               >
                 {t('common.cancel')}
               </button>

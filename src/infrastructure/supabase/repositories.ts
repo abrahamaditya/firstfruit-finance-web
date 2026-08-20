@@ -449,6 +449,7 @@ export function createSupabaseRepositories(
         workspace_id: workspaceId,
         period_id: periodId,
         category_id: categoryId,
+        name: item.category.trim(),
         allocated_minor: item.allocated,
         created_by: userId,
       }).select('id').single();
@@ -458,12 +459,19 @@ export function createSupabaseRepositories(
     async update(id, patch) {
       const current = await budgets.get(id);
       if (!current) throw new Error('Anggaran tidak ditemukan');
-      const categoryId = await ensureCategory(patch.category ?? current.category, 'expense');
-      const { error } = await supabase.from('budgets').update({
-        category_id: categoryId,
+      // PostgREST tidak menganggap pembaruan dengan nol baris (mis. akses hanya-baca
+      // atau periode sudah ditutup) sebagai error. Minta kembali barisnya agar UI
+      // tidak pernah menampilkan notifikasi sukses palsu.
+      const { data, error } = await supabase.from('budgets').update({
+        // Nama anggaran independen dari kategori internal. Mengubah "Offering"
+        // menjadi "Persembahan" tidak boleh dipetakan balik ke kategori sistem.
+        name: patch.category?.trim() || current.category,
         allocated_minor: patch.allocated ?? current.allocated,
-      }).eq('workspace_id', workspaceId).eq('id', id);
+      }).eq('workspace_id', workspaceId).eq('id', id).select('id').maybeSingle();
       throwIfError(error, 'Gagal memperbarui anggaran');
+      if (!data) {
+        throw new Error('Anggaran tidak dapat diperbarui. Pastikan Anda editor dan periode anggaran masih aktif.');
+      }
       return (await budgets.get(id))!;
     },
     async remove(id) {
@@ -849,6 +857,20 @@ export function createSupabaseRepositories(
     savings,
     reminders,
     commands: {
+      async createPeriod(options) {
+        const { data, error } = await supabase.rpc('create_budget_period_with_budgets', {
+          p_payload: {
+            workspace_id: workspaceId,
+            idempotency_key: idempotencyKey(),
+            alias: options.alias,
+            start_date: options.start.slice(0, 10),
+            end_date: options.end.slice(0, 10),
+            copy_budget_ids: options.budgetIds ?? [],
+          },
+        });
+        throwIfError(error, 'Gagal membuat periode');
+        return data as string;
+      },
       async closePeriod(periodId, options) {
         const { data, error } = await supabase.rpc('close_budget_period', {
           p_payload: {
@@ -857,6 +879,9 @@ export function createSupabaseRepositories(
             create_next: options.createNext,
             next_alias: options.createNext ? options.nextAlias ?? '' : '',
             copy_budgets: options.createNext,
+            ...(options.createNext && options.budgetIds
+              ? { copy_budget_ids: options.budgetIds }
+              : {}),
             idempotency_key: idempotencyKey(),
           },
         });

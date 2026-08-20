@@ -133,6 +133,7 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          name: string | null
           notes: string | null
           period_id: string
           updated_at: string
@@ -146,6 +147,7 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          name?: string | null
           notes?: string | null
           period_id: string
           updated_at?: string
@@ -159,6 +161,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          name?: string | null
           notes?: string | null
           period_id?: string
           updated_at?: string
@@ -2391,6 +2394,10 @@ export type Database = {
         Returns: undefined
       }
       close_budget_period: { Args: { p_payload: Json }; Returns: string }
+      create_budget_period_with_budgets: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       create_manual_receivable: { Args: { p_payload: Json }; Returns: string }
       create_saving_goal: { Args: { p_payload: Json }; Returns: string }
       create_wallet: { Args: { p_payload: Json }; Returns: string }

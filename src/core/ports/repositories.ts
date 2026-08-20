@@ -14,6 +14,15 @@ export interface Repository<T extends { id: string }> {
 export interface ClosePeriodOptions {
   createNext: boolean;
   nextAlias?: string;
+  /** Anggaran periode berjalan yang dibuat ulang di periode berikutnya. */
+  budgetIds?: string[];
+}
+
+export interface CreatePeriodOptions {
+  alias: string;
+  start: string;
+  end: string;
+  budgetIds?: string[];
 }
 
 /** Detail penerimaan saat piutang dilunasi. */
@@ -24,6 +33,8 @@ export interface SettleReceivableOptions {
 }
 
 export interface FinanceCommands {
+  /** Membuat periode dan, bila dipilih, menduplikasi template anggarannya. */
+  createPeriod(options: CreatePeriodOptions): Promise<string>;
   /** Mengembalikan id periode baru, atau null bila ditutup tanpa membuka periode berikutnya. */
   closePeriod(periodId: string, options: ClosePeriodOptions): Promise<string | null>;
   adjustSaving(savingId: string, amount: number, action: 'reserve' | 'release'): Promise<void>;

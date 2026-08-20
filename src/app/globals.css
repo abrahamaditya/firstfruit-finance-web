@@ -1090,6 +1090,18 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .closing-steps>div>strong{font-size:10.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .confirm-box{display:flex;align-items:flex-start;gap:10px;color:var(--ink-soft);font-size:11.5px;line-height:1.4;margin-top:14px;padding:0 4px;cursor:pointer}
 .confirm-box input{margin-top:2px;accent-color:var(--emerald)}
+.budget-copy-picker{margin:14px 0;padding:14px;border:1px solid var(--line);border-radius:16px;background:var(--surface)}
+.budget-copy-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding-bottom:12px}
+.budget-copy-head>div{min-width:0}.budget-copy-head b{display:block;font-size:13px}.budget-copy-head small{display:block;margin-top:3px;color:var(--ink-faint);font-size:10.5px;line-height:1.45}
+.budget-copy-head>span{flex:0 0 auto;padding:4px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft);font-size:9.5px;font-weight:750}
+.budget-copy-all,.budget-copy-list label{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;cursor:pointer}
+.budget-copy-all{padding:10px 8px;border-block:1px solid var(--line);color:var(--ink-soft);font-size:11px;font-weight:750}
+.budget-copy-picker input{width:15px;height:15px;margin:0;accent-color:var(--emerald)}
+.budget-copy-list{display:grid;max-height:240px;overflow-y:auto;overscroll-behavior:contain}
+.budget-copy-list label{padding:11px 8px;border-bottom:1px solid var(--line);font-size:12px}.budget-copy-list label:last-child{border-bottom:0}
+.budget-copy-list span{min-width:0;overflow-wrap:anywhere;font-weight:700}.budget-copy-list b{font-family:var(--nominal);font-size:10.5px;color:var(--ink-soft);font-variant-numeric:tabular-nums}
+.period-create-copy{margin:14px 0 4px}.budget-copy-footnote{display:block;margin-top:10px;color:var(--ink-faint);font-size:10px;line-height:1.45}
+@media(max-width:520px){.budget-copy-head{display:block}.budget-copy-head>span{display:inline-block;margin-top:8px}.budget-copy-list{max-height:210px}}
 
 /* Radius kartu dibuat lebih tenang dan konsisten. Kartu showcase tetap sedikit lebih
    membulat, tetapi tidak lagi terasa seperti kapsul besar. */
@@ -1340,8 +1352,60 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .wallets-empty span{max-width:46ch;line-height:1.6}
 .wallets-empty .cta{margin-top:20px}
 
-.toast{position:fixed;left:50%;bottom:106px;transform:translate(-50%,20px);z-index:80;background:#eefcf5;color:#073522;border-radius:99px;padding:11px 18px;font-size:12.5px;font-weight:800;box-shadow:0 16px 38px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.25s;white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis}
+.toast{position:fixed;left:50%;bottom:106px;transform:translate(-50%,20px);z-index:80;background:#eefcf5;color:#073522;border-radius:18px;padding:11px 18px;font-size:12.5px;font-weight:800;box-shadow:0 16px 38px rgba(0,0,0,.35);opacity:0;pointer-events:none;transition:.25s;max-width:calc(100vw - 32px);overflow-wrap:anywhere;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+
+/*
+ * Tablet (621–899px) punya ritme sendiri. Sebelumnya rentang ini masih memakai kanvas
+ * ponsel selebar 430px, lalu mendadak meloncat ke sidebar desktop di 900px. Di tahap ini
+ * aplikasi sudah memakai lebar layar, tetapi navigasi bawah tetap dipertahankan karena
+ * sidebar penuh belum cukup lapang. Konten dibatasi sebagai reading column agar kartu dan
+ * teks tidak melebar berlebihan pada tablet landscape.
+ */
+@media (min-width:621px) and (max-width:899px){
+  body{align-items:stretch;padding:0}
+  .app{max-width:none;width:100%;height:100dvh;border-radius:0;border:0;box-shadow:none}
+  .viewport{--tablet-gutter:clamp(30px,6vw,52px);width:100%;padding:12px var(--tablet-gutter) 126px}
+  .topbar,.page{width:100%;max-width:760px;margin-inline:auto}
+  .topbar{grid-template-columns:44px 1fr 44px;column-gap:12px;padding:18px 0 16px}
+  .avatar-btn,.bell{width:44px;height:44px}
+  .header-back{width:44px;height:44px}
+  .page-heading span{display:block;margin-bottom:3px}
+  .page-heading h1{font-size:17px;letter-spacing:-.015em}
+
+  /* Panel beranda tetap menyentuh gutter luar seperti di ponsel, tetapi isi panel mengikuti
+     reading column tablet. Nilai gutter berupa custom property supaya bleed selalu pas meski
+     paddingnya berubah secara fluid di sepanjang breakpoint ini. */
+  .home-panel{margin:28px calc(-1 * var(--tablet-gutter)) 0;padding:10px var(--tablet-gutter) 0;border-radius:30px 30px 0 0}
+  .panel-grab{display:none}
+  .shero{padding-bottom:26px}
+  .shero .sa{font-size:clamp(45px,7vw,54px)}
+  .brk-card,.qa{max-width:560px}
+
+  /* Kartu tidak lagi satu kartu penuh per layar: kartu aktif + sebagian kartu berikutnya
+     terlihat sekaligus, memberi tahap peralihan yang alami menuju deret desktop. */
+  .card-stack{max-width:none}
+  .card-track{--card-w:clamp(340px,58vw,420px);--peek-s:14px;--peek-e:44px;margin-inline:calc(-1 * var(--peek-s)) calc(-1 * var(--tablet-gutter))}
+  .card-slide{flex:0 0 var(--card-w);scroll-snap-align:start;scroll-snap-stop:normal}
+  .card-track::after{content:"";flex:0 0 max(0px,calc(100% - var(--peek-e) - var(--card-w)))}
+  .paycard.behind{transform:none;opacity:.68}
+
+  .wallet-breakdown-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .wallet-flow-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .report-real-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .report-secondary-summary{display:grid;grid-template-columns:1.6fr 1fr;gap:12px}
+  .report-secondary-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .transaction-insight-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .more-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+  /* Navigasi tetap mudah dijangkau dengan ibu jari, tetapi tidak lagi membentang seperti
+     bilah ponsel. Sheet menjadi dialog mengambang agar ruang di sekelilingnya tetap terbaca. */
+  .nav{left:50%;right:auto;width:min(600px,calc(100% - 56px));transform:translateX(-50%);padding-inline:0}
+  .navbar{padding-inline:18px}
+  .sheet{width:calc(100% - 48px);max-width:560px;bottom:20px;border-radius:28px;padding:12px 28px 28px;box-shadow:0 28px 90px rgba(0,0,0,.55);border:1px solid var(--line)}
+  .sheet.show{transform:translateX(-50%) translateY(0)}
+  .toast{bottom:112px}
+}
 
 @media (min-width:900px){
   body{align-items:stretch;padding:0}
@@ -1434,9 +1498,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
      mentok tepi kanan layar. Kartu ukuran tetap (bukan 1 per layar seperti ponsel), snap
      ke kiri, dan yang kena tepi kanan memudar lewat zona `--peek-e`. `padding-inline`
      kanan = zona pudar, jadi di ujung scroll kartu terakhir berhenti sebelum ikut pudar. */
-  :root{--card-w:clamp(300px,32vw,430px)}
   .card-stack{max-width:none}
-  .card-track{--peek-s:14px;--peek-e:56px;margin-inline:calc(-1 * var(--peek-s)) -48px}
+  .card-track{--card-w:clamp(300px,32vw,430px);--peek-s:14px;--peek-e:56px;margin-inline:calc(-1 * var(--peek-s)) -48px}
   .card-slide{flex:0 0 var(--card-w);scroll-snap-align:start;scroll-snap-stop:normal}
   /* Spacer ini memberi ruang scroll setelah kartu terakhir. Tanpanya, ketika area layar
      lebih lebar daripada kartu, `scrollLeft` mentok terlalu dini dan kartu kredit terakhir
@@ -1540,6 +1603,14 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .auth-loading{display:flex;align-items:center;gap:16px;font-weight:700}
 .auth-loading>img{width:46px;height:46px;margin:0;animation:auth-pulse 1.4s ease-in-out infinite}
 @keyframes auth-pulse{50%{opacity:.5;transform:scale(.96)}}
+
+/* Panggung auth ikut tahap tablet, tetapi tetap satu kolom sampai panel merek desktop
+   benar-benar punya ruang di 900px. Diletakkan setelah aturan dasar auth agar tidak kalah
+   oleh urutan cascade. */
+@media (min-width:621px) and (max-width:899px){
+  .auth-shell{padding:40px}
+  .auth-card{width:min(100%,500px);padding:40px}
+}
 
 /*
  * Layar cukup lebar: beranda jadi dua kolom, agenda mengisi sisi kanan yang tadinya kosong.
