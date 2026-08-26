@@ -171,7 +171,9 @@ export default function ReportsScreen() {
     { scope: 'shared', label: t('reports.benefitShared'), color: '#F5C26B', total: 0, count: 0 },
     { scope: 'other', label: t('reports.benefitOther'), color: '#B69AF6', total: 0, count: 0 },
   ];
-  expenses.forEach((transaction) => {
+  // Membentuk piutang bukan pemanfaatan dana. Walaupun ia dicatat sebagai expense
+  // untuk arus kas bruto, nominalnya tidak boleh masuk ringkasan penggunaan.
+  expenses.filter((transaction) => !transaction.isReceivable).forEach((transaction) => {
     const row = benefitRows.find((item) => item.scope === benefitScopeOf(transaction));
     if (!row) return;
     row.total += transaction.amount;
@@ -460,7 +462,7 @@ export default function ReportsScreen() {
           transaction.type === 'expense'
             ? actualExpenseAmount(transaction) > 0 ? 'Pengeluaran riil' : 'Pembentukan piutang'
             : transaction.type === 'transfer' ? 'Transfer' : '',
-          transaction.type === 'expense'
+          transaction.type === 'expense' && !transaction.isReceivable
             ? benefitScopeOf(transaction) === 'shared'
               ? 'Dipakai bersama'
               : benefitScopeOf(transaction) === 'other' ? 'Untuk orang lain' : 'Diri sendiri sepenuhnya'

@@ -26,7 +26,19 @@ export function createMemoryRepositories(): DataRepositories {
     wallets,
     transactions,
     budgets,
-    periods,
+    periods: {
+      list: () => periods.list(),
+      get: (id) => periods.get(id),
+      create: (item) => periods.create(item),
+      update: (id, patch) => periods.update(id, patch),
+      async remove(id) {
+        const draft = await periods.get(id);
+        if (!draft || draft.status !== 'draft') throw new Error('Hanya draft periode yang dapat dihapus');
+        const periodBudgets = (await budgets.list()).filter((budget) => budget.periodId === id);
+        await Promise.all(periodBudgets.map((budget) => budgets.remove(budget.id)));
+        await periods.remove(id);
+      },
+    },
     subscriptions,
     receivables,
     plans,

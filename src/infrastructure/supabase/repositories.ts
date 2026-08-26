@@ -67,9 +67,9 @@ function mapTransaction(row: DbRow): Transaction {
       : [],
     merchant: row.merchant ?? undefined,
     budgetId: row.budget_id ?? undefined,
-    benefitScope: row.benefit_scope === 'shared' || row.benefit_scope === 'other'
+    benefitScope: row.benefit_scope === 'self' || row.benefit_scope === 'shared' || row.benefit_scope === 'other'
       ? row.benefit_scope
-      : 'self',
+      : undefined,
     installmentTenorMonths: row.installment_tenor_months == null
       ? undefined
       : amount(row.installment_tenor_months),
@@ -273,9 +273,7 @@ export function createSupabaseRepositories(
       installment_tenor_months: item.type === 'expense'
         ? item.installmentTenorMonths ?? null
         : null,
-      benefit_scope: item.type === 'expense' && (item.benefitScope === 'shared' || item.benefitScope === 'other')
-        ? item.benefitScope
-        : 'self',
+      benefit_scope: item.type === 'expense' ? item.benefitScope ?? null : null,
       recipient: item.recipient ?? null,
       owed_amount_minor: item.owedAmount ?? null,
       settles_receivable_id: item.settlesReceivableId ?? null,
@@ -405,9 +403,7 @@ export function createSupabaseRepositories(
           transaction_id: id,
           idempotency_key: idempotencyKey(),
           reason: 'Transaksi diedit',
-          benefit_scope: next.type === 'expense' && (next.benefitScope === 'shared' || next.benefitScope === 'other')
-            ? next.benefitScope
-            : 'self',
+          benefit_scope: next.type === 'expense' ? next.benefitScope ?? null : null,
           replacement,
         },
       });
@@ -525,8 +521,13 @@ export function createSupabaseRepositories(
       return mapPeriod(data!);
     },
     async remove(id) {
-      const { error } = await supabase.from('budget_periods').delete()
-        .eq('workspace_id', workspaceId).eq('id', id).eq('status', 'draft');
+      const { error } = await supabase.rpc('delete_draft_budget_period', {
+        p_payload: {
+          workspace_id: workspaceId,
+          period_id: id,
+          idempotency_key: idempotencyKey(),
+        },
+      });
       throwIfError(error, 'Hanya draft periode yang dapat dihapus');
     },
   };

@@ -1683,7 +1683,7 @@ export type Database = {
       transactions: {
         Row: {
           amount_minor: number
-          benefit_scope: string
+          benefit_scope: string | null
           category_id: string | null
           category_name_snapshot: string | null
           created_at: string
@@ -1709,7 +1709,7 @@ export type Database = {
         }
         Insert: {
           amount_minor: number
-          benefit_scope?: string
+          benefit_scope?: string | null
           category_id?: string | null
           category_name_snapshot?: string | null
           created_at?: string
@@ -1735,7 +1735,7 @@ export type Database = {
         }
         Update: {
           amount_minor?: number
-          benefit_scope?: string
+          benefit_scope?: string | null
           category_id?: string | null
           category_name_snapshot?: string | null
           created_at?: string
@@ -2405,6 +2405,7 @@ export type Database = {
       create_wallet: { Args: { p_payload: Json }; Returns: string }
       create_wallet_with_network: { Args: { p_payload: Json }; Returns: string }
       create_workspace: { Args: { p_payload: Json }; Returns: string }
+      delete_draft_budget_period: { Args: { p_payload: Json }; Returns: string }
       ensure_user_bootstrap: { Args: never; Returns: string }
       finalize_split_bill: { Args: { p_payload: Json }; Returns: string }
       invite_workspace_member: { Args: { p_payload: Json }; Returns: string }

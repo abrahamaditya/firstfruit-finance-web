@@ -356,9 +356,8 @@ const MORE_TABS: Tab[] = [
 ].filter((tab) => tab !== 'wallets' && tab !== 'tx');
 
 /**
- * Label periode untuk tombol sempit (sheet "Lainnya" di layar kecil): bulan + tahun saja,
- * mis. "Juli 2026". Diturunkan dari tanggalnya, bukan dari `alias`, karena di sana ia
- * berdiri sendiri sebagai satu baris tanpa ruang untuk keterangan tanggal.
+ * Fallback label periode untuk data lama/impor yang belum mempunyai `alias`: bulan + tahun,
+ * mis. "Juli 2026". Nama periode yang ditulis pengguna selalu diprioritaskan di UI.
  * Periode yang melintasi bulan disebut sebagai rentang, karena satu nama bulan saja
  * akan menyesatkan.
  */
@@ -519,6 +518,8 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
       subCategory: '',
       categoryDetail: '',
       debtor: value === 'Receivables' ? form.debtor : '',
+      // Piutang adalah perpindahan aset yang diharapkan kembali, bukan konsumsi.
+      // Nilai default tetap dijaga untuk kategori lain ketika pengguna berpindah lagi.
       benefitScope: value === 'Giving' ? 'other' : form.benefitScope === 'other' ? 'self' : form.benefitScope,
     };
   }
@@ -835,7 +836,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   // dari "ada, tapi semuanya sudah ditutup" — yang kedua butuh periode baru dibuka,
   // bukan periode pertama dibuat, jadi keduanya tidak boleh berbagi satu kalimat.
   const periodEmptyLabel = t(periods.length === 0 ? 'side.periodEmpty' : 'side.periodAllClosed');
-  const periodLabel = activePeriod ? periodShortLabel(activePeriod, numLocale) : periodEmptyLabel;
+  const periodLabel = activePeriod
+    ? activePeriod.alias?.trim() || periodShortLabel(activePeriod, numLocale)
+    : periodEmptyLabel;
 
   // Isi kartu periode di dasar sidebar. Dikumpulkan di satu tempat, bukan dihitung di
   // dalam JSX, supaya urutan keadaannya (belum mulai → lewat tanggal → hari terakhir →
@@ -1215,7 +1218,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               { value: 'self', label: 'Diri sendiri sepenuhnya' },
               { value: 'shared', label: 'Dipakai bersama' },
             ],
-            showIf: (f) => isExpense(f) && f.pillar !== 'Giving',
+            showIf: (f) => isExpense(f) && f.pillar !== 'Giving' && f.pillar !== 'Receivables',
           },
           {
             key: 'receivableId',
@@ -2012,7 +2015,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             ? form.budgetId
             : undefined,
           installmentTenorMonths,
-          benefitScope: type === 'expense' && form.pillar === 'Giving'
+          // Receivables tidak memiliki pemanfaatan. Database saat ini menyimpan
+          // default internal `self`, tetapi transaksi tersebut dikecualikan dari
+          // seluruh tampilan analitik pemanfaatan.
+          benefitScope: isPiutang
+            ? undefined
+            : type === 'expense' && form.pillar === 'Giving'
             ? 'other' as const
             : form.benefitScope === 'shared' ? 'shared' as const : 'self' as const,
           note: form.note.trim() || undefined,
