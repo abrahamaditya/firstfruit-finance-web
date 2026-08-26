@@ -14,6 +14,8 @@ export interface Repository<T extends { id: string }> {
 export interface ClosePeriodOptions {
   createNext: boolean;
   nextAlias?: string;
+  /** Draft yang sudah ada dan akan dijadikan periode berjalan setelah penutupan. */
+  targetDraftId?: string;
   /** Anggaran periode berjalan yang dibuat ulang di periode berikutnya. */
   budgetIds?: string[];
 }
@@ -35,6 +37,8 @@ export interface SettleReceivableOptions {
 export interface FinanceCommands {
   /** Membuat periode dan, bila dipilih, menduplikasi template anggarannya. */
   createPeriod(options: CreatePeriodOptions): Promise<string>;
+  /** Membuka periode draft ketika workspace belum memiliki periode berjalan. */
+  openPeriod(periodId: string): Promise<void>;
   /** Mengembalikan id periode baru, atau null bila ditutup tanpa membuka periode berikutnya. */
   closePeriod(periodId: string, options: ClosePeriodOptions): Promise<string | null>;
   adjustSaving(savingId: string, amount: number, action: 'reserve' | 'release'): Promise<void>;

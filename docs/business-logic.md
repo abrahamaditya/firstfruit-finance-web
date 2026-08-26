@@ -221,9 +221,14 @@ Semua metode **murni simulasi** — tidak menulis data apa pun.
 
 ## 11. Periode & tutup buku
 
-- Hanya satu periode berstatus terbuka (`closed: false`) yang dianggap aktif.
-- Menutup periode: periode berjalan diberi `closed: true`, lalu periode baru dibuat mulai
-  H+1 dari `end` sepanjang satu bulan, dengan nama `Periode <Bulan Tahun>`.
+- Hanya satu periode berstatus `open` yang dianggap aktif; `draft` belum berjalan.
+- Periode `draft` dapat dibuka secara eksplisit bila tidak ada periode aktif dan
+  rentangnya tidak bertumpang tindih dengan periode yang sudah ditutup.
+- Menutup periode: periode berjalan diberi `closed: true`, lalu periode baru dapat dibuat
+  mulai H+1 dari `end` sepanjang satu bulan dengan nama yang diisi pengguna.
+- Jika sudah ada periode draft setelah periode berjalan, pengguna dapat melanjutkan ke
+  draft tersebut alih-alih membuat periode baru. Anggaran pilihan di-upsert ke draft;
+  kategori yang sudah ada diperbarui dan anggaran draft lainnya tetap dipertahankan.
 - Periode **tidak boleh diduplikat** (harus unik); tombol duplikat disembunyikan.
 - Daftar periode diurutkan dari yang terbaru.
 

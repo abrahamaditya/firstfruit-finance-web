@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { usePeriodReport } from '../application/hooks';
+import { usePeriodReport, usePeriods } from '../application/hooks';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import { Calendar, Check, Info, ListIcon, Lock, Plus } from '../components/ui/icons';
 
@@ -18,55 +18,87 @@ export default function PeriodScreen() {
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const repos = useRepositories();
   const report = usePeriodReport(ui.periodId);
+  const { periods, active: activePeriod } = usePeriods();
   // Tutup buku dua langkah: tombolnya cuma membuka pilihan, keputusan "buat periode
   // berikutnya atau tidak" dijawab setelah kotak konfirmasi dicentang.
   const [asking, setAsking] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [closing, setClosing] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [nextAlias, setNextAlias] = useState('');
+  const [nextChoice, setNextChoice] = useState<'draft' | 'new'>('new');
+  const [targetDraftId, setTargetDraftId] = useState('');
   const [copyBudgetIds, setCopyBudgetIds] = useState<string[]>([]);
 
   const current = report.period;
   // Tiga keadaan, bukan dua: draft belum pernah berjalan, jadi ia tidak bisa ditutup
   // dan juga bukan arsip.
   const isDraft = current?.status === 'draft';
+  const canOpenDraft = isDraft && !activePeriod;
+  const followingDrafts = current
+    ? periods
+      .filter((period) => period.status === 'draft' && +new Date(period.start) > +new Date(current.end))
+      .sort((a, b) => +new Date(a.start) - +new Date(b.start))
+    : [];
+  const targetDraft = followingDrafts.find((period) => period.id === targetDraftId);
 
-  // Periode berikutnya dihitung di sini juga supaya namanya bisa ditunjukkan sebelum
-  // tombolnya ditekan — jelas bulan apa yang ditutup dan bulan apa yang dibuka.
+  // Rentang berikutnya tetap dihitung dari periode berjalan. Namanya sengaja tidak
+  // ditebak dari tanggal; pengguna mengisinya sendiri saat konfirmasi.
   const nextStart = current ? new Date(current.end) : null;
   nextStart?.setDate(nextStart.getDate() + 1);
   const nextEnd = nextStart ? new Date(nextStart) : null;
   if (nextEnd) { nextEnd.setMonth(nextEnd.getMonth() + 1); nextEnd.setDate(nextEnd.getDate() - 1); }
-  const nextAlias = nextStart
-    ? `${t('closing.periodPrefix')} ${nextStart.toLocaleDateString(locale, { month: 'long', year: 'numeric' })}`
-    : '';
   const range = (from?: Date | string | null, to?: Date | string | null) =>
     from && to
       ? `${new Date(from).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(to).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })}`
       : '';
 
-  const closePeriod = async (createNext: boolean) => {
+  const closePeriod = async (next: 'new' | 'draft' | 'none') => {
     if (!current) return;
+    const customNextAlias = nextAlias.trim();
+    if (next === 'new' && !customNextAlias) return;
+    if (next === 'draft' && !targetDraft) return;
+    const destinationName = next === 'draft' ? targetDraft?.alias ?? '' : customNextAlias;
     setClosing(true);
     try {
       await repos.commands.closePeriod(current.id, {
-        createNext,
-        nextAlias,
-        budgetIds: createNext ? copyBudgetIds : undefined,
+        createNext: next === 'new',
+        nextAlias: next === 'new' ? customNextAlias : undefined,
+        targetDraftId: next === 'draft' ? targetDraft?.id : undefined,
+        budgetIds: next !== 'none' ? copyBudgetIds : undefined,
       });
       // Periode yang barusan ditutup tidak lagi jadi pilihan aktif — biarkan layar
       // kembali ke periode berjalan (kalau ada) lewat pilihan kosong.
       ui.selectPeriod(null);
       ui.refresh();
-      ui.notify(createNext
-        ? t('closing.transition', { from: current.alias, to: nextAlias })
+      ui.notify(next !== 'none'
+        ? t('closing.transition', { from: current.alias, to: destinationName })
         : t('closing.closedOnly', { name: current.alias }));
       setAsking(false);
       setConfirmed(false);
-      if (createNext) ui.go('home');
+      setNextAlias('');
+      setTargetDraftId('');
+      if (next !== 'none') ui.go('home');
     } catch (caught) {
       ui.notify(caught instanceof Error ? caught.message : 'Periode gagal ditutup');
     } finally {
       setClosing(false);
+    }
+  };
+
+  const openPeriod = async () => {
+    if (!current || !canOpenDraft) return;
+    setOpening(true);
+    try {
+      await repos.commands.openPeriod(current.id);
+      ui.selectPeriod(null);
+      ui.refresh();
+      ui.notify(t('period.opened', { name: current.alias }));
+      ui.go('home');
+    } catch (caught) {
+      ui.notify(caught instanceof Error ? caught.message : t('period.openFailed'));
+    } finally {
+      setOpening(false);
     }
   };
 
@@ -202,7 +234,11 @@ export default function PeriodScreen() {
               <button
                 className="cta"
                 onClick={() => {
+                  const firstDraft = followingDrafts[0];
                   setCopyBudgetIds(report.budgets.map((budget) => budget.id));
+                  setNextAlias('');
+                  setNextChoice(firstDraft ? 'draft' : 'new');
+                  setTargetDraftId(firstDraft?.id ?? '');
                   setAsking(true);
                 }}
               >
@@ -236,6 +272,26 @@ export default function PeriodScreen() {
               </label>
 
               <p className="close-question">{t('period.askNext')}</p>
+              {followingDrafts.length > 0 && (
+                <div className="period-next-options" role="group" aria-label={t('closing.nextOptionLabel')}>
+                  <button
+                    type="button"
+                    className={nextChoice === 'draft' ? 'on' : ''}
+                    aria-pressed={nextChoice === 'draft'}
+                    onClick={() => setNextChoice('draft')}
+                  >
+                    {t('closing.useDraft')}
+                  </button>
+                  <button
+                    type="button"
+                    className={nextChoice === 'new' ? 'on' : ''}
+                    aria-pressed={nextChoice === 'new'}
+                    onClick={() => setNextChoice('new')}
+                  >
+                    {t('closing.createNew')}
+                  </button>
+                </div>
+              )}
               <div className="period-switch">
                 <div className="ps-card closing">
                   <span>{t('closing.periodClosed')}</span>
@@ -244,18 +300,46 @@ export default function PeriodScreen() {
                 </div>
                 <div className="ps-arrow" aria-hidden>→</div>
                 <div className="ps-card opening">
-                  <span>{t('closing.periodOpened')}</span>
-                  <b>{nextAlias}</b>
-                  <small>{range(nextStart, nextEnd)}</small>
+                  <span>{t(nextChoice === 'draft' ? 'closing.draftOpened' : 'closing.periodOpened')}</span>
+                  {nextChoice === 'draft' ? (
+                    followingDrafts.length > 1 ? (
+                      <select
+                        value={targetDraftId}
+                        onChange={(event) => setTargetDraftId(event.target.value)}
+                        aria-label={t('closing.chooseDraft')}
+                      >
+                        {followingDrafts.map((draft) => (
+                          <option key={draft.id} value={draft.id}>{draft.alias}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <b>{targetDraft?.alias}</b>
+                    )
+                  ) : (
+                    <input
+                      value={nextAlias}
+                      onChange={(event) => setNextAlias(event.target.value)}
+                      placeholder={t('closing.nextNamePlaceholder')}
+                      aria-label={t('closing.nextNameLabel')}
+                      maxLength={80}
+                      autoComplete="off"
+                      autoFocus
+                    />
+                  )}
+                  <small>{nextChoice === 'draft' ? range(targetDraft?.start, targetDraft?.end) : range(nextStart, nextEnd)}</small>
                 </div>
               </div>
+
+              {nextChoice === 'draft' && (
+                <div className="note"><Info /><span>{t('closing.useDraftNote')}</span></div>
+              )}
 
               {report.budgets.length > 0 ? (
                 <div className="budget-copy-picker">
                   <div className="budget-copy-head">
                     <div>
                       <b>{t('closing.copyBudgetsTitle')}</b>
-                      <small>{t('closing.copyBudgetsDesc')}</small>
+                      <small>{t(nextChoice === 'draft' ? 'closing.copyBudgetsDraftDesc' : 'closing.copyBudgetsDesc')}</small>
                     </div>
                     <span>{t('closing.selectedBudgets', {
                       selected: copyBudgetIds.length,
@@ -296,22 +380,28 @@ export default function PeriodScreen() {
 
               <button
                 className="cta"
-                disabled={!confirmed || closing}
-                onClick={() => void closePeriod(true)}
+                disabled={!confirmed || (nextChoice === 'new' ? !nextAlias.trim() : !targetDraft) || closing}
+                onClick={() => void closePeriod(nextChoice)}
               >
-                {closing ? t('closing.closing') : t('closing.ctaNamed', { from: current.alias, to: nextAlias })}
+                {closing
+                  ? t('closing.closing')
+                  : nextChoice === 'draft' && targetDraft
+                    ? t('closing.ctaDraft', { from: current.alias, to: targetDraft.alias })
+                    : nextAlias.trim()
+                    ? t('closing.ctaNamed', { from: current.alias, to: nextAlias.trim() })
+                    : t('closing.ctaUnnamed', { from: current.alias })}
               </button>
               <button
                 className="ghost-cta"
                 disabled={!confirmed || closing}
-                onClick={() => void closePeriod(false)}
+                onClick={() => void closePeriod('none')}
               >
                 {t('period.closeOnly')}
               </button>
               <button
                 className="ghost-cta subtle"
                 disabled={closing}
-                onClick={() => { setAsking(false); setConfirmed(false); setCopyBudgetIds([]); }}
+                onClick={() => { setAsking(false); setConfirmed(false); setNextAlias(''); setTargetDraftId(''); setCopyBudgetIds([]); }}
               >
                 {t('common.cancel')}
               </button>
@@ -319,10 +409,23 @@ export default function PeriodScreen() {
             </div>
           )}
         </>
+      ) : isDraft ? (
+        <>
+          <div className="sec"><span className="t">{t('period.openSection')}</span></div>
+          <div className="note">
+            <Info />
+            <span>{t(canOpenDraft ? 'period.openNote' : 'period.openBlockedNote')}</span>
+          </div>
+          {canOpenDraft && (
+            <button className="cta" disabled={opening} onClick={() => void openPeriod()}>
+              <Calendar />{t(opening ? 'period.opening' : 'period.openCta', { name: current.alias })}
+            </button>
+          )}
+        </>
       ) : (
         <div className="note">
-          {isDraft ? <Info /> : <Lock />}
-          <span>{t(isDraft ? 'period.draftNote' : 'period.archivedNote')}</span>
+          <Lock />
+          <span>{t('period.archivedNote')}</span>
         </div>
       )}
     </>

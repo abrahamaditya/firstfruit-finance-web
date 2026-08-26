@@ -52,8 +52,49 @@ export function createMemoryRepositories(): DataRepositories {
         })));
         return created.id;
       },
+      async openPeriod(periodId) {
+        const target = await periods.get(periodId);
+        if (!target || target.status !== 'draft') throw new Error('Periode draft tidak ditemukan');
+        const hasOpen = (await periods.list()).some((period) => period.status === 'open');
+        if (hasOpen) throw new Error('Tutup periode berjalan sebelum membuka periode ini');
+        const overlapsArchive = (await periods.list()).some((period) =>
+          period.status === 'closed'
+          && +new Date(period.start) <= +new Date(target.end)
+          && +new Date(period.end) >= +new Date(target.start),
+        );
+        if (overlapsArchive) throw new Error('Sesuaikan tanggal draft karena bertumpang tindih dengan periode yang ditutup');
+        await periods.update(periodId, { closed: false, status: 'open' });
+      },
       async closePeriod(periodId, options) {
         const closed = await periods.get(periodId);
+        if (options.targetDraftId) {
+          const draft = await periods.get(options.targetDraftId);
+          if (!closed || !draft || draft.status !== 'draft' || +new Date(draft.start) <= +new Date(closed.end)) {
+            throw new Error('Periode draft berikutnya tidak valid');
+          }
+          await periods.update(periodId, { closed: true, status: 'closed' });
+          await periods.update(draft.id, { closed: false, status: 'open' });
+          const selected = new Set(options.budgetIds ?? []);
+          const sourceBudgets = (await budgets.list()).filter((budget) =>
+            budget.periodId === periodId && selected.has(budget.id),
+          );
+          for (const source of sourceBudgets) {
+            const existing = (await budgets.list()).find((budget) =>
+              budget.periodId === draft.id && budget.category === source.category,
+            );
+            if (existing) {
+              await budgets.update(existing.id, { allocated: source.allocated, spent: 0 });
+            } else {
+              await budgets.create({
+                category: source.category,
+                allocated: source.allocated,
+                spent: 0,
+                periodId: draft.id,
+              });
+            }
+          }
+          return draft.id;
+        }
         await periods.update(periodId, { closed: true, status: 'closed' });
         if (!options.createNext) return null;
         const start = closed ? new Date(closed.end) : new Date();

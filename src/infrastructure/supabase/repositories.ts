@@ -871,23 +871,35 @@ export function createSupabaseRepositories(
         throwIfError(error, 'Gagal membuat periode');
         return data as string;
       },
-      async closePeriod(periodId, options) {
-        const { data, error } = await supabase.rpc('close_budget_period', {
+      async openPeriod(periodId) {
+        const { error } = await supabase.rpc('open_budget_period', {
           p_payload: {
             workspace_id: workspaceId,
             period_id: periodId,
+            idempotency_key: idempotencyKey(),
+          },
+        });
+        throwIfError(error, 'Gagal membuka periode');
+      },
+      async closePeriod(periodId, options) {
+        const command = options.targetDraftId ? 'close_budget_period_to_draft' : 'close_budget_period';
+        const { data, error } = await supabase.rpc(command, {
+          p_payload: {
+            workspace_id: workspaceId,
+            period_id: periodId,
+            ...(options.targetDraftId ? { target_draft_id: options.targetDraftId } : {}),
             create_next: options.createNext,
             next_alias: options.createNext ? options.nextAlias ?? '' : '',
-            copy_budgets: options.createNext,
-            ...(options.createNext && options.budgetIds
+            copy_budgets: options.createNext || Boolean(options.targetDraftId),
+            ...((options.createNext || options.targetDraftId) && options.budgetIds
               ? { copy_budget_ids: options.budgetIds }
               : {}),
             idempotency_key: idempotencyKey(),
           },
         });
         throwIfError(error, 'Gagal menutup periode');
-        // Tanpa periode berikutnya, RPC memulangkan id periode yang baru saja ditutup.
-        return options.createNext ? (data as string) : null;
+        // Melanjutkan ke draft juga menghasilkan id periode yang kini dibuka.
+        return options.createNext || options.targetDraftId ? (data as string) : null;
       },
       async adjustSaving(savingId, value, action) {
         const { error } = await supabase.rpc('adjust_saving', {

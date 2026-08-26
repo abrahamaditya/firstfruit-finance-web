@@ -2394,6 +2394,8 @@ export type Database = {
         Returns: undefined
       }
       close_budget_period: { Args: { p_payload: Json }; Returns: string }
+      close_budget_period_to_draft: { Args: { p_payload: Json }; Returns: string }
+      open_budget_period: { Args: { p_payload: Json }; Returns: string }
       create_budget_period_with_budgets: {
         Args: { p_payload: Json }
         Returns: string
