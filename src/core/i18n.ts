@@ -41,7 +41,7 @@ const D: Record<string, Entry> = {
   'tab.wallets.eyebrow': { id: 'Aset', en: 'Assets' },
   'tab.wallets.title': { id: 'Dompet', en: 'Wallets' },
   'tab.tx.eyebrow': { id: 'Aktivitas', en: 'Activity' },
-  'tab.tx.title': { id: 'Semua transaksi', en: 'All transactions' },
+  'tab.tx.title': { id: 'Transaksi periode aktif', en: 'Active period transactions' },
   'tab.subs.eyebrow': { id: 'Pembayaran', en: 'Payments' },
   'tab.subs.title': { id: 'Langganan rutin', en: 'Recurring subscriptions' },
   'tab.budget.eyebrow': { id: 'Kendali pengeluaran', en: 'Spending control' },
