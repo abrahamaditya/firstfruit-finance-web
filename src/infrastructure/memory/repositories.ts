@@ -46,13 +46,16 @@ export function createMemoryRepositories(): DataRepositories {
     reminders,
     commands: {
       async createPeriod(options) {
-        const hasOpen = (await periods.list()).some((period) => period.status === 'open');
+        const activePeriod = (await periods.list()).find((period) => period.status === 'open');
+        if (options.closeCurrent && activePeriod && +new Date(options.start) <= +new Date(activePeriod.end)) {
+          throw new Error('Periode baru harus dimulai setelah periode berjalan selesai');
+        }
         const created = await periods.create({
           alias: options.alias,
           start: options.start,
           end: options.end,
           closed: false,
-          status: hasOpen ? 'draft' : 'open',
+          status: activePeriod ? 'draft' : 'open',
         });
         const selected = new Set(options.budgetIds ?? []);
         const templates = (await budgets.list()).filter((budget) => selected.has(budget.id));
@@ -62,6 +65,10 @@ export function createMemoryRepositories(): DataRepositories {
           spent: 0,
           periodId: created.id,
         })));
+        if (options.closeCurrent && activePeriod) {
+          await periods.update(activePeriod.id, { closed: true, status: 'closed' });
+          await periods.update(created.id, { closed: false, status: 'open' });
+        }
         return created.id;
       },
       async openPeriod(periodId) {

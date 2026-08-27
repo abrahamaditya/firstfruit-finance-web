@@ -25,6 +25,8 @@ export interface CreatePeriodOptions {
   start: string;
   end: string;
   budgetIds?: string[];
+  /** Tutup periode berjalan dan buka periode yang baru dibuat secara atomik. */
+  closeCurrent?: boolean;
 }
 
 /** Detail penerimaan saat piutang dilunasi. */

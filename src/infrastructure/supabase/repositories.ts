@@ -893,6 +893,7 @@ export function createSupabaseRepositories(
             start_date: options.start.slice(0, 10),
             end_date: options.end.slice(0, 10),
             copy_budget_ids: options.budgetIds ?? [],
+            close_current: options.closeCurrent ?? false,
           },
         });
         throwIfError(error, 'Gagal membuat periode');

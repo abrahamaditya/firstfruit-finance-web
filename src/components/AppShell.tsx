@@ -202,7 +202,7 @@ export function useMoney() {
 interface FieldDefinition {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'computed' | 'installmentAllocation';
+  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'checkbox' | 'computed' | 'installmentAllocation';
   options?: CategoryOption[];
   optionsOf?: (form: Record<string, string>) => CategoryOption[];  // pilihan dinamis
   placeholder?: string;
@@ -275,6 +275,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   periode: [
     { title: 'Identitas periode', keys: ['alias'] },
     { title: 'Rentang periode', keys: ['start', 'end'] },
+    { title: 'Aktivasi periode', keys: ['activationMode', 'currentPeriodSummary', 'transitionConfirmed'] },
   ],
   orang: [
     { title: 'Identitas peserta', keys: ['name'] },
@@ -1550,8 +1551,41 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             { key: 'alias', label: 'Nama periode', placeholder: 'Periode Juli' },
             { key: 'start', label: 'Tanggal mulai', type: 'date' },
             { key: 'end', label: 'Tanggal selesai', type: 'date' },
+            {
+              key: 'activationMode',
+              label: 'Setelah periode dibuat',
+              type: 'segmented',
+              options: [
+                { value: 'draft', label: 'Simpan sebagai draft' },
+                { value: 'closeAndOpen', label: 'Tutup & buka' },
+              ],
+              showIf: () => !create.isEdit && Boolean(activePeriod),
+            },
+            {
+              key: 'currentPeriodSummary',
+              label: 'Periode yang akan ditutup',
+              type: 'computed',
+              computedValue: () => activePeriod
+                ? `${activePeriod.alias} · ${new Date(activePeriod.start).toLocaleDateString(numLocale, { day: 'numeric', month: 'short', year: 'numeric' })} – ${new Date(activePeriod.end).toLocaleDateString(numLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`
+                : 'Tidak ada periode berjalan',
+              hint: 'Transaksi dan laporan periode ini akan dikunci sebagai arsip.',
+              showIf: (f) => !create.isEdit && Boolean(activePeriod) && f.activationMode === 'closeAndOpen',
+            },
+            {
+              key: 'transitionConfirmed',
+              label: 'Saya sudah memeriksa transaksi dan memahami periode berjalan akan ditutup.',
+              type: 'checkbox',
+              requiredIf: (f) => f.activationMode === 'closeAndOpen',
+              showIf: (f) => !create.isEdit && Boolean(activePeriod) && f.activationMode === 'closeAndOpen',
+            },
           ],
-          defaults: { alias: '', start: '', end: '' },
+          defaults: {
+            alias: '',
+            start: '',
+            end: '',
+            activationMode: activePeriod ? 'draft' : 'open',
+            transitionConfirmed: '',
+          },
         },
         orang: {
           title: 'peserta',
@@ -1610,7 +1644,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       return configs[type];
     },
     [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions,
-      noteSuggestions, debtorSuggestions, prefs.defaultWalletId, create.isEdit],
+      noteSuggestions, debtorSuggestions, prefs.defaultWalletId, create.isEdit, activePeriod, numLocale],
   );
 
   // Notifikasi dan status bacanya tersimpan per akun di PostgreSQL.
@@ -2022,10 +2056,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       notify('Tanggal selesai periode tidak boleh sebelum tanggal mulai');
       return;
     }
+    if (
+      create.type === 'periode'
+      && !create.isEdit
+      && form.activationMode === 'closeAndOpen'
+      && activePeriod
+      && form.start <= activePeriod.end.slice(0, 10)
+    ) {
+      notify(`Tanggal mulai harus setelah periode ${activePeriod.alias} selesai`);
+      return;
+    }
     setSaving(true);
     const id = create.id;
     const shouldUpdate = create.isEdit && Boolean(id);
     let extraNote = '';
+    let closedPeriodName = '';
 
     try {
       if (create.type === 'wallet') {
@@ -2298,6 +2343,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           end: toIso(form.end),
           closed: false,
         };
+        const closeCurrent = !shouldUpdate
+          && form.activationMode === 'closeAndOpen'
+          && Boolean(activePeriod);
         shouldUpdate
           ? await repos.periods.update(id!, payload)
           : await repos.commands.createPeriod({
@@ -2305,7 +2353,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               start: payload.start,
               end: payload.end,
               budgetIds: periodCopyBudgetIds,
+              closeCurrent,
             });
+        if (closeCurrent && activePeriod) {
+          closedPeriodName = activePeriod.alias;
+          setPeriodId(null);
+        }
       }
 
       setDataVersion((version) => version + 1);
@@ -2314,6 +2367,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       notify(
         create.type === 'orang'
           ? `${form.name || 'Peserta'} ditambahkan ke pembagian`
+          : create.type === 'periode' && closedPeriodName
+            ? `${closedPeriodName} ditutup · ${form.alias.trim()} dibuka`
           : create.type === 'sisihkan'
             ? `${savedAmount} disisihkan ke ${create.name ?? 'tabungan'}`
             : create.type === 'ambil'
@@ -2804,10 +2859,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       const labelId = `field-label-${field.key}`;
                       return (
                 <Wrapper className="input-field" key={field.key}>
-                  <span id={native ? undefined : labelId}>
-                    {field.labelOf ? field.labelOf(form) : field.label}
-                    {fieldIsRequired(field, form) && <em className="required-mark">*</em>}
-                  </span>
+                  {field.type !== 'checkbox' && (
+                    <span id={native ? undefined : labelId}>
+                      {field.labelOf ? field.labelOf(form) : field.label}
+                      {fieldIsRequired(field, form) && <em className="required-mark">*</em>}
+                    </span>
+                  )}
                   {field.type === 'computed' ? (
                     <div className="computed-form-value" aria-live="polite">
                       <b>{field.computedValue?.(form) ?? '—'}</b>
@@ -2885,6 +2942,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       )}
                       {field.hint && <small className="installment-allocation-hint">{field.hint}</small>}
                     </div>
+                  ) : field.type === 'checkbox' ? (
+                    <label className="form-checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={form[field.key] === 'yes'}
+                        onChange={(event) => setForm({
+                          ...form,
+                          [field.key]: event.target.checked ? 'yes' : '',
+                        })}
+                      />
+                      <span>
+                        {field.label}
+                        {fieldIsRequired(field, form) && <em className="required-mark">*</em>}
+                      </span>
+                    </label>
                   ) : field.type === 'segmented' ? (
                     <div
                       className={`form-segmented${field.options?.length === 2 ? ' two' : ''}${field.key === 'txType' ? ' transaction-types' : ''}`}
