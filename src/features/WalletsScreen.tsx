@@ -197,16 +197,8 @@ export default function WalletsScreen() {
         && transaction.toWalletId === current.id)
       .reduce((sum, transaction) => sum + transaction.amount, 0)
     : 0;
-  // Saldo kartu adalah kewajiban saat ini. Untuk menjelaskan siklus tagihannya,
-  // balik perubahan selama periode: belanja menambah, pelunasan mengurangi, dan
-  // penyesuaian manual tetap ikut agar angka pembuka tidak meleset.
-  const creditAdjustmentDeltaPeriod = current?.kind === 'credit'
-    ? periodTransactions
-      .filter((transaction) => transaction.adjustment && transaction.walletId === current.id)
-      .reduce((sum, transaction) => sum + (transaction.type === 'income' ? transaction.amount : -transaction.amount), 0)
-    : 0;
   const previousCreditBill = current?.kind === 'credit'
-    ? Math.max(0, current.balance - actualExpensePeriod + creditPaymentPeriod - creditAdjustmentDeltaPeriod)
+    ? current.previousPeriodBill ?? 0
     : 0;
   const receivedPeriod = current ? periodTransactions
     .filter((transaction) => isWalletIncome(transaction, current.id))
@@ -410,7 +402,7 @@ export default function WalletsScreen() {
 
           <div className="wallet-insight-grid wallet-balance-grid">
             {current.kind === 'credit' ? <>
-              <div><span>Tagihan bulan sebelumnya</span><b className="out">{money.fmt(previousCreditBill)}</b><small>Tagihan sebelum periode ini dimulai</small></div>
+              <div><span>Tagihan periode sebelumnya</span><b className="out">{money.fmt(previousCreditBill)}</b><small>Nilai tetap; tidak dipengaruhi transaksi periode ini</small></div>
               <div><span>Sisa limit</span><b>{money.fmt(Math.max(0, (current.creditLimit ?? 0) - current.balance))}</b><small>Dari limit total {money.fmt(current.creditLimit ?? 0)}</small></div>
             </> : <>
               <div><span>Saldo</span><b>{money.fmt(current.balance)}</b><small>Total dana di dompet ini</small></div>

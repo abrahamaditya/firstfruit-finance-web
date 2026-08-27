@@ -78,7 +78,7 @@ export default function BudgetScreen() {
           <b className={remaining < 0 ? 'negative' : 'positive'}>{money.fmt(remaining)}</b>
         </div>
         {/* Progres: biru saat aman, kuning ≥80%, merah saat lewat alokasi. */}
-        <div className={`m-progress${progress > 100 ? ' over' : progress >= 80 ? ' warn' : ''}`}>
+        <div className={`m-progress${progress > 100 ? ' over' : progress === 100 ? ' complete' : progress >= 80 ? ' warn' : ''}`}>
           <span>{t('budget.progress')}</span>
           <b>{progress}%</b>
           <div className="metric-bar"><i style={{ width: `${Math.min(100, progress)}%` }} /></div>
@@ -103,8 +103,16 @@ export default function BudgetScreen() {
       <div className="card">
         {budgets.map(b => (
           <div className="bline" key={b.id} onClick={() => ui.openItem(b.category, 'budget', b.id)}>
-            <div className="brow"><span className="nm">{b.category}{b.over && <span className="tag-over">{t('budget.deficit')}</span>}</span><span className="amt">{money.fmt(b.spent)} / {money.fmt(b.allocated)}</span></div>
-            <div className={'bar' + (b.over ? ' over' : '')}><i style={{ width: Math.min(100, b.velocity * 100).toFixed(0) + '%' }} /></div>
+            <div className="brow">
+              <span className="nm">{b.category}{b.over && <span className="tag-over">{t('budget.deficit')}</span>}</span>
+              <span className="amt" aria-label={`${money.fmt(b.spent)} dari ${money.fmt(b.allocated)}`}>
+                <span>{money.fmt(b.spent)}</span>
+                <span>/ {money.fmt(b.allocated)}</span>
+              </span>
+            </div>
+            <div className={`bar${b.over ? ' over' : b.spent === b.allocated ? ' complete' : ''}`}>
+              <i style={{ width: Math.min(100, b.velocity * 100).toFixed(0) + '%' }} />
+            </div>
             <div className="budget-foot">
               <span>{Math.round(b.velocity * 100)}% {t('budget.usedPct')}</span>
               {/* Jatah harian per kategori — angka yang paling sering dipakai sehari-hari. */}

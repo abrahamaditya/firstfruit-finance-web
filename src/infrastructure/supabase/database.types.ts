@@ -1993,6 +1993,7 @@ export type Database = {
           medium: Database["public"]["Enums"]["wallet_medium"]
           name: string
           phone_masked: string | null
+          previous_period_bill_minor: number
           updated_at: string
           version: number
           wallet_class: Database["public"]["Enums"]["wallet_class"]
@@ -2012,6 +2013,7 @@ export type Database = {
           medium: Database["public"]["Enums"]["wallet_medium"]
           name: string
           phone_masked?: string | null
+          previous_period_bill_minor?: number
           updated_at?: string
           version?: number
           wallet_class: Database["public"]["Enums"]["wallet_class"]
@@ -2031,6 +2033,7 @@ export type Database = {
           medium?: Database["public"]["Enums"]["wallet_medium"]
           name?: string
           phone_masked?: string | null
+          previous_period_bill_minor?: number
           updated_at?: string
           version?: number
           wallet_class?: Database["public"]["Enums"]["wallet_class"]

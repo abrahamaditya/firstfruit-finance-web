@@ -1393,7 +1393,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             {
               key: 'creditOutstanding',
               label: 'Tagihan awal kartu',
-              labelOf: () => create.isEdit ? 'Tagihan bulan sebelumnya' : 'Tagihan awal kartu',
+              labelOf: () => create.isEdit ? 'Tagihan periode sebelumnya' : 'Tagihan awal kartu',
               type: 'number',
               optional: true,
               placeholder: '0',
@@ -1405,11 +1405,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               type: 'computed',
               computedValue: (f) => {
                 const limit = toNumber(f.creditLimit);
+                const currentBill = create.isEdit ? toNumber(f.balance) : toNumber(f.creditOutstanding);
                 return limit > 0
-                  ? formatIDR(Math.max(0, limit - toNumber(f.creditOutstanding)))
+                  ? formatIDR(Math.max(0, limit - currentBill))
                   : 'Isi limit total terlebih dahulu';
               },
-              hint: 'Dihitung otomatis dari limit total dikurangi tagihan bulan sebelumnya.',
+              hint: create.isEdit
+                ? 'Dihitung dari limit total dikurangi tagihan kartu saat ini.'
+                : 'Dihitung dari limit total dikurangi tagihan awal kartu.',
               showIf: (f) => f.medium === 'credit',
             },
           ],
@@ -1884,7 +1887,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 : record.medium ?? (record.kind === 'credit' ? 'credit' : 'bank');
             }
             if (field.key === 'creditOutstanding') {
-              value = record.kind === 'credit' ? record.balance : undefined;
+              value = record.kind === 'credit'
+                ? record.previousPeriodBill ?? record.balance
+                : undefined;
             }
             if (field.key === 'pasporVariant') {
               value = ['Blue', 'Gold', 'Platinum'].find((variant) =>
@@ -2053,7 +2058,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           medium,
           // Tagihan awal kartu menjadi liabilitas pembuka; saat diedit, perubahan
           // nilai ini dicatat sebagai jurnal penyesuaian oleh command database.
-          balance: medium === 'credit' ? creditOutstanding : toNumber(form.balance),
+          // Tagihan periode sebelumnya bukan saldo kartu saat ini. Saat mengedit
+          // kartu, saldo tetap dipertahankan dan hanya baseline tagihannya yang diubah.
+          balance: medium === 'credit'
+            ? shouldUpdate ? before?.balance ?? 0 : creditOutstanding
+            : toNumber(form.balance),
           bank: medium === 'cash' ? undefined : form.bank.trim() || undefined,
           last4: medium === 'bank' || medium === 'credit' ? form.last4.trim().slice(-4) || undefined : undefined,
           phone: medium === 'ewallet' ? form.phone.trim() || undefined : undefined,
@@ -2061,6 +2070,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             ? form.cardNetwork as CardNetwork
             : undefined,
           creditLimit: medium === 'credit' ? creditLimit : undefined,
+          previousPeriodBill: medium === 'credit' ? creditOutstanding : undefined,
         };
         if (shouldUpdate) {
           await repos.wallets.update(id!, payload);

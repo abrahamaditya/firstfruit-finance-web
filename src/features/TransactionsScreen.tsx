@@ -188,6 +188,14 @@ export default function TransactionsScreen() {
             const destinationWallet = transaction.toWalletId
               ? walletById.get(transaction.toWalletId)
               : undefined;
+            const installmentBillNumber = transaction.installmentTenorMonths
+              ? Math.min(
+                transaction.installmentTenorMonths,
+                Math.max(1, (transaction.installmentPaidMonths ?? 0) + 1),
+              )
+              : null;
+            const installmentCompleted = transaction.installmentTenorMonths != null
+              && (transaction.installmentPaidMonths ?? 0) >= transaction.installmentTenorMonths;
             return (
               <div
                 className="row transaction-row"
@@ -230,7 +238,9 @@ export default function TransactionsScreen() {
                       </span>
                     )}
                     {transaction.installmentTenorMonths && (
-                      <span className="chip">Cicilan · {transaction.installmentPaidMonths ?? 0}/{transaction.installmentTenorMonths} lunas · sisa {transaction.installmentTenorMonths - (transaction.installmentPaidMonths ?? 0)}
+                      <span className="chip">
+                        Tagihan cicilan {installmentBillNumber}/{transaction.installmentTenorMonths}
+                        {installmentCompleted && ' · Lunas'}
                       </span>
                     )}
                     {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}

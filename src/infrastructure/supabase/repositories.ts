@@ -46,6 +46,9 @@ function mapWallet(row: DbRow): Wallet {
     cardNetwork: row.card_network ?? undefined,
     balance: amount(row.current_balance_minor),
     creditLimit: row.credit_limit_minor == null ? undefined : amount(row.credit_limit_minor),
+    previousPeriodBill: row.previous_period_bill_minor == null
+      ? undefined
+      : amount(row.previous_period_bill_minor),
   };
 }
 
@@ -325,6 +328,7 @@ export function createSupabaseRepositories(
         last4: item.last4 ?? null,
         phone_masked: item.phone ?? null,
         credit_limit_minor: item.creditLimit ?? null,
+        previous_period_bill_minor: item.previousPeriodBill ?? (item.kind === 'credit' ? item.balance : 0),
         opening_balance_minor: item.balance,
       };
       const { data, error } = await supabase.rpc('create_wallet_with_network', {
@@ -349,6 +353,7 @@ export function createSupabaseRepositories(
         phone_masked: patch.phone ?? before.phone ?? null,
         card_network: patch.cardNetwork ?? before.cardNetwork ?? null,
         credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
+        previous_period_bill_minor: patch.previousPeriodBill ?? before.previousPeriodBill ?? 0,
         target_balance_minor: patch.balance ?? before.balance,
         visible_in_feed: false,
         reason: `Penyesuaian saldo ${patch.name ?? before.name}`,
