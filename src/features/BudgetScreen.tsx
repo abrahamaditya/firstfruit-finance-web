@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useActivePeriodTransactions, useBudgets, useDashboard } from '../application/hooks';
+import { useBudgets, useDashboard, usePeriodTransactions } from '../application/hooks';
 import { Check, Chevron, Plus, Warn } from '../components/ui/icons';
 
 export default function BudgetScreen() {
@@ -9,14 +9,15 @@ export default function BudgetScreen() {
   const money = useMoney();
   const t = useT();
   const { budgets: allBudgets } = useBudgets();
-  const { data: transactions } = useActivePeriodTransactions();
+  const { data: transactions, period: viewedPeriod } = usePeriodTransactions(ui.periodId);
   const d = useDashboard();
   const [expandedBudgetId, setExpandedBudgetId] = React.useState<string | null>(null);
-  const activePeriodId = d.period?.id;
+  const viewedPeriodId = viewedPeriod?.id ?? d.period?.id;
+  const isArchive = ui.isArchivePeriod;
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const budgets = activePeriodId
+  const budgets = viewedPeriodId
     ? allBudgets
-        .filter(budget => budget.periodId === activePeriodId)
+        .filter(budget => budget.periodId === viewedPeriodId)
         .sort((a, b) => a.category.localeCompare(b.category, locale, { sensitivity: 'base' }))
     : [];
   const allocated = budgets.reduce((s, b) => s + b.allocated, 0);
@@ -46,15 +47,17 @@ export default function BudgetScreen() {
     return (
       <>
         <div className="shero">
-          <div className="sl">{t('budget.allocated')} · {d.period?.alias}</div>
+          <div className="sl">{t('budget.allocated')} · {viewedPeriod?.alias ?? d.period?.alias}</div>
           <div className="sa">{money.fmt(0)}</div>
         </div>
         <div className="empty-state budget-empty-screen">
           <b>{t('budget.emptyTitle')}</b>
           <span>{t('budget.emptyBody')}</span>
-          <button className="cta compact" onClick={() => ui.openCreate('budget')}>
-            <Plus />{t('common.add')}
-          </button>
+          {!isArchive && (
+            <button className="cta compact" onClick={() => ui.openCreate('budget')}>
+              <Plus />{t('common.add')}
+            </button>
+          )}
         </div>
       </>
     );
@@ -63,13 +66,13 @@ export default function BudgetScreen() {
   return (
     <>
       <div className="shero">
-        <div className="sl">{t('budget.allocated')} · {d.period?.alias}</div>
+        <div className="sl">{t('budget.allocated')} · {viewedPeriod?.alias ?? d.period?.alias}</div>
         <div className="sa">{money.fmt(allocated)}</div>
-        <div className={`sp${d.safeToSpend < 0 ? ' negative' : ''}`}>
+        {!isArchive && <div className={`sp${d.safeToSpend < 0 ? ' negative' : ''}`}>
           {d.safeToSpend < 0 ? <Warn /> : <Check />}
           {money.fmtSigned(d.safeToSpend)}{' '}
           {t(d.safeToSpend < 0 ? 'budget.cashDeficit' : 'budget.unallocated')}
-        </div>
+        </div>}
       </div>
       <div className="mini-metrics">
         <div className="m-spend"><span>{t('budget.used')}</span><b>{money.fmt(spent)}</b></div>
@@ -84,6 +87,7 @@ export default function BudgetScreen() {
           <div className="metric-bar"><i style={{ width: `${Math.min(100, progress)}%` }} /></div>
         </div>
       </div>
+      {!isArchive && <>
       <div className="sec"><span className="t">{t('budget.simulation')}</span><span className="daily-avg">{t('budget.daysLeft', { n: daysLeft })}</span></div>
       <div className="pace-card">
         <div className="pace-row">
@@ -98,11 +102,12 @@ export default function BudgetScreen() {
               : t('budget.paceFast', { amount: money.fmt(Math.round(paceDiff)) })}
         </div>
       </div>
+      </>}
 
-      <div className="sec"><span className="t">{t('budget.perCategory')}</span><button className="addg" onClick={() => ui.openCreate('budget')}><Plus />{t('common.add')}</button></div>
+      <div className="sec"><span className="t">{t('budget.perCategory')}</span>{!isArchive && <button className="addg" onClick={() => ui.openCreate('budget')}><Plus />{t('common.add')}</button>}</div>
       <div className="card">
         {budgets.map(b => (
-          <div className="bline" key={b.id} onClick={() => ui.openItem(b.category, 'budget', b.id)}>
+          <div className={`bline${isArchive ? ' readonly' : ''}`} key={b.id} onClick={isArchive ? undefined : () => ui.openItem(b.category, 'budget', b.id)}>
             <div className="brow">
               <span className="nm">{b.category}{b.over && <span className="tag-over">{t('budget.deficit')}</span>}</span>
               <span className="amt" aria-label={`${money.fmt(b.spent)} dari ${money.fmt(b.allocated)}`}>
@@ -116,7 +121,7 @@ export default function BudgetScreen() {
             <div className="budget-foot">
               <span>{Math.round(b.velocity * 100)}% {t('budget.usedPct')}</span>
               {/* Jatah harian per kategori — angka yang paling sering dipakai sehari-hari. */}
-              <span>{b.remaining > 0 ? `≈ ${money.fmt(Math.round(b.remaining / daysLeft))}/${t('budget.dayShort')}` : t('budget.noneLeft')}</span>
+              {!isArchive && <span>{b.remaining > 0 ? `≈ ${money.fmt(Math.round(b.remaining / daysLeft))}/${t('budget.dayShort')}` : t('budget.noneLeft')}</span>}
               <span>{b.remaining >= 0 ? `${money.fmt(b.remaining)} ${t('budget.leftSuffix')}` : `${money.fmt(b.remaining)} ${t('budget.deficit')}`}</span>
             </div>
             {(() => {

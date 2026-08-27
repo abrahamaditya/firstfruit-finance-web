@@ -314,6 +314,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .row .val.in{color:var(--pos)} .row .val.out{color:var(--neg)}
 .row .subt{font-size:10.5px;color:var(--ink-faint);font-weight:600;margin-top:2px}
 .tx-amount-line{display:flex;align-items:center;justify-content:flex-end;gap:9px;min-width:0}.tx-wallet-label{display:inline-flex;max-width:132px;align-items:center;gap:4px;color:var(--ink-faint);font-size:10px;font-weight:650;white-space:nowrap;overflow:hidden}.tx-wallet-label>small{font:inherit;color:var(--ink-faint)}.tx-wallet-label>i{font-style:normal;color:var(--ink-faint);font-size:11px}.tx-wallet-ref{display:inline-flex;align-items:center;gap:4px;min-width:0}.tx-wallet-ref>span:last-child{overflow:hidden;text-overflow:ellipsis}.tx-wallet-mark{width:16px;height:16px;flex:0 0 auto;display:grid;place-items:center;overflow:hidden;border-radius:5px;background:var(--surface-2);color:var(--ink);font-size:6px;font-weight:800;line-height:1}.tx-wallet-mark.has-image{background:#fff}.tx-wallet-mark.is-cash{background:transparent}.tx-wallet-mark img{width:100%;height:100%;display:block;object-fit:contain}
+.transfer-route{display:inline-flex;align-items:center;gap:6px}.transfer-route i{font-style:normal;color:var(--mint);font-size:13px;line-height:1}.transfer-route span{min-width:0}
 @media(max-width:620px){
   .transaction-row{align-items:flex-start;gap:10px;padding:12px}
   .transaction-row .ic{margin-top:1px}
@@ -324,6 +325,15 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   .tx-amount-line{align-self:center;flex-direction:column;align-items:flex-end;gap:3px}
   .tx-amount-line .val{order:1}
   .tx-amount-line .tx-wallet-label{order:2;max-width:116px}
+  /* Rute transfer punya dua nama dompet. Di layar kecil, susun vertikal dan
+     hilangkan label dompet yang semula mengulang informasi yang sama di kanan. */
+  .transaction-row.transfer-row .t1{white-space:normal;overflow:visible;text-overflow:clip}
+  .transaction-row.transfer-row .transfer-route{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:8px;row-gap:2px;align-items:center;width:100%}
+  .transaction-row.transfer-row .transfer-source{grid-column:1;grid-row:1}
+  .transaction-row.transfer-row .transfer-destination{grid-column:1;grid-row:2}
+  .transaction-row.transfer-row .transfer-route i{grid-column:2;grid-row:1 / span 2;transform:rotate(90deg)}
+  .transaction-row.transfer-row .transfer-source,.transaction-row.transfer-row .transfer-destination{overflow-wrap:anywhere}
+  .transaction-row.transfer-row .tx-wallet-label{display:none}
 }
 .chip{font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft)}
 /* SVG tanpa ukuran eksplisit memakai dimensi bawaan browser (300×150px). Chip pelunasan
@@ -540,6 +550,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .paycard .pf{display:flex;justify-content:space-between;align-items:flex-end;margin-top:18px;position:relative;z-index:1}
 .paycard .wallet-title-logo{width:27px;height:27px;flex:0 0 auto;object-fit:contain}.paycard .wallet-title-initial{display:grid;place-items:center;min-width:27px;height:27px;flex:0 0 auto;border-radius:8px;background:rgba(255,255,255,.18);padding:0 5px;font-size:10px;font-style:normal}.paycard .pname{font-family:var(--nominal);font-size:12px;font-weight:700;letter-spacing:.025em;font-variant-numeric:tabular-nums;opacity:.85}.paycard .pbrand{display:flex;align-items:center}.paycard .pbrand-network{display:block;width:38px;max-height:22px;object-fit:contain}
 .wallet-focus{margin-top:8px}.wallet-focus-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:16px 0 10px}.wallet-focus-head>div{min-width:0}.wallet-focus-head>div>span{display:block;color:var(--ink-faint);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}.wallet-focus-head strong{display:block;margin-top:4px;font-family:var(--sans);font-size:22px;line-height:1.15}.wallet-focus-head .ghost-btn.compact{display:flex;align-items:center;gap:6px;flex:0 0 auto;padding:8px 11px;font-size:11px}.wallet-focus-head .ghost-btn.compact svg{width:14px;height:14px}.wallet-meta{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.wallet-meta span{padding:4px 8px;border-radius:99px;background:var(--surface-2);color:var(--ink-soft);font-size:9.5px;font-weight:700}.wallet-insight-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:8px 0 10px}.wallet-insight-grid>div{min-width:0;padding:13px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.wallet-insight-grid span{display:block;color:var(--ink-faint);font-size:9.5px;font-weight:700}.wallet-insight-grid b{display:block;margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--nominal);font-size:14px;font-variant-numeric:tabular-nums}.wallet-insight-grid b.in{color:var(--pos)}.wallet-insight-grid b.out{color:var(--neg)}.all-wallet-insights{margin-top:12px}.wallet-net-card{padding:18px;border:1px solid var(--line);border-radius:16px;background:linear-gradient(145deg,var(--surface),var(--surface-2))}.wallet-net-card>span{display:block;color:var(--ink-faint);font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.06em}.wallet-net-card>b{display:block;margin-top:6px;font-family:var(--nominal);font-size:25px;font-variant-numeric:tabular-nums}.wallet-net-card>b.out,.wallet-breakdown-grid b.out{color:var(--neg)}.wallet-net-formula{display:flex;align-items:center;gap:12px;margin-top:16px;padding-top:13px;border-top:1px solid var(--line)}.wallet-net-formula>span{display:flex;flex-direction:column;gap:3px}.wallet-net-formula small{color:var(--ink-faint);font-size:9.5px;font-weight:700}.wallet-net-formula strong{font-family:var(--nominal);font-size:12px;font-variant-numeric:tabular-nums}.wallet-net-formula>i{color:var(--ink-faint);font-style:normal;font-size:15px}.wallet-breakdown-grid{display:grid;grid-template-columns:1fr;gap:9px;margin-top:9px}.wallet-breakdown-grid>div{min-width:0;padding:14px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}.wallet-breakdown-grid>div>span{display:block;color:var(--ink-faint);font-size:9.5px;font-weight:700}.wallet-breakdown-grid b{display:block;margin-top:6px;font-family:var(--nominal);font-size:15px;font-variant-numeric:tabular-nums}.wallet-breakdown-grid small{display:block;margin-top:5px;color:var(--ink-faint);font-size:9.5px;line-height:1.4}.wallet-activity .t2{display:block;margin-top:3px}.qa-btn.active .qa-ic{background:color-mix(in srgb,var(--mint) 18%,var(--surface-2));color:var(--mint)}
+.archive-wallet-view{padding-top:2px}.archive-wallet-hero{padding:18px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(145deg,var(--surface),var(--surface-2))}.archive-wallet-hero>span{display:block;color:var(--mint);font-size:9px;font-weight:800;letter-spacing:.07em;text-transform:uppercase}.archive-wallet-hero>strong{display:block;margin-top:5px;font-size:22px}.archive-wallet-hero>small{display:block;margin-top:5px;color:var(--ink-soft);font-size:10px}.archive-wallet-metrics{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:10px}.archive-wallet-note{margin:5px 2px 2px;color:var(--ink-faint);font-size:9.5px;line-height:1.5}.archive-wallet-row{cursor:default}.archive-wallet-generic{display:grid;place-items:center;color:var(--ink-soft);background:var(--surface-2)}.archive-wallet-generic svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8}.archive-wallet-flow .subt span.in{color:var(--pos)}.archive-wallet-flow .subt span.out{color:var(--neg)}
 .manage .mrow{display:flex;align-items:center;gap:13px;padding:14px 0;border-bottom:1px solid var(--line);cursor:pointer}
 .manage button.mrow{width:100%;border-top:0;border-left:0;border-right:0;background:transparent;color:var(--ink);text-align:left}
 .manage .mrow:last-child{border-bottom:0}
@@ -1075,6 +1086,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .pr-name{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:700}
 .pr-range{display:block;font-size:11px;color:var(--ink-soft);font-weight:600;margin-top:3px}
 .period-row.current .pr-name{color:var(--mint)}
+.period-row.selected{margin-inline:-7px;padding-inline:7px;border-radius:13px;background:var(--surface-2)}
 .pr-edit{flex:0 0 auto;width:32px;height:32px;border-radius:10px;border:0;background:var(--surface-2);
   color:var(--ink-soft);display:grid;place-items:center;cursor:pointer;transition:.18s}
 .pr-edit:hover{color:var(--ink)}
@@ -1085,6 +1097,15 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
   font-family:var(--sans);font-size:11.5px;font-weight:700;cursor:pointer;transition:.18s}
 .period-switch-btn:hover{color:var(--ink);border-color:var(--glass-line)}
 .period-switch-btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+.period-data-nav{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0 4px}
+.period-data-nav button{display:flex;align-items:center;justify-content:center;gap:7px;min-width:0;padding:11px 8px;border:1px solid var(--line);border-radius:13px;background:var(--surface);color:var(--ink-soft);font-family:var(--sans);font-size:11px;font-weight:750;cursor:pointer;transition:.18s}
+.period-data-nav button:hover{color:var(--mint);border-color:var(--glass-line);background:var(--surface-2)}
+.period-data-nav svg{width:15px;height:15px;flex:0 0 auto;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.archive-period-banner{display:flex;align-items:center;gap:9px;margin:0 0 12px;padding:9px 11px;border:1px solid rgba(91,233,170,.16);border-radius:14px;background:rgba(91,233,170,.07)}
+.archive-period-icon{width:30px;height:30px;flex:0 0 auto;display:grid;place-items:center;border-radius:10px;background:rgba(91,233,170,.12);color:var(--mint)}
+.archive-period-icon svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8}
+.archive-period-banner>span:nth-child(2){min-width:0;flex:1}.archive-period-banner small{display:block;color:var(--mint);font-size:8.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase}.archive-period-banner b{display:block;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.archive-period-banner button{flex:0 0 auto;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink-soft);font-family:var(--sans);font-size:9.5px;font-weight:750;cursor:pointer}.archive-period-banner button:hover{color:var(--ink)}
 .period-empty-cta{margin-top:16px}
 /* Blok keputusan tutup buku: dua ujung yang setara, jadi yang kedua tampil sebagai
    tombol datar — bukan CTA gradien kedua yang saling berebut perhatian. */

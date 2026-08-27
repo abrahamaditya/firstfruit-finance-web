@@ -1,9 +1,9 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useActivePeriodTransactions, useWallets, useSavings, usePeriods } from '../application/hooks';
+import { usePeriodTransactions, useWallets, useSavings } from '../application/hooks';
 import { ArrowLeft, CardChip, ChevronR, Down, Eye, EyeOff, ListIcon, Pencil, Plus, TransferCard, Up, WalletIcon } from '../components/ui/icons';
-import type { Transaction } from '../core/domain/types';
+import type { Transaction, Wallet } from '../core/domain/types';
 import { isActualIncome, isWalletIncome } from '../core/domain/calculations';
 import { walletCardTheme } from '../core/wallet-card-theme';
 import { walletBrandLogo, walletNetworkLogo, walletProductInitial } from '../core/wallet-branding';
@@ -15,14 +15,21 @@ const transactionTitle = (transaction: Transaction) =>
   || transaction.labels.at(-1)
   || (transaction.type === 'income' ? 'Pemasukan' : transaction.type === 'transfer' ? 'Transfer' : 'Pengeluaran');
 
+interface ArchiveWalletActivity {
+  id: string;
+  wallet?: Wallet;
+  incoming: number;
+  outgoing: number;
+  transactionCount: number;
+}
+
 export default function WalletsScreen() {
   const ui = useUI();
   const money = useMoney();
   const t = useT();
   const { wallets } = useWallets();
   const { savings, reservedIn } = useSavings();
-  const { data: transactions } = useActivePeriodTransactions();
-  const { active: activePeriod } = usePeriods();
+  const { data: transactions, period: viewedPeriod, isArchive } = usePeriodTransactions(ui.periodId);
   const mediumRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
   const byCategoryThenName = (a: typeof wallets[number], b: typeof wallets[number]) =>
     (mediumRank[mediumOf(a)] ?? 99) - (mediumRank[mediumOf(b)] ?? 99)
@@ -179,8 +186,8 @@ export default function WalletsScreen() {
     : [];
   const selectedSavings = current ? savings.filter((saving) => saving.walletId === current.id) : [];
   const now = new Date();
-  const periodStart = activePeriod ? new Date(activePeriod.start) : new Date(now.getFullYear(), now.getMonth(), 1);
-  const periodEnd = activePeriod ? new Date(activePeriod.end) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const periodStart = viewedPeriod ? new Date(viewedPeriod.start) : new Date(now.getFullYear(), now.getMonth(), 1);
+  const periodEnd = viewedPeriod ? new Date(viewedPeriod.end) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
   periodStart.setHours(0, 0, 0, 0);
   periodEnd.setHours(23, 59, 59, 999);
   const periodTransactions = selectedTransactions.filter((transaction) => {
@@ -246,7 +253,7 @@ export default function WalletsScreen() {
   const transferOutPeriod = Math.max(0, spentPeriod - actualExpensePeriod);
   const periodLocale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const periodDate = (date: Date) => date.toLocaleDateString(periodLocale, { day: 'numeric', month: 'short', year: 'numeric' });
-  const periodName = activePeriod?.alias ?? 'Bulan berjalan';
+  const periodName = viewedPeriod?.alias ?? 'Bulan berjalan';
   const periodRange = `${periodDate(periodStart)} – ${periodDate(periodEnd)}`;
   const transactionAmount = (transaction: Transaction) => {
     if (transaction.type === 'transfer') {
@@ -258,6 +265,96 @@ export default function WalletsScreen() {
     ui.prefs.language === 'EN' ? 'en-US' : 'id-ID',
     { day: 'numeric', month: 'short' },
   ).format(new Date(iso));
+
+  // Saldo dompet tidak disimpan sebagai snapshot per periode. Untuk arsip, tampilkan
+  // arus yang benar-benar tercatat pada periode itu agar saldo hari ini tidak terlihat
+  // seolah-olah merupakan saldo historis.
+  const archivedWallets = (() => {
+    const walletById = new Map(wallets.map((wallet) => [wallet.id, wallet]));
+    const activity = new Map<string, ArchiveWalletActivity>();
+    const entryFor = (id: string) => {
+      const existing = activity.get(id);
+      if (existing) return existing;
+      const entry: ArchiveWalletActivity = {
+        id,
+        wallet: walletById.get(id),
+        incoming: 0,
+        outgoing: 0,
+        transactionCount: 0,
+      };
+      activity.set(id, entry);
+      return entry;
+    };
+
+    transactions.forEach((transaction) => {
+      const source = entryFor(transaction.walletId);
+      source.transactionCount += 1;
+      if (transaction.type === 'income') source.incoming += transaction.amount;
+      else source.outgoing += transaction.amount;
+
+      if (transaction.type === 'transfer' && transaction.toWalletId && transaction.toWalletId !== transaction.walletId) {
+        const destination = entryFor(transaction.toWalletId);
+        destination.incoming += transaction.amount;
+        destination.transactionCount += 1;
+      }
+    });
+
+    return [...activity.values()].sort((a, b) =>
+      b.transactionCount - a.transactionCount
+      || (a.wallet?.name ?? a.id).localeCompare(b.wallet?.name ?? b.id, periodLocale));
+  })();
+  const archiveIncoming = archivedWallets.reduce((sum, entry) => sum + entry.incoming, 0);
+  const archiveOutgoing = archivedWallets.reduce((sum, entry) => sum + entry.outgoing, 0);
+  const archiveNet = archiveIncoming - archiveOutgoing;
+  const walletTypeLabel = (wallet?: Wallet) => {
+    if (!wallet) return 'Dompet diarsipkan';
+    const medium = mediumOf(wallet);
+    if (medium === 'credit') return 'Kartu Kredit';
+    if (medium === 'ewallet') return 'E-Wallet';
+    if (medium === 'cash') return 'Uang Tunai';
+    return 'Kartu Debit';
+  };
+
+  if (isArchive) {
+    return (
+      <div className="archive-wallet-view">
+        <div className="archive-wallet-hero">
+          <span>Aktivitas Dompet</span>
+          <strong>{periodName}</strong>
+          <small>{periodRange}</small>
+        </div>
+        <div className="wallet-insight-grid archive-wallet-metrics">
+          <div><span>Dana Masuk</span><b className="in">{money.fmt(archiveIncoming)}</b></div>
+          <div><span>Dana Keluar</span><b className="out">{money.fmt(archiveOutgoing)}</b></div>
+          <div><span>Arus Bersih</span><b className={archiveNet < 0 ? 'out' : 'in'}>{money.fmtSigned(archiveNet)}</b></div>
+        </div>
+        <p className="archive-wallet-note">
+          Arsip menampilkan arus transaksi per dompet. Saldo historis tidak ditampilkan karena belum ada snapshot saldo per dompet.
+        </p>
+        <div className="sec"><span className="t">Dompet yang digunakan</span><button className="addg" onClick={() => ui.go('tx')}>{t('tab.tx.title')}<ChevronR /></button></div>
+        {archivedWallets.map((entry) => {
+          const net = entry.incoming - entry.outgoing;
+          const wallet = entry.wallet;
+          return (
+            <div className="row archive-wallet-row" key={entry.id}>
+              {wallet
+                ? walletListIcon(wallet, walletProductInitial(wallet), walletProduct(mediumOf(wallet), wallet.bank)?.color || '#444')
+                : <div className="lg archive-wallet-generic"><WalletIcon /></div>}
+              <div className="mid">
+                <div className="t1">{wallet?.name ?? 'Dompet tidak aktif'}</div>
+                <div className="t2">{walletTypeLabel(wallet)} · {entry.transactionCount} transaksi</div>
+              </div>
+              <div className="r archive-wallet-flow">
+                <div className={`val ${net < 0 ? 'out' : net > 0 ? 'in' : ''}`}>{money.fmtSigned(net)}</div>
+                <div className="subt"><span className="in">+{money.fmt(entry.incoming)}</span> · <span className="out">−{money.fmt(entry.outgoing)}</span></div>
+              </div>
+            </div>
+          );
+        })}
+        {archivedWallets.length === 0 && <div className="saving-empty">Tidak ada aktivitas dompet pada periode ini.</div>}
+      </div>
+    );
+  }
 
   // Tanpa satu pun dompet, seluruh layar ini kehilangan pijakannya: tidak ada kartu untuk
   // digeser, tidak ada saldo untuk disembunyikan, dan tabungan mustahil ada karena ia

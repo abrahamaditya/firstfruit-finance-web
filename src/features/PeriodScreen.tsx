@@ -2,9 +2,9 @@
 
 import React, { useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { usePeriodReport, usePeriods } from '../application/hooks';
+import { usePeriodReport, usePeriodTransactions, usePeriods } from '../application/hooks';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
-import { Calendar, Check, Info, ListIcon, Lock, Plus } from '../components/ui/icons';
+import { Calendar, Check, Chevron, Gauge, Info, ListIcon, Lock, Plus, WalletIcon } from '../components/ui/icons';
 
 /**
  * Laporan satu periode. Periode dipilih lewat sheet "Ganti periode"; layar ini
@@ -18,6 +18,7 @@ export default function PeriodScreen() {
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const repos = useRepositories();
   const report = usePeriodReport(ui.periodId);
+  const { data: periodTransactions } = usePeriodTransactions(ui.periodId);
   const { periods, active: activePeriod } = usePeriods();
   // Tutup buku dua langkah: tombolnya cuma membuka pilihan, keputusan "buat periode
   // berikutnya atau tidak" dijawab setelah kotak konfirmasi dicentang.
@@ -29,6 +30,8 @@ export default function PeriodScreen() {
   const [nextChoice, setNextChoice] = useState<'draft' | 'new'>('new');
   const [targetDraftId, setTargetDraftId] = useState('');
   const [copyBudgetIds, setCopyBudgetIds] = useState<string[]>([]);
+  const [expandedBudgetId, setExpandedBudgetId] = useState<string | null>(null);
+  const [expandedCategoryName, setExpandedCategoryName] = useState<string | null>(null);
 
   const current = report.period;
   // Tiga keadaan, bukan dua: draft belum pernah berjalan, jadi ia tidak bisa ditutup
@@ -116,6 +119,11 @@ export default function PeriodScreen() {
   }
 
   const categoryMax = Math.max(...report.categories.map((c) => c.total), 1);
+  const transactionTitle = (transaction: typeof periodTransactions[number]) =>
+    transaction.merchant || transaction.note || transaction.labels.at(-1) || t('budget.transaction');
+  const transactionDate = (date: string) => new Date(date).toLocaleDateString(locale, {
+    day: 'numeric', month: 'short', year: 'numeric',
+  });
 
   return (
     <>
@@ -136,6 +144,14 @@ export default function PeriodScreen() {
           <ListIcon />{t('side.switchPeriod')}
         </button>
       </div>
+
+      {!isDraft && (
+        <div className="period-data-nav" aria-label="Data periode">
+          <button type="button" onClick={() => ui.go('tx')}><ListIcon /><span>Transaksi</span></button>
+          <button type="button" onClick={() => ui.go('wallets')}><WalletIcon /><span>Dompet</span></button>
+          <button type="button" onClick={() => ui.go('budget')}><Gauge /><span>Anggaran</span></button>
+        </div>
+      )}
 
       <div className="metric-grid period-metrics">
         <div className="metric-card m-in">
@@ -187,7 +203,10 @@ export default function PeriodScreen() {
       <div className="sec"><span className="t">{t('period.budgetSection')}</span></div>
       <div className="cat-card">
         {report.budgets.length === 0 && <div className="saving-empty">{t('period.noBudgets')}</div>}
-        {report.budgets.map((budget) => (
+        {report.budgets.map((budget) => {
+          const linkedTransactions = periodTransactions.filter((transaction) => transaction.budgetId === budget.id);
+          const expanded = expandedBudgetId === budget.id;
+          return (
           <div className="cb" key={budget.id}>
             <div className="crow">
               <span className="cn">{budget.category}</span>
@@ -204,14 +223,50 @@ export default function PeriodScreen() {
                 ? `${money.fmt(-budget.remaining)} ${t('budget.deficit')}`
                 : `${money.fmt(budget.remaining)} ${t('budget.leftSuffix')}`}
             </div>
+            <button
+              type="button"
+              className="budget-transactions-toggle"
+              aria-expanded={expanded}
+              onClick={() => setExpandedBudgetId((currentId) => currentId === budget.id ? null : budget.id)}
+            >
+              <span>{linkedTransactions.length} {t('budget.transactions')}</span>
+              <Chevron />
+            </button>
+            {expanded && (
+              <div className="budget-transactions">
+                {linkedTransactions.length === 0 ? (
+                  <span className="budget-transactions-empty">{t('budget.noTransactions')}</span>
+                ) : linkedTransactions.map((transaction) => (
+                  <button
+                    type="button"
+                    className="budget-transaction"
+                    key={transaction.id}
+                    onClick={() => ui.openItem(
+                      transactionTitle(transaction),
+                      transaction.type === 'transfer' ? 'transfer' : 'transaksi',
+                      transaction.id,
+                    )}
+                  >
+                    <span><b>{transactionTitle(transaction)}</b><small>{transactionDate(transaction.date)}</small></span>
+                    <b>{money.fmt(transaction.amount)}</b>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="sec"><span className="t">{t('reports.topCategories')}</span></div>
       <div className="cat-card">
         {report.categories.length === 0 && <div className="saving-empty">{t('reports.noData')}</div>}
-        {report.categories.map((category) => (
+        {report.categories.map((category) => {
+          const linkedTransactions = periodTransactions.filter((transaction) =>
+            transaction.type === 'expense' && transaction.labels[0] === category.name,
+          );
+          const expanded = expandedCategoryName === category.name;
+          return (
           <div className="cb" key={category.name}>
             <div className="crow">
               <span className="cn">{category.name}</span>
@@ -221,8 +276,35 @@ export default function PeriodScreen() {
             <div className="cshare">
               {report.expense ? Math.round((category.total / report.expense) * 100) : 0}% {t('reports.ofSpending')}
             </div>
+            <button
+              type="button"
+              className="budget-transactions-toggle"
+              aria-expanded={expanded}
+              onClick={() => setExpandedCategoryName((currentName) => currentName === category.name ? null : category.name)}
+            >
+              <span>{linkedTransactions.length} {t('budget.transactions')}</span>
+              <Chevron />
+            </button>
+            {expanded && (
+              <div className="budget-transactions">
+                {linkedTransactions.length === 0 ? (
+                  <span className="budget-transactions-empty">{t('budget.noTransactions')}</span>
+                ) : linkedTransactions.map((transaction) => (
+                  <button
+                    type="button"
+                    className="budget-transaction"
+                    key={transaction.id}
+                    onClick={() => ui.openItem(transactionTitle(transaction), 'transaksi', transaction.id)}
+                  >
+                    <span><b>{transactionTitle(transaction)}</b><small>{transactionDate(transaction.date)}</small></span>
+                    <b>{money.fmt(transaction.amount)}</b>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {report.isActive ? (

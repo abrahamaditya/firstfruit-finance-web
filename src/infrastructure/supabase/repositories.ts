@@ -64,6 +64,7 @@ function mapTransaction(row: DbRow): Transaction {
     type,
     nature: transactionNature(row.nature),
     amount: amount(row.amount_minor),
+    periodId: row.period_id ?? undefined,
     walletId: row.wallet_id,
     toWalletId: row.to_wallet_id ?? undefined,
     labels: row.category_name

@@ -109,32 +109,37 @@ export function useTransactions() {
   return { ...result, data };
 }
 
-/**
- * Aktivitas operasional hanya menampilkan transaksi dari periode yang sedang dibuka.
- * `useTransactions` tetap menyediakan seluruh riwayat untuk laporan dan perhitungan
- * lintas periode seperti cicilan, piutang, serta estimasi pemasukan.
- */
-export function useActivePeriodTransactions() {
+/** Transaksi untuk periode yang dipilih; tanpa id, gunakan periode berjalan. */
+export function usePeriodTransactions(periodId?: string | null) {
   const result = useTransactions();
-  const { active, loading: periodLoading } = usePeriods();
+  const { periods, active, loading: periodLoading } = usePeriods();
+  const period = periods.find((entry) => entry.id === periodId) ?? active;
   const data = useMemo(() => {
-    if (!active) return [];
-    const start = new Date(active.start);
-    const end = new Date(active.end);
+    if (!period || period.status === 'draft') return [];
+    const start = new Date(period.start);
+    const end = new Date(period.end);
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
     return result.data.filter(transaction => {
+      if (transaction.periodId) return transaction.periodId === period.id;
       const occurredAt = new Date(transaction.date);
       return occurredAt >= start && occurredAt <= end;
     });
-  }, [active, result.data]);
+  }, [period, result.data]);
 
   return {
     ...result,
     data,
+    period,
     activePeriod: active,
+    isArchive: period?.status === 'closed',
     loading: result.loading || periodLoading,
   };
+}
+
+/** Aktivitas operasional selalu mengikuti periode yang sedang dibuka. */
+export function useActivePeriodTransactions() {
+  return usePeriodTransactions(null);
 }
 
 export function useBudgets(): { budgets: BudgetView[]; raw: Budget[]; loading: boolean } {

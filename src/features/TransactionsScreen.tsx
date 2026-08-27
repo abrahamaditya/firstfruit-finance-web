@@ -2,7 +2,7 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useActivePeriodTransactions, useSavings, useWallets } from '../application/hooks';
+import { usePeriodTransactions, useSavings, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
 import { categoryTone } from '../core/domain/categories';
@@ -13,7 +13,7 @@ export default function TransactionsScreen() {
   const money = useMoney();
   const tr = useT();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const { data } = useActivePeriodTransactions();
+  const { data } = usePeriodTransactions(ui.periodId);
   const { wallets } = useWallets();
   const { all: savings } = useSavings();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
@@ -123,7 +123,7 @@ export default function TransactionsScreen() {
             placeholder={tr('tx.searchPlaceholder')}
           />
         </label>
-        <button className="addg" onClick={ui.openAdd}><Plus />{tr('tx.log')}</button>
+        {!ui.isArchivePeriod && <button className="addg" onClick={ui.openAdd}><Plus />{tr('tx.log')}</button>}
       </div>
 
       <div className="filter-pills">
@@ -203,7 +203,7 @@ export default function TransactionsScreen() {
               && (transaction.installmentPaidMonths ?? 0) >= transaction.installmentTenorMonths;
             return (
               <div
-                className="row transaction-row"
+                className={`row transaction-row${transaction.type === 'transfer' ? ' transfer-row' : ''}`}
                 key={transaction.id}
                 onClick={() =>
                   ui.openItem(
@@ -217,7 +217,15 @@ export default function TransactionsScreen() {
                   {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <TransferCard /> : <Up />}
                 </div>
                 <div className="mid">
-                  <div className="t1">{transactionTitle(transaction)}</div>
+                  <div className="t1">
+                    {transaction.type === 'transfer' ? (
+                      <span className="transfer-route">
+                        <span className="transfer-source">{sourceWallet?.name ?? 'Dompet asal'}</span>
+                        <i aria-hidden="true">→</i>
+                        <span className="transfer-destination">{destinationWallet?.name ?? 'Dompet tujuan'}</span>
+                      </span>
+                    ) : transactionTitle(transaction)}
+                  </div>
                   <div className="t2">
                     {transaction.type === 'income' && (
                       <span className="chip" data-cat="income">

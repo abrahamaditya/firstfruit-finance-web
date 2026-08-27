@@ -23,6 +23,7 @@ export interface Wallet {
 }
 export interface Transaction {
   id: string; type: TxType; nature: TxNature; amount: number;
+  periodId?: string;
   benefitScope?: TransactionBenefitScope;
   walletId: string; toWalletId?: string; labels: string[];
   merchant?: string;            // tempat transaksi: Indomaret, Shopee, kaki lima, …

@@ -30,8 +30,8 @@ export const WALLET_PRODUCTS: readonly WalletProduct[] = [
   { value: 'ShopeePay', label: 'ShopeePay', medium: 'ewallet', logo: '/brand/shopeepay-logo.png', color: '#ee4d2d', theme: 'sunset' },
   { value: 'Flazz BCA', label: 'Flazz BCA', medium: 'ewallet', logo: '/brand/flazz-logo.png', color: '#1a4ea3', theme: 'ocean' },
 
-  { value: 'BCA', label: 'Kartu kredit BCA', medium: 'credit', color: '#1a4ea3', theme: 'slate' },
-  { value: 'Bank Mandiri', label: 'Kartu kredit Mandiri', medium: 'credit', logo: '/brand/livin-mandiri-logo.png', color: '#f5b400', theme: 'slate' },
+  { value: 'BCA', label: 'Kartu Kredit BCA', medium: 'credit', color: '#1a4ea3', theme: 'slate' },
+  { value: 'Bank Mandiri', label: 'Kartu Kredit Mandiri', medium: 'credit', logo: '/brand/livin-mandiri-logo.png', color: '#f5b400', theme: 'slate' },
 ] as const;
 
 const normalize = (value?: string) => value?.trim().toLocaleLowerCase('id-ID') ?? '';

@@ -21,7 +21,7 @@ import {
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { periodProgress } from '../core/domain/calculations';
-import { CardNetwork, Transaction, WalletKind, WalletMedium } from '../core/domain/types';
+import { BudgetPeriod, CardNetwork, Transaction, WalletKind, WalletMedium } from '../core/domain/types';
 import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
@@ -58,6 +58,7 @@ import {
   Grid,
   Home,
   ListIcon,
+  Lock,
   Pencil,
   Plus,
   Receivable,
@@ -132,6 +133,7 @@ const CREATE_TYPES = new Set<CreateType>([
   'orang', 'transfer', 'transaksi', 'tabungan', 'sisihkan', 'ambil',
   'reminder',
 ]);
+const PERIOD_SCOPED_TABS = new Set<Tab>(['period', 'tx', 'wallets', 'budget']);
 
 const formStorageKeys = (
   userId: string,
@@ -156,8 +158,10 @@ interface UI {
   openCreate: (type: CreateType, isEdit?: boolean, name?: string, id?: string) => void;
   notify: (message: string) => void;
   refresh: () => void;
-  /** Periode yang sedang dibaca laporannya; null = ikut periode berjalan. */
+  /** Periode yang sedang dibaca di layar periode/transaksi/dompet/anggaran; null = periode berjalan. */
   periodId: string | null;
+  viewPeriod?: BudgetPeriod;
+  isArchivePeriod: boolean;
   selectPeriod: (periodId: string | null) => void;
   prefs: Preferences;
   setPref: <K extends keyof Preferences>(key: K, value: Preferences[K]) => void;
@@ -597,6 +601,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const itemPeriod = item.type === 'periode'
     ? periods.find((period) => period.id === item.id)
     : undefined;
+  const viewPeriod = periods.find((period) => period.id === periodId) ?? activePeriod;
+  const isArchivePeriod = viewPeriod?.status === 'closed';
   const [create, setCreate] = useState<CreateDescriptor>({ type: 'wallet', isEdit: false });
   const [form, setForm] = useState<Record<string, string>>({});
   const [creditPaymentInstallments, setCreditPaymentInstallments] = useState<Record<string, number>>({});
@@ -846,28 +852,33 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   // dari "ada, tapi semuanya sudah ditutup" — yang kedua butuh periode baru dibuka,
   // bukan periode pertama dibuat, jadi keduanya tidak boleh berbagi satu kalimat.
   const periodEmptyLabel = t(periods.length === 0 ? 'side.periodEmpty' : 'side.periodAllClosed');
-  const periodLabel = activePeriod
-    ? activePeriod.alias?.trim() || periodShortLabel(activePeriod, numLocale)
+  const periodLabel = viewPeriod
+    ? viewPeriod.alias?.trim() || periodShortLabel(viewPeriod, numLocale)
     : periodEmptyLabel;
 
   // Isi kartu periode di dasar sidebar. Dikumpulkan di satu tempat, bukan dihitung di
   // dalam JSX, supaya urutan keadaannya (belum mulai → lewat tanggal → hari terakhir →
   // hitungan biasa) terbaca sebagai satu keputusan.
   const periodCard = (() => {
-    if (!activePeriod) return null;
-    const { fraction, daysLeft, notStarted, overdue } = periodProgress(activePeriod);
+    if (!viewPeriod) return null;
+    const { fraction, daysLeft, notStarted, overdue } = periodProgress(viewPeriod);
+    const isClosed = viewPeriod.status === 'closed';
     const day = { day: 'numeric', month: 'short' } as const;
     return {
       // Nama yang ditulis pengguna adalah yang paling dikenalinya. Alias kosong (data
       // lama / hasil impor) jatuh kembali ke bulan+tahun dari tanggalnya.
-      name: activePeriod.alias?.trim() || periodShortLabel(activePeriod, numLocale),
-      range: `${new Date(activePeriod.start).toLocaleDateString(numLocale, day)} – ${new Date(activePeriod.end).toLocaleDateString(numLocale, day)}`,
-      status: activePeriod.status === 'draft' ? t('planning.draft') : t('closing.statusActive'),
-      draft: activePeriod.status === 'draft',
-      overdue,
-      progress: fraction,
+      name: viewPeriod.alias?.trim() || periodShortLabel(viewPeriod, numLocale),
+      range: `${new Date(viewPeriod.start).toLocaleDateString(numLocale, day)} – ${new Date(viewPeriod.end).toLocaleDateString(numLocale, day)}`,
+      status: viewPeriod.status === 'draft'
+        ? t('planning.draft')
+        : t(isClosed ? 'closing.statusClosed' : 'closing.statusActive'),
+      draft: viewPeriod.status === 'draft',
+      overdue: !isClosed && overdue,
+      progress: isClosed ? 1 : fraction,
       // daysLeft sudah termasuk hari ini, jadi 1 berarti hari terakhir — bukan besok.
-      remaining: notStarted
+      remaining: isClosed
+        ? 'Arsip'
+        : notStarted
         ? t('side.periodNotStarted')
         : overdue
           ? t('side.periodOverdue')
@@ -891,6 +902,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
 
   const go = useCallback((next: Tab) => {
     if (sheet === 'create') clearCurrentFormDraft();
+    if (
+      (viewPeriod?.status === 'draft' && next !== 'period')
+      || (isArchivePeriod && !PERIOD_SCOPED_TABS.has(next))
+    ) {
+      setPeriodId(null);
+    }
     if (next === tab) {
       setSheet(null);
       return;
@@ -898,20 +915,30 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     setTabHistory((history) => [...history, tab].slice(-12));
     setTab(next);
     setSheet(null);
-  }, [clearCurrentFormDraft, sheet, tab]);
+  }, [clearCurrentFormDraft, isArchivePeriod, sheet, tab, viewPeriod?.status]);
 
   const goBack = useCallback(() => {
     if (sheet === 'create') clearCurrentFormDraft();
     setTabHistory((history) => {
       const previous = history.at(-1) ?? 'home';
+      if (
+        (viewPeriod?.status === 'draft' && previous !== 'period')
+        || (isArchivePeriod && !PERIOD_SCOPED_TABS.has(previous))
+      ) {
+        setPeriodId(null);
+      }
       setTab(previous);
       return history.slice(0, -1);
     });
     setSheet(null);
-  }, [clearCurrentFormDraft, sheet]);
+  }, [clearCurrentFormDraft, isArchivePeriod, sheet, viewPeriod?.status]);
 
   const openCreate = useCallback(
     (type: CreateType, isEdit = false, name?: string, id?: string) => {
+      if (isArchivePeriod && ['transaksi', 'transfer', 'budget'].includes(type)) {
+        notify(`${viewPeriod?.alias ?? 'Periode arsip'} hanya dapat dilihat`);
+        return;
+      }
       const showForm = (nextType: CreateType) => {
         setFormDraftReady(false);
         setShowTransactionDetails(isEdit && (nextType === 'transaksi' || nextType === 'transfer'));
@@ -946,7 +973,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
 
       showForm(type);
     },
-    [notify, periodBudgetTemplates, repos],
+    [isArchivePeriod, notify, periodBudgetTemplates, repos, viewPeriod?.alias],
   );
 
   const openSavingTransfer = useCallback((savingId: string, savingName: string) => {
@@ -982,7 +1009,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const ui: UI = {
     go,
     openNotif: () => setSheet('notif'),
-    openAdd: () => openCreate('transaksi'),
+    openAdd: () => isArchivePeriod
+      ? notify(`${viewPeriod?.alias ?? 'Periode arsip'} hanya dapat dilihat`)
+      : openCreate('transaksi'),
     openTools: () => setSheet('tools'),
     openPeriods: () => setSheet('period'),
     openItem: (name, type, id) => {
@@ -993,6 +1022,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     notify,
     refresh: () => setDataVersion((version) => version + 1),
     periodId,
+    viewPeriod,
+    isArchivePeriod,
     selectPeriod,
     prefs,
     setPref,
@@ -1336,11 +1367,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               label: 'Jenis dompet',
               type: 'select',
               options: [
-                { value: 'bank', label: 'Rekening / kartu debit' },
+                { value: 'bank', label: 'Kartu Debit' },
                 { value: 'digital', label: 'Bank Digital' },
-                { value: 'credit', label: 'Kartu kredit' },
-                { value: 'ewallet', label: 'E-wallet' },
-                { value: 'cash', label: 'Uang tunai' },
+                { value: 'credit', label: 'Kartu Kredit' },
+                { value: 'ewallet', label: 'E-Wallet' },
+                { value: 'cash', label: 'Uang Tunai' },
               ],
             },
             {
@@ -2551,7 +2582,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 aria-label memuat nama + sisa waktu karena pembaca layar tidak menerima
                 apa pun dari bar progres. */}
             <button
-              className={`side-period${tab === 'period' ? ' on' : ''}${periodCard?.overdue ? ' overdue' : ''}`}
+              className={`side-period${tab === 'period' || periodId ? ' on' : ''}${periodCard?.overdue ? ' overdue' : ''}`}
               onClick={() => setSheet('period')}
               aria-label={`${t('side.switchPeriod')} — ${periodCard ? `${periodCard.name}, ${periodCard.remaining}` : periodEmptyLabel}`}
             >
@@ -2627,6 +2658,18 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               </button>
             </header>
 
+            {isArchivePeriod && viewPeriod && tab !== 'period' && (
+              <div className="archive-period-banner">
+                <span className="archive-period-icon"><Lock /></span>
+                <span>
+                  <small>Mode arsip · hanya lihat</small>
+                  <b>{viewPeriod.alias}</b>
+                </span>
+                <button type="button" onClick={() => go('period')}>Ringkasan</button>
+                <button type="button" onClick={() => setPeriodId(null)}>Periode Aktif</button>
+              </div>
+            )}
+
             {/* Key dipasang di sini, bukan di .viewport: kalau di viewport, topbar ikut
                 remount dan beranimasi ulang tiap kali data berubah. */}
             <div className="page" key={`${tab}-${dataVersion}`}>{screens[tab]}</div>
@@ -2693,7 +2736,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 );
                 const dateRange = `${new Date(entry.start).toLocaleDateString(numLocale, { day: 'numeric', month: 'short' })} – ${new Date(entry.end).toLocaleDateString(numLocale, { day: 'numeric', month: 'short', year: 'numeric' })}`;
                 return (
-                  <div className={`period-row${entry.id === activePeriod?.id ? ' current' : ''}`} key={entry.id}>
+                  <div className={`period-row${entry.id === activePeriod?.id ? ' current' : ''}${entry.id === viewPeriod?.id ? ' selected' : ''}`} key={entry.id}>
                     <button
                       className="pr-main"
                       onClick={() => { setSheet(null); selectPeriod(entry.id); }}
@@ -2797,7 +2840,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             item.type === 'reminder' ? 'calendar' :
             item.type === 'periode' ? 'period' : 'wallets'
           }.title`)}</p>
-          {item.type === 'tabungan' && (
+          {!isArchivePeriod && item.type === 'tabungan' && (
             <>
               <button
                 className="act"
@@ -2810,18 +2853,18 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               </button>
             </>
           )}
-          {item.type !== 'piutang' && (item.type !== 'periode' || itemPeriod?.status !== 'closed') && (
+          {(!isArchivePeriod || item.type === 'periode') && item.type !== 'piutang' && (item.type !== 'periode' || itemPeriod?.status !== 'closed') && (
             <button className="act" onClick={() => openCreate(item.type, true, item.name, item.id)}>
               <span className="ax"><Pencil /></span> {t('common.edit')}
             </button>
           )}
           {/* Periode & tabungan tidak boleh diduplikat — keduanya harus unik. */}
-          {item.type !== 'tabungan' && item.type !== 'periode' && (
+          {!isArchivePeriod && item.type !== 'tabungan' && item.type !== 'periode' && (
             <button className="act" onClick={() => openCreate(item.type, false, item.name, item.id)}>
               <span className="ax"><Copy /></span> {t('common.duplicate')}
             </button>
           )}
-          {(item.type !== 'periode' || itemPeriod?.status === 'draft') && (
+          {(!isArchivePeriod || item.type === 'periode') && (item.type !== 'periode' || itemPeriod?.status === 'draft') && (
             <button className="act danger" onClick={() => void removeItem()}>
               <span className="ax"><Trash /></span> {t('common.delete')}
             </button>
