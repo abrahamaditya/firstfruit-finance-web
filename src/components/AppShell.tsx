@@ -170,7 +170,7 @@ const FX_KEY = 'abraham.fx';
 const FX_FALLBACK = 16000; // dipakai bila API & cache gagal
 
 // Field nominal uang: input diberi pemisah ribuan otomatis (digit mentah disimpan di state).
-const MONEY_FIELDS = new Set(['amount', 'balance', 'creditLimit', 'owed', 'target', 'saved', 'allocated', 'spent', 'share']);
+const MONEY_FIELDS = new Set(['amount', 'balance', 'creditLimit', 'creditOutstanding', 'owed', 'target', 'saved', 'allocated', 'spent', 'share']);
 // Kapsul nominal cepat (menambah ke nilai saat ini).
 const QUICK_AMOUNTS = [50_000, 100_000, 500_000, 1_000_000, 5_000_000];
 
@@ -201,7 +201,7 @@ export function useMoney() {
 interface FieldDefinition {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'select' | 'segmented';
+  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'computed';
   options?: CategoryOption[];
   optionsOf?: (form: Record<string, string>) => CategoryOption[];  // pilihan dinamis
   placeholder?: string;
@@ -210,6 +210,8 @@ interface FieldDefinition {
   suggestions?: string[];                              // datalist untuk input teks bebas
   showIf?: (form: Record<string, string>) => boolean;  // field kondisional
   labelOf?: (form: Record<string, string>) => string;  // label dinamis
+  computedValue?: (form: Record<string, string>) => string;  // nilai tampilan yang dihitung otomatis
+  hint?: string;
   advanced?: boolean;                                 // ditaruh di detail opsional
 }
 
@@ -248,7 +250,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   transfer: TRANSACTION_FORM_SECTIONS,
   wallet: [
     { title: 'Identitas dompet', keys: ['medium', 'bank', 'pasporVariant'] },
-    { title: 'Nilai keuangan', keys: ['balance', 'creditLimit'] },
+    { title: 'Nilai keuangan', keys: ['balance', 'creditLimit', 'creditOutstanding', 'creditAvailable'] },
     { title: 'Detail rekening', keys: ['cardNetwork', 'last4', 'phone'] },
   ],
   subscription: [
@@ -304,6 +306,7 @@ const groupFormFields = (type: CreateType, fields: FieldDefinition[]) => {
 };
 
 const fieldIsRequired = (field: FieldDefinition, form: Record<string, string> = {}) => {
+  if (field.type === 'computed') return false;
   if (field.requiredIf?.(form)) return true;
   if (field.optional) return false;
   if (field.type === 'select' || field.type === 'segmented') return true;
@@ -1282,7 +1285,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const configs: Record<CreateType, FormConfig> = {
         wallet: {
           title: 'dompet',
-          description: 'Pilih jenis dompet, lalu pilih produk yang sesuai.',
+          description: 'Untuk kartu kredit, masukkan limit total dan tagihan awal. Sisa limit dihitung otomatis.',
           fields: [
             {
               key: 'medium',
@@ -1337,7 +1340,35 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             // Rekening & kartu diidentifikasi 4 digit terakhir; e-wallet pakai nomor HP.
             { key: 'last4', label: '4 digit terakhir', placeholder: '0000', optional: true, showIf: (f) => f.medium === 'bank' || f.medium === 'digital' || f.medium === 'credit' },
             { key: 'phone', label: 'Nomor HP', placeholder: '08xxxxxxxxxx', optional: true, showIf: (f) => f.medium === 'ewallet' },
-            { key: 'creditLimit', label: 'Limit kredit', type: 'number', showIf: (f) => f.medium === 'credit' },
+            {
+              key: 'creditLimit',
+              label: 'Limit total kartu',
+              type: 'number',
+              requiredIf: (f) => f.medium === 'credit',
+              showIf: (f) => f.medium === 'credit',
+            },
+            {
+              key: 'creditOutstanding',
+              label: 'Tagihan awal kartu',
+              labelOf: () => create.isEdit ? 'Tagihan berjalan saat ini' : 'Tagihan awal kartu',
+              type: 'number',
+              optional: true,
+              placeholder: '0',
+              showIf: (f) => f.medium === 'credit',
+            },
+            {
+              key: 'creditAvailable',
+              label: 'Sisa limit saat ini',
+              type: 'computed',
+              computedValue: (f) => {
+                const limit = toNumber(f.creditLimit);
+                return limit > 0
+                  ? formatIDR(Math.max(0, limit - toNumber(f.creditOutstanding)))
+                  : 'Isi limit total terlebih dahulu';
+              },
+              hint: 'Dihitung otomatis dari limit total dikurangi tagihan berjalan.',
+              showIf: (f) => f.medium === 'credit',
+            },
           ],
           defaults: {
             name: '',
@@ -1348,6 +1379,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             phone: '',
             cardNetwork: '',
             creditLimit: '',
+            creditOutstanding: '',
             pasporVariant: '',
           },
         },
@@ -1806,6 +1838,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 ? 'digital'
                 : record.medium ?? (record.kind === 'credit' ? 'credit' : 'bank');
             }
+            if (field.key === 'creditOutstanding') {
+              value = record.kind === 'credit' ? record.balance : undefined;
+            }
             if (field.key === 'pasporVariant') {
               value = ['Blue', 'Gold', 'Platinum'].find((variant) =>
                 String(record.name ?? '').toLocaleLowerCase('id-ID').includes(variant.toLocaleLowerCase('id-ID')),
@@ -1932,6 +1967,20 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         const medium = (category === 'digital' ? 'bank' : category) as WalletMedium;
         const product = walletProduct(category, form.bank);
         const before = shouldUpdate ? await repos.wallets.get(id!) : null;
+        const creditLimit = toNumber(form.creditLimit);
+        const creditOutstanding = toNumber(form.creditOutstanding);
+        if (medium === 'credit' && creditLimit <= 0) {
+          notify('Limit total kartu harus lebih dari Rp0');
+          return;
+        }
+        if (medium === 'credit' && creditOutstanding < 0) {
+          notify('Tagihan berjalan tidak boleh kurang dari Rp0');
+          return;
+        }
+        if (medium === 'credit' && creditOutstanding > creditLimit) {
+          notify('Tagihan berjalan tidak boleh melebihi limit total kartu');
+          return;
+        }
         const payload = {
           name: medium === 'cash'
             ? 'Uang Tunai'
@@ -1941,22 +1990,24 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           // Akuntansi cuma mengenal aset vs liabilitas — e-wallet & tunai tetap 'debit'.
           kind: (medium === 'credit' ? 'credit' : 'debit') as 'debit' | 'credit',
           medium,
-          // Tagihan kartu kredit berasal dari transaksi, bukan input saldo manual.
-          // Saat diedit nilainya dipertahankan; kartu baru/duplikat mulai dari nol.
-          balance: medium === 'credit' ? (before?.balance ?? 0) : toNumber(form.balance),
+          // Tagihan awal kartu menjadi liabilitas pembuka; saat diedit, perubahan
+          // nilai ini dicatat sebagai jurnal penyesuaian oleh command database.
+          balance: medium === 'credit' ? creditOutstanding : toNumber(form.balance),
           bank: medium === 'cash' ? undefined : form.bank.trim() || undefined,
           last4: medium === 'bank' || medium === 'credit' ? form.last4.trim().slice(-4) || undefined : undefined,
           phone: medium === 'ewallet' ? form.phone.trim() || undefined : undefined,
           cardNetwork: medium === 'bank' || medium === 'credit'
             ? form.cardNetwork as CardNetwork
             : undefined,
-          creditLimit: medium === 'credit' ? toNumber(form.creditLimit) : undefined,
+          creditLimit: medium === 'credit' ? creditLimit : undefined,
         };
         if (shouldUpdate) {
           await repos.wallets.update(id!, payload);
           const delta = payload.balance - (before?.balance ?? 0);
           if (before && delta !== 0) {
-            extraNote = ` · selisih ${formatIDR(Math.abs(delta))} diperbarui di jurnal internal`;
+            extraNote = medium === 'credit'
+              ? ` · tagihan disesuaikan ${formatIDR(Math.abs(delta))} melalui jurnal internal`
+              : ` · selisih ${formatIDR(Math.abs(delta))} diperbarui di jurnal internal`;
           }
         } else {
           const existingWallets = await repos.wallets.list();
@@ -2624,7 +2675,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       // diteruskan peramban ke kontrol berlabelnya — untuk select itu berarti
                       // trigger-nya, sehingga memilih opsi langsung membuka lagi dropdown yang
                       // baru saja ditutup. Keduanya memakai <div> dengan label eksplisit.
-                      const native = field.type !== 'select' && field.type !== 'segmented';
+                      const native = field.type === 'text' || field.type === 'number' || field.type === 'date' || !field.type;
                       const Wrapper = native ? 'label' : 'div';
                       const labelId = `field-label-${field.key}`;
                       return (
@@ -2633,7 +2684,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     {field.labelOf ? field.labelOf(form) : field.label}
                     {fieldIsRequired(field, form) && <em className="required-mark">*</em>}
                   </span>
-                  {field.type === 'segmented' ? (
+                  {field.type === 'computed' ? (
+                    <div className="computed-form-value" aria-live="polite">
+                      <b>{field.computedValue?.(form) ?? '—'}</b>
+                      {field.hint && <small>{field.hint}</small>}
+                    </div>
+                  ) : field.type === 'segmented' ? (
                     <div
                       className={`form-segmented${field.options?.length === 2 ? ' two' : ''}${field.key === 'txType' ? ' transaction-types' : ''}`}
                       role="radiogroup"

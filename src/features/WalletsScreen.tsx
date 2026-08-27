@@ -392,8 +392,8 @@ export default function WalletsScreen() {
 
           <div className="wallet-insight-grid wallet-balance-grid">
             {current.kind === 'credit' ? <>
-              <div><span>Tagihan terpakai</span><b className="out">{money.fmt(current.balance)}</b><small>Jumlah pemakaian kartu saat ini</small></div>
-              <div><span>Sisa limit</span><b>{money.fmt(Math.max(0, (current.creditLimit ?? 0) - current.balance))}</b><small>Limit yang masih dapat digunakan</small></div>
+              <div><span>Tagihan berjalan</span><b className="out">{money.fmt(current.balance)}</b><small>Utang kartu yang belum dibayar</small></div>
+              <div><span>Sisa limit</span><b>{money.fmt(Math.max(0, (current.creditLimit ?? 0) - current.balance))}</b><small>Dari limit total {money.fmt(current.creditLimit ?? 0)}</small></div>
             </> : <>
               <div><span>Saldo</span><b>{money.fmt(current.balance)}</b><small>Total dana di dompet ini</small></div>
               <div><span>Tersedia</span><b>{money.fmt(current.balance - currentReserved)}</b><small>Saldo setelah dikurangi tabungan</small></div>

@@ -157,7 +157,7 @@ const D: Record<string, Entry> = {
   // Memakai kata yang sama dengan pengaturannya ("Dompet default" di Profil) — kapsul
   // bertuliskan "Utama" akan terbaca sebagai status kedua yang berbeda.
   'wallets.defaultTag': { id: 'Utama', en: 'Primary' },
-  'wallets.limit': { id: 'limit', en: 'limit' },
+  'wallets.limit': { id: 'Limit total', en: 'Total limit' },
   'wallets.setAside': { id: 'Sisihkan', en: 'Set aside' },
   'wallets.take': { id: 'Tarik', en: 'Withdraw' },
   'wallets.savingsLabel': { id: 'Tabungan', en: 'Savings' },
