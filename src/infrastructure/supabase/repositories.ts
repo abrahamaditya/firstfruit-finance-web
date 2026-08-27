@@ -77,6 +77,9 @@ function mapTransaction(row: DbRow): Transaction {
     installmentPaidMonths: row.installment_paid_months == null
       ? undefined
       : amount(row.installment_paid_months),
+    installmentInitialPaidMonths: row.installment_initial_paid_months == null
+      ? undefined
+      : amount(row.installment_initial_paid_months),
     settlesReceivableId: row.settles_receivable_id ?? undefined,
     adjustment: rawType === 'adjustment',
     adjustmentReason: rawType === 'adjustment' ? row.note ?? undefined : undefined,
@@ -280,8 +283,11 @@ export function createSupabaseRepositories(
         ? item.installmentTenorMonths ?? null
         : null,
       installment_paid_months: item.type === 'expense'
-        ? item.installmentPaidMonths ?? null
+        ? item.installmentInitialPaidMonths ?? item.installmentPaidMonths ?? null
         : null,
+      installment_allocations: dbType === 'credit_payment'
+        ? item.creditPaymentInstallments ?? []
+        : [],
       benefit_scope: item.type === 'expense' ? item.benefitScope ?? null : null,
       recipient: item.recipient ?? null,
       owed_amount_minor: item.owedAmount ?? null,
@@ -397,7 +403,9 @@ export function createSupabaseRepositories(
     },
     async create(item) {
       const payload = await postPayload(item);
-      const { data, error } = await supabase.rpc('post_transaction_with_benefit_scope', { p_payload: payload });
+      const { data, error } = payload.type === 'credit_payment'
+        ? await supabase.rpc('post_credit_payment_with_installments', { p_payload: payload })
+        : await supabase.rpc('post_transaction_with_benefit_scope', { p_payload: payload });
       throwIfError(error, 'Gagal memposting transaksi');
       return (await transactions.get(data as string))!;
     },

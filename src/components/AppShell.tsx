@@ -21,7 +21,7 @@ import {
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { periodProgress } from '../core/domain/calculations';
-import { CardNetwork, WalletKind, WalletMedium } from '../core/domain/types';
+import { CardNetwork, Transaction, WalletKind, WalletMedium } from '../core/domain/types';
 import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
@@ -202,7 +202,7 @@ export function useMoney() {
 interface FieldDefinition {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'computed';
+  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'computed' | 'installmentAllocation';
   options?: CategoryOption[];
   optionsOf?: (form: Record<string, string>) => CategoryOption[];  // pilihan dinamis
   placeholder?: string;
@@ -235,7 +235,7 @@ interface FormSectionDefinition {
 const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Informasi transaksi', keys: ['txType', 'date', 'amount'] },
   { title: 'Sumber dana', keys: ['walletId', 'toWalletId', 'savingId'] },
-  { title: 'Pembayaran kartu', keys: ['paymentTag'] },
+  { title: 'Pembayaran kartu', keys: ['paymentTag', 'creditPaymentInstallments'] },
   { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor', 'installmentPaidMonths', 'installmentRemainingMonths'] },
   {
     title: 'Klasifikasi',
@@ -308,7 +308,7 @@ const groupFormFields = (type: CreateType, fields: FieldDefinition[]) => {
 };
 
 const fieldIsRequired = (field: FieldDefinition, form: Record<string, string> = {}) => {
-  if (field.type === 'computed') return false;
+  if (field.type === 'computed' || field.type === 'installmentAllocation') return false;
   if (field.requiredIf?.(form)) return true;
   if (field.optional) return false;
   if (field.type === 'select' || field.type === 'segmented') return true;
@@ -598,6 +598,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     : undefined;
   const [create, setCreate] = useState<CreateDescriptor>({ type: 'wallet', isEdit: false });
   const [form, setForm] = useState<Record<string, string>>({});
+  const [creditPaymentInstallments, setCreditPaymentInstallments] = useState<Record<string, number>>({});
+  const [transactionOptions, setTransactionOptions] = useState<Transaction[]>([]);
   const [formDraftReady, setFormDraftReady] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
   const [debitWalletOptions, setDebitWalletOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -1141,6 +1143,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             showIf: isCreditPayment,
           },
           {
+            key: 'creditPaymentInstallments',
+            label: 'Alokasikan pembayaran ke cicilan',
+            type: 'installmentAllocation',
+            hint: 'Centang cicilan yang benar-benar dibayar. Pembayaran yang tidak dialokasikan tetap mengurangi tagihan kartu, tetapi tidak menambah cicilan mana pun.',
+            showIf: isCreditPayment,
+          },
+          {
             key: 'savingId',
             label: 'Masukkan ke tabungan',
             type: 'select',
@@ -1178,7 +1187,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           },
           {
             key: 'installmentPaidMonths',
-            label: 'Cicilan yang sudah lunas sebelumnya',
+            label: 'Cicilan yang sudah lunas sebelum dicatat',
             type: 'number',
             optional: true,
             placeholder: '0',
@@ -1194,7 +1203,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 ? `${Math.max(0, tenor - toNumber(f.installmentPaidMonths))} kali cicilan tersisa`
                 : 'Isi tenor cicilan terlebih dahulu';
             },
-            hint: 'Dihitung dari total tenor dikurangi cicilan yang sudah lunas.',
+            hint: 'Pembayaran setelah transaksi dicatat dilakukan lewat transfer ke kartu, lalu alokasikan ke cicilan ini.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
@@ -1725,6 +1734,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     // oleh transaksi di periode aktif yang sama.
     Promise.all([repos.budgets.list(), repos.transactions.list(), repos.periods.list()])
       .then(([budgets, txs, periods]) => {
+      setTransactionOptions(txs);
       const activePeriod = periods.find(period => period.status === 'open')
         ?? periods.find(period => period.status == null && !period.closed);
       const budgetSource = activePeriod
@@ -1841,6 +1851,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     if (savedDraft.note === 'Transaksi' || savedDraft.note === 'Transfer internal') {
       savedDraft = { ...savedDraft, note: '' };
     }
+    setCreditPaymentInstallments({});
     setForm({ ...config.defaults, ...presetDate, ...savedDraft, ...presetSavingTransfer });
     setFormDraftReady(true);
     if (!create.id) return;
@@ -1888,7 +1899,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             if (field.key === 'includeBudget') value = record.budgetId ? 'yes' : 'no';
             if (field.key === 'isInstallment') value = record.installmentTenorMonths ? 'yes' : 'no';
             if (field.key === 'installmentTenor') value = record.installmentTenorMonths;
-            if (field.key === 'installmentPaidMonths') value = record.installmentPaidMonths;
+            if (field.key === 'installmentPaidMonths') {
+              value = record.installmentInitialPaidMonths ?? record.installmentPaidMonths;
+            }
             if (field.key === 'receivableId') value = record.settlesReceivableId;
             if (field.key === 'name' && create.type === 'budget') value = record.category;
             if (field.type === 'date') value = value ? toDateInput(value as string) : undefined;
@@ -1921,6 +1934,19 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       /* sessionStorage diblokir — state React tetap menjadi fallback. */
     }
   }, [auth.user?.id, auth.workspaceId, create, form, formDraftReady, sheet]);
+
+  // Alokasi selalu terikat ke satu kartu tujuan. Saat kartu atau jenis transaksi
+  // berubah, pilihan dari kartu sebelumnya tidak boleh ikut terbawa diam-diam.
+  const selectedCreditCardRef = useRef('');
+  useEffect(() => {
+    const isPayment = form.txType === 'transfer'
+      && walletOptions.some((wallet) => wallet.value === form.toWalletId && wallet.kind === 'credit');
+    const nextCardId = isPayment ? form.toWalletId : '';
+    if (selectedCreditCardRef.current !== nextCardId) {
+      selectedCreditCardRef.current = nextCardId;
+      setCreditPaymentInstallments({});
+    }
+  }, [form.toWalletId, form.txType, walletOptions]);
 
   const close = useCallback(() => {
     if (sheet === 'create') clearCurrentFormDraft();
@@ -2086,6 +2112,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           return;
         }
         const amount = toNumber(form.amount);
+        const selectedInstallments = creditPaymentCandidates
+          .flatMap((candidate) => {
+            const installmentsPaid = creditPaymentInstallments[candidate.id];
+            return installmentsPaid
+              ? [{ installmentTransactionId: candidate.id, installmentsPaid }]
+              : [];
+          });
+        if (isCreditPayment && creditPaymentAllocationTotal > amount) {
+          notify('Total cicilan yang dipilih tidak boleh melebihi nominal pembayaran kartu');
+          return;
+        }
+        if (shouldUpdate && isCreditPayment) {
+          notify('Pembayaran kartu yang sudah dicatat tidak dapat diedit. Hapus lalu catat ulang agar alokasi cicilan tetap akurat.');
+          return;
+        }
         const isPiutang = type === 'expense' && form.pillar === 'Receivables';
         const category = isTransfer
           ? ''
@@ -2113,6 +2154,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             : undefined,
           installmentTenorMonths,
           installmentPaidMonths,
+          creditPaymentInstallments: isCreditPayment ? selectedInstallments : undefined,
           // Receivables tidak memiliki pemanfaatan. Database saat ini menyimpan
           // default internal `self`, tetapi transaksi tersebut dikecualikan dari
           // seluruh tampilan analitik pemanfaatan.
@@ -2323,6 +2365,31 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   };
 
   const currentConfig = formConfig(create.type);
+  const creditPaymentCandidates = transactionOptions
+    .filter((transaction) =>
+      transaction.type === 'expense'
+      && transaction.walletId === form.toWalletId
+      && Boolean(transaction.installmentTenorMonths)
+      && (transaction.installmentPaidMonths ?? 0) < (transaction.installmentTenorMonths ?? 0),
+    )
+    .map((transaction) => ({
+      id: transaction.id,
+      title: transaction.note?.trim() || transaction.merchant?.trim() || transaction.labels.at(-1) || 'Transaksi cicilan',
+      date: transaction.date,
+      amount: transaction.amount,
+      tenor: transaction.installmentTenorMonths!,
+      paid: transaction.installmentPaidMonths ?? 0,
+    }));
+  const installmentAllocationAmount = (candidate: typeof creditPaymentCandidates[number], count: number) => {
+    const base = Math.floor(candidate.amount / candidate.tenor);
+    const remainder = candidate.amount % candidate.tenor;
+    const extra = Math.max(0, Math.min(remainder, candidate.paid + count) - Math.min(remainder, candidate.paid));
+    return count * base + extra;
+  };
+  const creditPaymentAllocationTotal = creditPaymentCandidates.reduce(
+    (total, candidate) => total + installmentAllocationAmount(candidate, creditPaymentInstallments[candidate.id] ?? 0),
+    0,
+  );
   const isTransactionForm = create.type === 'transaksi' || create.type === 'transfer';
   const visibleFormSections = groupFormFields(
     create.type,
@@ -2735,6 +2802,78 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     <div className="computed-form-value" aria-live="polite">
                       <b>{field.computedValue?.(form) ?? '—'}</b>
                       {field.hint && <small>{field.hint}</small>}
+                    </div>
+                  ) : field.type === 'installmentAllocation' ? (
+                    <div className="installment-allocation" aria-live="polite">
+                      {creditPaymentCandidates.length === 0 ? (
+                        <div className="installment-allocation-empty">
+                          Belum ada cicilan aktif pada kartu ini.
+                        </div>
+                      ) : (
+                        <>
+                          <div className="installment-allocation-list">
+                            {creditPaymentCandidates.map((candidate) => {
+                              const remaining = candidate.tenor - candidate.paid;
+                              const selectedCount = creditPaymentInstallments[candidate.id] ?? 0;
+                              const isSelected = selectedCount > 0;
+                              const allocatedAmount = installmentAllocationAmount(candidate, selectedCount);
+                              return (
+                                <div className={`installment-allocation-card${isSelected ? ' selected' : ''}`} key={candidate.id}>
+                                  <label className="installment-allocation-choice">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(event) => setCreditPaymentInstallments((current) => {
+                                        const next = { ...current };
+                                        if (event.target.checked) next[candidate.id] = 1;
+                                        else delete next[candidate.id];
+                                        return next;
+                                      })}
+                                    />
+                                    <span>
+                                      <b>{candidate.title}</b>
+                                      <small>
+                                        {new Date(candidate.date).toLocaleDateString(
+                                          prefs.language === 'EN' ? 'en-US' : 'id-ID',
+                                          { day: 'numeric', month: 'short', year: 'numeric' },
+                                        )}
+                                        {' · '}{candidate.paid}/{candidate.tenor} lunas · sisa {remaining} kali
+                                      </small>
+                                    </span>
+                                  </label>
+                                  {isSelected && (
+                                    <label className="installment-allocation-count">
+                                      <span>Bayar berapa kali</span>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={remaining}
+                                        value={selectedCount}
+                                        onChange={(event) => {
+                                          const nextCount = Math.max(
+                                            1,
+                                            Math.min(remaining, Math.floor(Number(event.target.value) || 1)),
+                                          );
+                                          setCreditPaymentInstallments((current) => ({
+                                            ...current,
+                                            [candidate.id]: nextCount,
+                                          }));
+                                        }}
+                                      />
+                                      <b>{formatIDR(allocatedAmount)}</b>
+                                    </label>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <div className={`installment-allocation-total${creditPaymentAllocationTotal > toNumber(form.amount) ? ' exceeds' : ''}`}>
+                            <span>Total dialokasikan ke cicilan</span>
+                            <b>{formatIDR(creditPaymentAllocationTotal)}</b>
+                          </div>
+                        </>
+                      )}
+                      {field.hint && <small className="installment-allocation-hint">{field.hint}</small>}
                     </div>
                   ) : field.type === 'segmented' ? (
                     <div

@@ -230,9 +230,7 @@ export default function TransactionsScreen() {
                       </span>
                     )}
                     {transaction.installmentTenorMonths && (
-                      <span className="chip">Cicilan · {transaction.installmentPaidMonths
-                        ? `${transaction.installmentPaidMonths}/${transaction.installmentTenorMonths} lunas · sisa ${transaction.installmentTenorMonths - transaction.installmentPaidMonths}`
-                        : `${transaction.installmentTenorMonths} bulan`}
+                      <span className="chip">Cicilan · {transaction.installmentPaidMonths ?? 0}/{transaction.installmentTenorMonths} lunas · sisa {transaction.installmentTenorMonths - (transaction.installmentPaidMonths ?? 0)}
                       </span>
                     )}
                     {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}

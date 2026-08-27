@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -304,6 +304,82 @@ export type Database = {
           },
           {
             foreignKeyName: "command_receipts_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      credit_payment_installment_allocations: {
+        Row: {
+          amount_minor: number
+          created_at: string
+          created_by: string | null
+          id: string
+          installment_transaction_id: string
+          installments_paid: number
+          payment_transaction_id: string
+          workspace_id: string
+        }
+        Insert: {
+          amount_minor: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          installment_transaction_id: string
+          installments_paid: number
+          payment_transaction_id: string
+          workspace_id: string
+        }
+        Update: {
+          amount_minor?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          installment_transaction_id?: string
+          installments_paid?: number
+          payment_transaction_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "credit_payment_installment_allo_installment_transaction_id_fkey"
+            columns: ["installment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_payment_installment_allo_installment_transaction_id_fkey"
+            columns: ["installment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "v_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_payment_installment_allocati_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_payment_installment_allocati_payment_transaction_id_fkey"
+            columns: ["payment_transaction_id"]
+            isOneToOne: false
+            referencedRelation: "v_transactions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "credit_payment_installment_allocations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_summary"
+            referencedColumns: ["workspace_id"]
+          },
+          {
+            foreignKeyName: "credit_payment_installment_allocations_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"
@@ -2285,6 +2361,7 @@ export type Database = {
           created_by: string | null
           currency_code: string | null
           id: string | null
+          installment_initial_paid_months: number | null
           installment_paid_months: number | null
           installment_tenor_months: number | null
           merchant: string | null
@@ -2398,8 +2475,10 @@ export type Database = {
         Returns: undefined
       }
       close_budget_period: { Args: { p_payload: Json }; Returns: string }
-      close_budget_period_to_draft: { Args: { p_payload: Json }; Returns: string }
-      open_budget_period: { Args: { p_payload: Json }; Returns: string }
+      close_budget_period_to_draft: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       create_budget_period_with_budgets: {
         Args: { p_payload: Json }
         Returns: string
@@ -2424,6 +2503,11 @@ export type Database = {
       mark_reminder_done: {
         Args: { p_done?: boolean; p_reminder_id: string }
         Returns: undefined
+      }
+      open_budget_period: { Args: { p_payload: Json }; Returns: string }
+      post_credit_payment_with_installments: {
+        Args: { p_payload: Json }
+        Returns: string
       }
       post_transaction: { Args: { p_payload: Json }; Returns: string }
       post_transaction_with_benefit_scope: {

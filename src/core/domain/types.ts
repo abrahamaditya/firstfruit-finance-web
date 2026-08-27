@@ -27,7 +27,12 @@ export interface Transaction {
   merchant?: string;            // tempat transaksi: Indomaret, Shopee, kaki lima, …
   budgetId?: string;            // realisasi expense/transfer biasa; bukan pembayaran kartu
   installmentTenorMonths?: number; // transaksi kartu kredit dicicil selama N bulan
-  installmentPaidMonths?: number;  // angsuran yang sudah lunas sebelum transaksi dicatat
+  installmentPaidMonths?: number;  // jumlah angsuran lunas saat ini (termasuk pembayaran yang dialokasikan)
+  installmentInitialPaidMonths?: number; // baseline sebelum transaksi dicatat di aplikasi
+  creditPaymentInstallments?: Array<{
+    installmentTransactionId: string;
+    installmentsPaid: number;
+  }>;
   savingId?: string;            // transfer ini sekaligus menyisihkan dana ke tabungan
   settlesReceivableId?: string; // pemasukan ini adalah pelunasan piutang tertentu
   // Transaksi yang lahir dari perubahan saldo manual / penghapusan dompet, bukan
