@@ -200,6 +200,15 @@ export default function WalletsScreen() {
   const previousCreditBill = current?.kind === 'credit'
     ? current.previousPeriodBill ?? 0
     : 0;
+  // Pemakaian limit mengikuti siklus tagihan, bukan proyeksi saldo kartu yang
+  // bisa saja pernah disesuaikan manual: tagihan pembuka dikurangi pelunasan,
+  // lalu ditambah belanja pada periode ini.
+  const creditLimitUsed = current?.kind === 'credit'
+    ? Math.max(0, previousCreditBill - creditPaymentPeriod + actualExpensePeriod)
+    : 0;
+  const creditAvailable = current?.kind === 'credit'
+    ? Math.max(0, (current.creditLimit ?? 0) - creditLimitUsed)
+    : 0;
   const receivedPeriod = current ? periodTransactions
     .filter((transaction) => isWalletIncome(transaction, current.id))
     .reduce((sum, transaction) => sum + transaction.amount, 0)
@@ -403,7 +412,7 @@ export default function WalletsScreen() {
           <div className="wallet-insight-grid wallet-balance-grid">
             {current.kind === 'credit' ? <>
               <div><span>Tagihan periode sebelumnya</span><b className="out">{money.fmt(previousCreditBill)}</b><small>Nilai tetap; tidak dipengaruhi transaksi periode ini</small></div>
-              <div><span>Sisa limit</span><b>{money.fmt(Math.max(0, (current.creditLimit ?? 0) - current.balance))}</b><small>Dari limit total {money.fmt(current.creditLimit ?? 0)}</small></div>
+              <div><span>Sisa limit</span><b>{money.fmt(creditAvailable)}</b><small>Limit − (tagihan sebelumnya − pelunasan + pengeluaran periode ini)</small></div>
             </> : <>
               <div><span>Saldo</span><b>{money.fmt(current.balance)}</b><small>Total dana di dompet ini</small></div>
               <div><span>Tersedia</span><b>{money.fmt(current.balance - currentReserved)}</b><small>Saldo setelah dikurangi tabungan</small></div>
