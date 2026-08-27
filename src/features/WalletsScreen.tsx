@@ -1,7 +1,7 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useWallets, useSavings, useTransactions, usePeriods } from '../application/hooks';
+import { useActivePeriodTransactions, useWallets, useSavings, usePeriods } from '../application/hooks';
 import { ArrowLeft, CardChip, ChevronR, Down, Eye, EyeOff, ListIcon, Pencil, Plus, TransferCard, Up, WalletIcon } from '../components/ui/icons';
 import type { Transaction } from '../core/domain/types';
 import { isActualIncome, isWalletIncome } from '../core/domain/calculations';
@@ -21,7 +21,7 @@ export default function WalletsScreen() {
   const t = useT();
   const { wallets } = useWallets();
   const { savings, reservedIn } = useSavings();
-  const { data: transactions } = useTransactions();
+  const { data: transactions } = useActivePeriodTransactions();
   const { active: activePeriod } = usePeriods();
   const mediumRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
   const byCategoryThenName = (a: typeof wallets[number], b: typeof wallets[number]) =>
@@ -209,6 +209,27 @@ export default function WalletsScreen() {
   const creditAvailable = current?.kind === 'credit'
     ? Math.max(0, (current.creditLimit ?? 0) - creditLimitUsed)
     : 0;
+  const creditAvailableForCard = (wallet: typeof cards[number]) => {
+    if (wallet.kind !== 'credit') return wallet.balance;
+    const cardPeriodTransactions = transactions.filter((transaction) => {
+      const at = new Date(transaction.date);
+      return (transaction.walletId === wallet.id || transaction.toWalletId === wallet.id)
+        && at >= periodStart
+        && at <= periodEnd;
+    });
+    const expenses = cardPeriodTransactions
+      .filter((transaction) => !transaction.adjustment
+        && transaction.type === 'expense'
+        && transaction.walletId === wallet.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const payments = cardPeriodTransactions
+      .filter((transaction) => !transaction.adjustment
+        && transaction.type === 'transfer'
+        && transaction.toWalletId === wallet.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const usedLimit = Math.max(0, (wallet.previousPeriodBill ?? 0) - payments + expenses);
+    return Math.max(0, (wallet.creditLimit ?? 0) - usedLimit);
+  };
   const receivedPeriod = current ? periodTransactions
     .filter((transaction) => isWalletIncome(transaction, current.id))
     .reduce((sum, transaction) => sum + transaction.amount, 0)
@@ -359,8 +380,8 @@ export default function WalletsScreen() {
                 </div>
                 <div className="pn">{cardSubtitle(w)}</div>
                 <div className="pbal">
-                  <span>{mediumOf(w) === 'credit' ? t('wallets.usedCredit') : t('wallets.balance')}</span>
-                  <b>{hidden ? '••••••' : money.fmt(w.balance)}</b>
+                  <span>{mediumOf(w) === 'credit' ? 'Sisa Limit' : t('wallets.balance')}</span>
+                  <b>{hidden ? '••••••' : money.fmt(creditAvailableForCard(w))}</b>
                 </div>
                 <div className="pf">
                   <span className="pname">{ui.prefs.name.toUpperCase()}</span>
@@ -473,7 +494,7 @@ export default function WalletsScreen() {
             </>
           )}
 
-          <div className="sec"><span className="t">Aktivitas terbaru</span><button className="addg" onClick={() => ui.go('tx')}>Semua transaksi<ChevronR /></button></div>
+          <div className="sec"><span className="t">Aktivitas terbaru</span><button className="addg" onClick={() => ui.go('tx')}>{t('tab.tx.title')}<ChevronR /></button></div>
           {selectedTransactions.slice(0, 6).map((transaction) => {
             const signedAmount = transactionAmount(transaction);
             return (

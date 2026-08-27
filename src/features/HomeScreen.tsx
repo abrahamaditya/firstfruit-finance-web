@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
-import { useDashboard, useTransactions, useSubscriptions, useReminders, useSavings } from '../application/hooks';
+import { useActivePeriodTransactions, useDashboard, useSubscriptions, useReminders, useSavings } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar, ChevronR } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
@@ -226,7 +226,7 @@ export default function HomeScreen() {
   const money = useMoney();
   const tr = useT();
   const d = useDashboard();
-  const { data: txs } = useTransactions();
+  const { data: txs } = useActivePeriodTransactions();
   const { all: savings, reservedIn } = useSavings();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();

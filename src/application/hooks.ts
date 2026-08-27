@@ -97,9 +97,8 @@ export function useWallets() {
 
 export function useTransactions() {
   const result = useCollection<Transaction>(r => r.transactions);
-  // Semua yang memakai daftar ini — pengelompokan per hari di layar transaksi, empat
-  // transaksi terbaru di beranda — mengandalkan urutan menurun menurut tanggal kejadian.
-  // Urutan itu ditegakkan sekali di sini, bukan diserahkan ke tiap repositori: repo memori
+  // Konsumen riwayat penuh maupun filter periode aktif mengandalkan urutan menurun
+  // menurut tanggal kejadian. Urutan itu ditegakkan sekali di sini, bukan diserahkan ke tiap repositori: repo memori
   // menaruh entri baru di akhir, dan repo Supabase bisa saja berubah pengurutannya.
   // Sort JavaScript bersifat stabil, jadi transaksi bertanggal sama tetap memakai urutan
   // dari repositori (waktu pencatatan, terbaru dulu).
@@ -108,6 +107,34 @@ export function useTransactions() {
     [result.data],
   );
   return { ...result, data };
+}
+
+/**
+ * Aktivitas operasional hanya menampilkan transaksi dari periode yang sedang dibuka.
+ * `useTransactions` tetap menyediakan seluruh riwayat untuk laporan dan perhitungan
+ * lintas periode seperti cicilan, piutang, serta estimasi pemasukan.
+ */
+export function useActivePeriodTransactions() {
+  const result = useTransactions();
+  const { active, loading: periodLoading } = usePeriods();
+  const data = useMemo(() => {
+    if (!active) return [];
+    const start = new Date(active.start);
+    const end = new Date(active.end);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+    return result.data.filter(transaction => {
+      const occurredAt = new Date(transaction.date);
+      return occurredAt >= start && occurredAt <= end;
+    });
+  }, [active, result.data]);
+
+  return {
+    ...result,
+    data,
+    activePeriod: active,
+    loading: result.loading || periodLoading,
+  };
 }
 
 export function useBudgets(): { budgets: BudgetView[]; raw: Budget[]; loading: boolean } {

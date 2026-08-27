@@ -1,7 +1,7 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBudgets, useDashboard, useTransactions } from '../application/hooks';
+import { useActivePeriodTransactions, useBudgets, useDashboard } from '../application/hooks';
 import { Check, Chevron, Plus, Warn } from '../components/ui/icons';
 
 export default function BudgetScreen() {
@@ -9,7 +9,7 @@ export default function BudgetScreen() {
   const money = useMoney();
   const t = useT();
   const { budgets: allBudgets } = useBudgets();
-  const { data: transactions } = useTransactions();
+  const { data: transactions } = useActivePeriodTransactions();
   const d = useDashboard();
   const [expandedBudgetId, setExpandedBudgetId] = React.useState<string | null>(null);
   const activePeriodId = d.period?.id;

@@ -2,7 +2,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useReminders, useSubscriptions, useTransactions, useWallets } from '../application/hooks';
+import { useActivePeriodTransactions, useReminders, useSubscriptions, useWallets } from '../application/hooks';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay, weekGrid } from '../core/domain/calendar';
 import { Check, ChevronR, Clock, Plus, Recur, Up, Down, TransferCard } from '../components/ui/icons';
@@ -16,7 +16,7 @@ export default function CalendarScreen() {
   const t = useT();
   const repos = useRepositories();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const { data: transactions } = useTransactions();
+  const { data: transactions } = useActivePeriodTransactions();
   const { wallets } = useWallets();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();

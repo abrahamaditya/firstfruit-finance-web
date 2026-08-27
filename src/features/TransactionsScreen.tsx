@@ -2,7 +2,7 @@
 
 import React, { useDeferredValue, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useSavings, useTransactions, useWallets } from '../application/hooks';
+import { useActivePeriodTransactions, useSavings, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
 import { categoryTone } from '../core/domain/categories';
@@ -13,7 +13,7 @@ export default function TransactionsScreen() {
   const money = useMoney();
   const tr = useT();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const { data } = useTransactions();
+  const { data } = useActivePeriodTransactions();
   const { wallets } = useWallets();
   const { all: savings } = useSavings();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
