@@ -337,18 +337,35 @@ export default function HomeScreen() {
     <div className="home-wallet-set" aria-hidden={duplicate || undefined}>
       {walletBalances.map((wallet) => {
         const logo = walletBrandLogo(wallet);
+        const creditPeriodTransactions = wallet.kind === 'credit'
+          ? txs.filter((transaction) => transaction.walletId === wallet.id || transaction.toWalletId === wallet.id)
+          : [];
+        const creditExpense = creditPeriodTransactions
+          .filter((transaction) => !transaction.adjustment
+            && transaction.type === 'expense'
+            && transaction.walletId === wallet.id)
+          .reduce((sum, transaction) => sum + transaction.amount, 0);
+        const creditPayment = creditPeriodTransactions
+          .filter((transaction) => !transaction.adjustment
+            && transaction.type === 'transfer'
+            && transaction.toWalletId === wallet.id)
+          .reduce((sum, transaction) => sum + transaction.amount, 0);
         const displayBalance = wallet.kind === 'credit'
-          ? wallet.balance
+          ? Math.max(0, (wallet.creditLimit ?? 0) - Math.max(
+            0,
+            (wallet.previousPeriodBill ?? 0) - creditPayment + creditExpense,
+          ))
           : wallet.balance - reservedIn(wallet.id);
         const amount = hidden
           ? '••••'
-          : `${wallet.kind === 'credit' && displayBalance > 0 ? '−' : ''}${money.fmt(displayBalance)}`;
+          : money.fmt(displayBalance);
+        const walletLabel = wallet.kind === 'credit' ? `Sisa limit · ${wallet.name}` : wallet.name;
         return (
           <span
             className="home-wallet-item"
             key={`${duplicate ? 'copy-' : ''}${wallet.id}`}
-            title={`${wallet.name} · ${amount}`}
-            aria-label={`${wallet.name} · ${amount}`}
+            title={`${walletLabel} · ${amount}`}
+            aria-label={`${walletLabel} · ${amount}`}
           >
             <span className={`home-wallet-mark${logo ? ' has-image' : ''}${wallet.medium === 'cash' ? ' is-cash' : ''}`}>
               {logo
@@ -356,7 +373,7 @@ export default function HomeScreen() {
                 : walletProductInitial(wallet)}
             </span>
             <span className="home-wallet-copy">
-              <small>{wallet.name}</small>
+              <small>{walletLabel}</small>
               <b className="home-wallet-nominal">{amount}</b>
             </span>
           </span>
