@@ -353,7 +353,11 @@ export function createSupabaseRepositories(
         phone_masked: patch.phone ?? before.phone ?? null,
         card_network: patch.cardNetwork ?? before.cardNetwork ?? null,
         credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
-        previous_period_bill_minor: patch.previousPeriodBill ?? before.previousPeriodBill ?? 0,
+        // Fungsi database menolak field tagihan kartu kredit untuk wallet aset.
+        // Jangan sertakan key ini sama sekali saat rekening debit diperbarui.
+        ...(before.kind === 'credit' ? {
+          previous_period_bill_minor: patch.previousPeriodBill ?? before.previousPeriodBill ?? 0,
+        } : {}),
         target_balance_minor: patch.balance ?? before.balance,
         visible_in_feed: false,
         reason: `Penyesuaian saldo ${patch.name ?? before.name}`,
