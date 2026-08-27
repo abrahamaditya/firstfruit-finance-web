@@ -95,12 +95,17 @@ export default function TransactionsScreen() {
   );
   const categories = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const activeCategory = categoryCounts.has(category) ? category : 'all';
+  // Nominal bisa dicari dengan format apa pun yang umum diketik pengguna: 30000,
+  // 30.000, 30,000, atau Rp30.000 semuanya menjadi 30000.
+  const amountQuery = deferredQuery.replace(/\D/g, '');
 
-  const visible = scoped.filter((transaction) =>
-    (activeCategory === 'all' || transaction.labels.includes(activeCategory)) &&
-    `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${walletName(transaction.walletId) || ''} ${walletName(transaction.toWalletId) || ''} ${savingName(transaction.savingId) || ''}`
-      .toLowerCase().includes(deferredQuery),
-  );
+  const visible = scoped.filter((transaction) => {
+    const matchesText = `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${walletName(transaction.walletId) || ''} ${walletName(transaction.toWalletId) || ''} ${savingName(transaction.savingId) || ''} ${money.fmt(transaction.amount)}`
+      .toLowerCase().includes(deferredQuery);
+    const matchesAmount = amountQuery.length > 0 && String(transaction.amount).includes(amountQuery);
+    return (activeCategory === 'all' || transaction.labels.includes(activeCategory))
+      && (matchesText || matchesAmount);
+  });
   const groups: Record<string, typeof data> = {};
   visible.forEach((transaction) => {
     const key = dayLabel(transaction.date);
