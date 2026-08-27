@@ -1553,18 +1553,21 @@ export type Database = {
       }
       transaction_installments: {
         Row: {
+          completed_installments: number
           created_at: string
           tenor_months: number
           transaction_id: string
           workspace_id: string
         }
         Insert: {
+          completed_installments?: number
           created_at?: string
           tenor_months: number
           transaction_id: string
           workspace_id: string
         }
         Update: {
+          completed_installments?: number
           created_at?: string
           tenor_months?: number
           transaction_id?: string
@@ -2282,6 +2285,7 @@ export type Database = {
           created_by: string | null
           currency_code: string | null
           id: string | null
+          installment_paid_months: number | null
           installment_tenor_months: number | null
           merchant: string | null
           nature: Database["public"]["Enums"]["transaction_nature"] | null

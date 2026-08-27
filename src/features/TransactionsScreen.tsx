@@ -211,7 +211,9 @@ export default function TransactionsScreen() {
                         {isActualIncome(transaction) ? tr('reports.actualIncome') : tr('tx.receivableIncome')}
                       </span>
                     )}
-                    {(transaction.note ? transaction.labels : transaction.labels.slice(0, -1))
+                    {(transaction.type === 'transfer' || transaction.note
+                      ? transaction.labels
+                      : transaction.labels.slice(0, -1))
                       .map((label, index, labels) => (
                         <span
                           className={`chip${index < labels.length - 1 ? ' tx-category-parent' : ''}`}
@@ -228,7 +230,10 @@ export default function TransactionsScreen() {
                       </span>
                     )}
                     {transaction.installmentTenorMonths && (
-                      <span className="chip">Cicilan · {transaction.installmentTenorMonths} bulan</span>
+                      <span className="chip">Cicilan · {transaction.installmentPaidMonths
+                        ? `${transaction.installmentPaidMonths}/${transaction.installmentTenorMonths} lunas · sisa ${transaction.installmentTenorMonths - transaction.installmentPaidMonths}`
+                        : `${transaction.installmentTenorMonths} bulan`}
+                      </span>
                     )}
                     {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
                   </div>

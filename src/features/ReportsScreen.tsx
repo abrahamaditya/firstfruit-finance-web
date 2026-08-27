@@ -314,6 +314,15 @@ export default function ReportsScreen() {
   );
   const creditPaymentsTotal = creditPayments.reduce((sum, transaction) => sum + transaction.amount, 0);
   const creditBillNextMonth = creditWallets.reduce((sum, wallet) => sum + Math.max(0, wallet.balance), 0);
+  const creditAdjustmentDelta = allTransactions
+    .filter(transaction => transaction.adjustment
+      && inSelectedRange(transaction)
+      && creditWalletIds.has(transaction.walletId))
+    .reduce((sum, transaction) => sum + (transaction.type === 'income' ? transaction.amount : -transaction.amount), 0);
+  const creditBillPreviousPeriod = Math.max(
+    0,
+    creditBillNextMonth - creditBillFromPeriod + creditPaymentsTotal - creditAdjustmentDelta,
+  );
   const totalCreditLimit = creditWallets.reduce((sum, wallet) => sum + (wallet.creditLimit ?? 0), 0);
   const creditLimitRemaining = creditWallets.reduce(
     (sum, wallet) => sum + Math.max(0, (wallet.creditLimit ?? 0) - Math.max(0, wallet.balance)),
@@ -445,6 +454,7 @@ export default function ReportsScreen() {
         'Dompet tujuan',
         'Anggaran',
         'Tenor cicilan (bulan)',
+        'Cicilan yang sudah lunas',
         'Jumlah',
         'Dampak saldo',
         'Dampak arus kas riil',
@@ -477,6 +487,7 @@ export default function ReportsScreen() {
           transaction.toWalletId ? walletNames.get(transaction.toWalletId) || '' : '',
           transaction.budgetId ? budgetNames.get(transaction.budgetId) || '' : '',
           transaction.installmentTenorMonths ? String(transaction.installmentTenorMonths) : '',
+          transaction.installmentTenorMonths ? String(transaction.installmentPaidMonths ?? 0) : '',
           String(transaction.amount),
           String(cashDelta(transaction)),
           String(realCashflowDelta(transaction)),
@@ -1098,10 +1109,10 @@ export default function ReportsScreen() {
         ) : (
           <>
             <div className="transaction-insight-feature">
-              <span>{t('planning.billsNextMonth')}</span>
+              <span>{t('reports.creditPreviousBill')}</span>
               <div>
                 <b>{t('reports.creditBillsFromCards', { wallets: creditWalletNames })}</b>
-                <strong>{money.fmt(creditBillNextMonth)}</strong>
+                <strong>{money.fmt(creditBillPreviousPeriod)}</strong>
               </div>
             </div>
             <div className={`transaction-insight-grid wide credit-insight-grid credit-insight-count-${4 + (creditPayments.length > 0 ? 1 : 0) + (installments.length > 0 ? 1 : 0)}`}>
@@ -1113,13 +1124,13 @@ export default function ReportsScreen() {
               <div>
                 <span>{t('reports.creditBillFromPeriod')}</span>
                 <b>{money.fmtCompact(creditBillFromPeriod)}</b>
-                <small>{t('reports.creditBillFromPeriodNote')}</small>
+                <small>{t('reports.creditBillThisMonthNote')}</small>
               </div>
               {creditPayments.length > 0 && (
                 <div>
                   <span>{t('reports.creditPaymentPeriod')}</span>
                   <b>{creditPayments.length} {t('reports.txCount')}</b>
-                  <small>{t('reports.creditPaymentValue', { amount: money.fmtCompact(creditPaymentsTotal) })}</small>
+                  <small>{t('reports.creditPaymentSettlementValue', { amount: money.fmtCompact(creditPaymentsTotal) })}</small>
                 </div>
               )}
               <div>

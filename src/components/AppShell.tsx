@@ -22,6 +22,7 @@ import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { periodProgress } from '../core/domain/calculations';
 import { CardNetwork, WalletKind, WalletMedium } from '../core/domain/types';
+import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
   CATEGORY_CUSTOM,
@@ -234,7 +235,8 @@ interface FormSectionDefinition {
 const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Informasi transaksi', keys: ['txType', 'date', 'amount'] },
   { title: 'Sumber dana', keys: ['walletId', 'toWalletId', 'savingId'] },
-  { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor'] },
+  { title: 'Pembayaran kartu', keys: ['paymentTag'] },
+  { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor', 'installmentPaidMonths', 'installmentRemainingMonths'] },
   {
     title: 'Klasifikasi',
     keys: ['pillar', 'debtor', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory', 'receivableId'],
@@ -501,6 +503,7 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
     budgetId: '',
     isInstallment: 'no',
     installmentTenor: '',
+    installmentPaidMonths: '',
   };
   if (key === 'txType' && value !== form.txType) {
     return {
@@ -547,6 +550,7 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
       ...form,
       isInstallment: value,
       installmentTenor: value === 'yes' ? form.installmentTenor : '',
+      installmentPaidMonths: value === 'yes' ? form.installmentPaidMonths : '',
     };
   }
   if (key === 'toWalletId') {
@@ -1129,6 +1133,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           },
           { key: 'toWalletId', label: 'Dompet tujuan', type: 'select', options: wallets, showIf: isTransfer },
           {
+            key: 'paymentTag',
+            label: 'Tag transaksi',
+            type: 'computed',
+            computedValue: () => CREDIT_CARD_PAYMENT_TAG,
+            hint: 'Ditambahkan otomatis karena dompet tujuan adalah kartu kredit dan tidak dapat diubah.',
+            showIf: isCreditPayment,
+          },
+          {
             key: 'savingId',
             label: 'Masukkan ke tabungan',
             type: 'select',
@@ -1162,6 +1174,27 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             type: 'number',
             placeholder: 'Contoh: 12',
             requiredIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
+          },
+          {
+            key: 'installmentPaidMonths',
+            label: 'Cicilan yang sudah lunas sebelumnya',
+            type: 'number',
+            optional: true,
+            placeholder: '0',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
+          },
+          {
+            key: 'installmentRemainingMonths',
+            label: 'Sisa cicilan',
+            type: 'computed',
+            computedValue: (f) => {
+              const tenor = toNumber(f.installmentTenor);
+              return tenor > 0
+                ? `${Math.max(0, tenor - toNumber(f.installmentPaidMonths))} kali cicilan tersisa`
+                : 'Isi tenor cicilan terlebih dahulu';
+            },
+            hint: 'Dihitung dari total tenor dikurangi cicilan yang sudah lunas.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
@@ -1278,6 +1311,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           budgetId: '',
           isInstallment: 'no',
           installmentTenor: '',
+          installmentPaidMonths: '',
           note: '',
         },
       };
@@ -1350,7 +1384,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             {
               key: 'creditOutstanding',
               label: 'Tagihan awal kartu',
-              labelOf: () => create.isEdit ? 'Tagihan berjalan saat ini' : 'Tagihan awal kartu',
+              labelOf: () => create.isEdit ? 'Tagihan bulan sebelumnya' : 'Tagihan awal kartu',
               type: 'number',
               optional: true,
               placeholder: '0',
@@ -1366,7 +1400,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                   ? formatIDR(Math.max(0, limit - toNumber(f.creditOutstanding)))
                   : 'Isi limit total terlebih dahulu';
               },
-              hint: 'Dihitung otomatis dari limit total dikurangi tagihan berjalan.',
+              hint: 'Dihitung otomatis dari limit total dikurangi tagihan bulan sebelumnya.',
               showIf: (f) => f.medium === 'credit',
             },
           ],
@@ -1854,6 +1888,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             if (field.key === 'includeBudget') value = record.budgetId ? 'yes' : 'no';
             if (field.key === 'isInstallment') value = record.installmentTenorMonths ? 'yes' : 'no';
             if (field.key === 'installmentTenor') value = record.installmentTenorMonths;
+            if (field.key === 'installmentPaidMonths') value = record.installmentPaidMonths;
             if (field.key === 'receivableId') value = record.settlesReceivableId;
             if (field.key === 'name' && create.type === 'budget') value = record.category;
             if (field.type === 'date') value = value ? toDateInput(value as string) : undefined;
@@ -1974,11 +2009,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           return;
         }
         if (medium === 'credit' && creditOutstanding < 0) {
-          notify('Tagihan berjalan tidak boleh kurang dari Rp0');
+          notify('Tagihan bulan sebelumnya tidak boleh kurang dari Rp0');
           return;
         }
         if (medium === 'credit' && creditOutstanding > creditLimit) {
-          notify('Tagihan berjalan tidak boleh melebihi limit total kartu');
+          notify('Tagihan bulan sebelumnya tidak boleh melebihi limit total kartu');
           return;
         }
         const payload = {
@@ -2030,6 +2065,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit');
         const installmentTenorMonths =
           usesCreditCard && form.isInstallment === 'yes' ? toNumber(form.installmentTenor) : undefined;
+        const installmentPaidMonths =
+          usesCreditCard && form.isInstallment === 'yes' ? toNumber(form.installmentPaidMonths) : undefined;
         if (
           installmentTenorMonths !== undefined
           && (!Number.isInteger(installmentTenorMonths)
@@ -2037,6 +2074,15 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             || installmentTenorMonths > 120)
         ) {
           notify('Tenor cicilan harus antara 2 dan 120 bulan');
+          return;
+        }
+        if (
+          installmentPaidMonths !== undefined
+          && (!Number.isInteger(installmentPaidMonths)
+            || installmentPaidMonths < 0
+            || installmentPaidMonths >= (installmentTenorMonths ?? 0))
+        ) {
+          notify('Cicilan yang sudah lunas harus antara 0 dan satu kurang dari total tenor');
           return;
         }
         const amount = toNumber(form.amount);
@@ -2061,11 +2107,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           savingId: isTransfer && form.savingId && form.savingId !== 'none'
             ? form.savingId
             : undefined,
-          labels: isTransfer ? [] : [category],
+          labels: isCreditPayment ? [CREDIT_CARD_PAYMENT_TAG] : isTransfer ? [] : [category],
           budgetId: (type === 'expense' || (isTransfer && !isCreditPayment)) && form.includeBudget === 'yes'
             ? form.budgetId
             : undefined,
           installmentTenorMonths,
+          installmentPaidMonths,
           // Receivables tidak memiliki pemanfaatan. Database saat ini menyimpan
           // default internal `self`, tetapi transaksi tersebut dikecualikan dari
           // seluruh tampilan analitik pemanfaatan.

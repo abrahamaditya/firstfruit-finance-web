@@ -190,6 +190,24 @@ export default function WalletsScreen() {
   const actualExpensePeriod = periodTransactions
     .filter((transaction) => !transaction.adjustment && transaction.type === 'expense' && transaction.walletId === current?.id)
     .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const creditPaymentPeriod = current?.kind === 'credit'
+    ? periodTransactions
+      .filter((transaction) => !transaction.adjustment
+        && transaction.type === 'transfer'
+        && transaction.toWalletId === current.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0)
+    : 0;
+  // Saldo kartu adalah kewajiban saat ini. Untuk menjelaskan siklus tagihannya,
+  // balik perubahan selama periode: belanja menambah, pelunasan mengurangi, dan
+  // penyesuaian manual tetap ikut agar angka pembuka tidak meleset.
+  const creditAdjustmentDeltaPeriod = current?.kind === 'credit'
+    ? periodTransactions
+      .filter((transaction) => transaction.adjustment && transaction.walletId === current.id)
+      .reduce((sum, transaction) => sum + (transaction.type === 'income' ? transaction.amount : -transaction.amount), 0)
+    : 0;
+  const previousCreditBill = current?.kind === 'credit'
+    ? Math.max(0, current.balance - actualExpensePeriod + creditPaymentPeriod - creditAdjustmentDeltaPeriod)
+    : 0;
   const receivedPeriod = current ? periodTransactions
     .filter((transaction) => isWalletIncome(transaction, current.id))
     .reduce((sum, transaction) => sum + transaction.amount, 0)
@@ -392,7 +410,7 @@ export default function WalletsScreen() {
 
           <div className="wallet-insight-grid wallet-balance-grid">
             {current.kind === 'credit' ? <>
-              <div><span>Tagihan berjalan</span><b className="out">{money.fmt(current.balance)}</b><small>Utang kartu yang belum dibayar</small></div>
+              <div><span>Tagihan bulan sebelumnya</span><b className="out">{money.fmt(previousCreditBill)}</b><small>Tagihan sebelum periode ini dimulai</small></div>
               <div><span>Sisa limit</span><b>{money.fmt(Math.max(0, (current.creditLimit ?? 0) - current.balance))}</b><small>Dari limit total {money.fmt(current.creditLimit ?? 0)}</small></div>
             </> : <>
               <div><span>Saldo</span><b>{money.fmt(current.balance)}</b><small>Total dana di dompet ini</small></div>
@@ -406,20 +424,36 @@ export default function WalletsScreen() {
               <small>{periodRange}</small>
             </div>
             <div className="wallet-flow-grid">
-              <div className="wallet-flow-card income">
-                <span>Pemasukan</span>
-                <b>{money.fmt(receivedPeriod)}</b>
-                <div><small>Pemasukan riil</small><strong>{money.fmt(actualIncomePeriod)}</strong></div>
-                <div><small>Transfer masuk & pelunasan piutang</small><strong>{money.fmt(nonRealIncomePeriod)}</strong></div>
-              </div>
-              <div className="wallet-flow-card expense">
-                <span>Pengeluaran</span>
-                <b>{money.fmt(spentPeriod)}</b>
-                <div><small>Pengeluaran riil</small><strong>{money.fmt(actualExpensePeriod)}</strong></div>
-                <div><small>Transfer keluar</small><strong>{money.fmt(transferOutPeriod)}</strong></div>
-              </div>
+              {current.kind === 'credit' ? <>
+                <div className="wallet-flow-card income">
+                  <span>Pelunasan tagihan bulan sebelumnya</span>
+                  <b>{money.fmt(creditPaymentPeriod)}</b>
+                  <div><small>Transfer pembayaran masuk</small><strong>{money.fmt(creditPaymentPeriod)}</strong></div>
+                </div>
+                <div className="wallet-flow-card expense">
+                  <span>Pengeluaran bulan ini</span>
+                  <b>{money.fmt(actualExpensePeriod)}</b>
+                  <div><small>Ditagih di bulan berikutnya</small><strong>{money.fmt(actualExpensePeriod)}</strong></div>
+                </div>
+              </> : <>
+                <div className="wallet-flow-card income">
+                  <span>Pemasukan</span>
+                  <b>{money.fmt(receivedPeriod)}</b>
+                  <div><small>Pemasukan riil</small><strong>{money.fmt(actualIncomePeriod)}</strong></div>
+                  <div><small>Transfer masuk & pelunasan piutang</small><strong>{money.fmt(nonRealIncomePeriod)}</strong></div>
+                </div>
+                <div className="wallet-flow-card expense">
+                  <span>Pengeluaran</span>
+                  <b>{money.fmt(spentPeriod)}</b>
+                  <div><small>Pengeluaran riil</small><strong>{money.fmt(actualExpensePeriod)}</strong></div>
+                  <div><small>Transfer keluar</small><strong>{money.fmt(transferOutPeriod)}</strong></div>
+                </div>
+              </>}
             </div>
-            <p>Pemasukan/pengeluaran riil tidak menghitung transfer antar-dompet. Pelunasan piutang juga tidak dianggap pendapatan baru.</p>
+            <p>{current.kind === 'credit'
+              ? 'Pengeluaran kartu periode ini akan ditagihkan pada bulan berikutnya. Transfer masuk adalah pelunasan tagihan sebelumnya.'
+              : 'Pemasukan/pengeluaran riil tidak menghitung transfer antar-dompet. Pelunasan piutang juga tidak dianggap pendapatan baru.'}
+            </p>
           </div>
 
           {selectedSavings.length > 0 && (

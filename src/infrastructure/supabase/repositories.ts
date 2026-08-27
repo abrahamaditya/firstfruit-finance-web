@@ -14,6 +14,7 @@ import type {
 } from '../../core/domain/types';
 import type { DataRepositories, Repository } from '../../core/ports/repositories';
 import { categoryPath } from '../../core/domain/categories';
+import { CREDIT_CARD_PAYMENT_TAG } from '../../core/domain/transaction-tags';
 
 type DbRow = Record<string, any>;
 
@@ -73,6 +74,9 @@ function mapTransaction(row: DbRow): Transaction {
     installmentTenorMonths: row.installment_tenor_months == null
       ? undefined
       : amount(row.installment_tenor_months),
+    installmentPaidMonths: row.installment_paid_months == null
+      ? undefined
+      : amount(row.installment_paid_months),
     settlesReceivableId: row.settles_receivable_id ?? undefined,
     adjustment: rawType === 'adjustment',
     adjustmentReason: rawType === 'adjustment' ? row.note ?? undefined : undefined,
@@ -245,7 +249,7 @@ export function createSupabaseRepositories(
   }
 
   async function postPayload(item: Omit<Transaction, 'id'>) {
-    let dbType = item.type;
+    let dbType: Transaction['type'] | 'credit_payment' = item.type;
     if (item.type === 'transfer' && item.toWalletId) {
       const { data, error } = await supabase
         .from('wallets')
@@ -254,7 +258,7 @@ export function createSupabaseRepositories(
         .eq('id', item.toWalletId)
         .single();
       throwIfError(error, 'Gagal memeriksa wallet tujuan');
-      if (data?.wallet_class === 'liability') dbType = 'credit_payment' as Transaction['type'];
+      if (data?.wallet_class === 'liability') dbType = 'credit_payment';
     }
     return {
       workspace_id: workspaceId,
@@ -265,13 +269,18 @@ export function createSupabaseRepositories(
       occurred_at: item.date,
       source_wallet_id: item.walletId,
       destination_wallet_id: item.toWalletId ?? null,
-      category_name: item.labels[0] ?? null,
+      // Pembayaran kartu tidak pernah memakai kategori anggaran. Tag ini disimpan
+      // sebagai snapshot agar dapat dibaca dan difilter seperti tag transaksi lain.
+      category_name: dbType === 'credit_payment' ? CREDIT_CARD_PAYMENT_TAG : item.labels[0] ?? null,
       merchant: item.merchant ?? null,
       budget_id: item.type === 'expense' || dbType === 'transfer'
         ? item.budgetId ?? null
         : null,
       installment_tenor_months: item.type === 'expense'
         ? item.installmentTenorMonths ?? null
+        : null,
+      installment_paid_months: item.type === 'expense'
+        ? item.installmentPaidMonths ?? null
         : null,
       benefit_scope: item.type === 'expense' ? item.benefitScope ?? null : null,
       recipient: item.recipient ?? null,
