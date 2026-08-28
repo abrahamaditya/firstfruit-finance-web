@@ -1429,6 +1429,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               type: 'number',
               optional: true,
               placeholder: '0',
+              hint: create.isEdit
+                ? 'Terisi otomatis saat periode baru dibuka dari kewajiban kartu akhir periode sebelumnya. Nilainya tetap dapat disesuaikan.'
+                : 'Menjadi baseline tagihan pada periode berjalan pertama.',
               showIf: (f) => f.medium === 'credit',
             },
             {
@@ -2123,6 +2126,40 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           notify('Tagihan bulan sebelumnya tidak boleh melebihi limit total kartu');
           return;
         }
+        let reconciledCreditBalance = creditOutstanding;
+        if (medium === 'credit' && shouldUpdate && before) {
+          if (activePeriod) {
+            // Baseline yang diisi pengguna harus menjadi asal liabilitas periode ini.
+            // Ambil transaksi terbaru saat simpan supaya saldo internal tidak tertinggal
+            // hanya karena daftar opsi form belum selesai dimuat.
+            const latestTransactions = await repos.transactions.list();
+            const periodStart = new Date(activePeriod.start);
+            const periodEnd = new Date(activePeriod.end);
+            periodStart.setHours(0, 0, 0, 0);
+            periodEnd.setHours(23, 59, 59, 999);
+            const cardPeriodTransactions = latestTransactions.filter((transaction) => {
+              if (transaction.periodId) return transaction.periodId === activePeriod.id;
+              const occurredAt = new Date(transaction.date);
+              return occurredAt >= periodStart && occurredAt <= periodEnd;
+            });
+            const cardExpenses = cardPeriodTransactions
+              .filter((transaction) => !transaction.adjustment
+                && transaction.type === 'expense'
+                && transaction.walletId === before.id)
+              .reduce((sum, transaction) => sum + transaction.amount, 0);
+            const cardPayments = cardPeriodTransactions
+              .filter((transaction) => !transaction.adjustment
+                && transaction.type === 'transfer'
+                && transaction.toWalletId === before.id)
+              .reduce((sum, transaction) => sum + transaction.amount, 0);
+            reconciledCreditBalance = Math.max(0, creditOutstanding - cardPayments + cardExpenses);
+          } else {
+            // Tanpa periode aktif, pertahankan aktivitas yang sudah ada dan hanya
+            // terapkan selisih baseline yang diedit.
+            const previousBaseline = before.previousPeriodBill ?? before.balance;
+            reconciledCreditBalance = Math.max(0, before.balance + creditOutstanding - previousBaseline);
+          }
+        }
         const payload = {
           name: medium === 'cash'
             ? 'Uang Tunai'
@@ -2132,12 +2169,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           // Akuntansi cuma mengenal aset vs liabilitas — e-wallet & tunai tetap 'debit'.
           kind: (medium === 'credit' ? 'credit' : 'debit') as 'debit' | 'credit',
           medium,
-          // Tagihan awal kartu menjadi liabilitas pembuka; saat diedit, perubahan
-          // nilai ini dicatat sebagai jurnal penyesuaian oleh command database.
-          // Tagihan periode sebelumnya bukan saldo kartu saat ini. Saat mengedit
-          // kartu, saldo tetap dipertahankan dan hanya baseline tagihannya yang diubah.
+          // Tagihan awal kartu menjadi liabilitas pembuka. Saat diedit, saldo internal
+          // direkonsiliasi menjadi baseline − pembayaran + belanja periode ini; selisihnya
+          // dicatat sebagai jurnal penyesuaian oleh command database.
           balance: medium === 'credit'
-            ? shouldUpdate ? before?.balance ?? 0 : creditOutstanding
+            ? reconciledCreditBalance
             : toNumber(form.balance),
           bank: medium === 'cash' ? undefined : form.bank.trim() || undefined,
           last4: medium === 'bank' || medium === 'credit' ? form.last4.trim().slice(-4) || undefined : undefined,

@@ -191,9 +191,12 @@ export function useDashboard() {
     })
     : [];
   const creditObligations = creditObligationBreakdown(wallets, periodTransactions);
+  const assets = totalAssets(wallets);
+  const effectiveLiquidity = assets - creditObligations.total;
   return {
-    assets: totalAssets(wallets),
-    liquidity,
+    assets,
+    liquidity: effectiveLiquidity,
+    recordedLiquidity: liquidity,
     creditLiabilities: creditObligations.total,
     previousPeriodCreditDue: creditObligations.previousPeriodDue,
     currentPeriodCreditDue: creditObligations.currentPeriodDue,
@@ -202,10 +205,10 @@ export function useDashboard() {
     reserved,
     // Dipakai beranda untuk menjabarkan asal angka "aman dibelanjakan".
     allocated: remainingBudget(periodBudgets),
-    safeToSpend: safeToSpend(liquidity, periodBudgets, reserved),
+    safeToSpend: safeToSpend(effectiveLiquidity, periodBudgets, reserved),
     period,
     progress: period ? periodProgress(period) : null,
-    netSurplus: periodNet(liquidity, periodBudgets),
+    netSurplus: periodNet(effectiveLiquidity, periodBudgets),
     wallets,
     loading: walletsLoading || budgetsLoading || savingsLoading || transactionsLoading || periodsLoading,
   };
@@ -254,12 +257,20 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
     : [];
 
   const today = new Date();
-  // Saldo dompet kredit adalah tagihan berjalan: transaksi belanja menambah saldo,
-  // sedangkan pembayaran kartu menguranginya. Memakai saldo ini membuat Rencana selalu
-  // konsisten dengan angka "Tagihan terpakai" pada halaman Dompet.
-  const creditBillNextMonth = wallets
-    .filter(wallet => wallet.kind === 'credit')
-    .reduce((sum, wallet) => sum + Math.max(0, wallet.balance), 0);
+  const periodTransactions = period
+    ? transactions.filter(transaction => {
+      if (transaction.periodId) return transaction.periodId === period.id;
+      const occurredAt = new Date(transaction.date);
+      const start = new Date(period.start);
+      const end = new Date(period.end);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      return occurredAt >= start && occurredAt <= end;
+    })
+    : [];
+  // Konsisten dengan Dompet dan Arus Kas Bebas: baseline tagihan yang dikonfirmasi
+  // pengguna, dikurangi pembayaran, lalu ditambah belanja kartu periode berjalan.
+  const creditBillNextMonth = creditObligationBreakdown(wallets, periodTransactions).total;
   const cashBalance = wallets
     .filter(wallet => wallet.kind !== 'credit')
     .reduce((sum, wallet) => sum + wallet.balance, 0);
@@ -322,7 +333,7 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
   const { periods, loading: periodsLoading } = usePeriods();
   const { data: transactions, loading: txLoading } = useTransactions();
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
-  const { liquidity, loading: walletsLoading } = useWallets();
+  const { wallets, liquidity, loading: walletsLoading } = useWallets();
   const { reserved, loading: savingsLoading } = useSavings();
 
   const period = periods.find(item => item.id === periodId)
@@ -337,18 +348,23 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
   const to = period ? +new Date(period.end) : 0;
   // Penyesuaian saldo bukan belanja nyata, transfer cuma memindahkan uang — keduanya
   // dikecualikan supaya pemasukan/pengeluaran periode mencerminkan arus kas sebenarnya.
-  const inPeriod = period
+  const periodTransactions = period
     ? transactions.filter(tx => {
+      if (tx.periodId) return tx.periodId === period.id;
       const at = +new Date(tx.date);
-      return !tx.adjustment && tx.type !== 'transfer' && at >= from && at <= to;
+      return at >= from && at <= to;
     })
     : [];
+  const inPeriod = periodTransactions.filter(tx => !tx.adjustment && tx.type !== 'transfer');
   const income = inPeriod.filter(isIncome).reduce((sum, tx) => sum + tx.amount, 0);
   const actualIncome = inPeriod.filter(isActualIncome).reduce((sum, tx) => sum + tx.amount, 0);
   const expense = inPeriod.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
 
   // Anggaran tanpa `periodId` hanya bisa berasal dari periode berjalan (data lama).
   const periodBudgets = budgets.filter(b => (b.periodId ? b.periodId === period?.id : isActive));
+  const effectiveLiquidity = isActive
+    ? totalAssets(wallets) - creditObligationBreakdown(wallets, periodTransactions).total
+    : liquidity;
 
   const totals = new Map<string, number>();
   inPeriod
@@ -374,9 +390,9 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 6),
-    liquidity,
+    liquidity: effectiveLiquidity,
     reserved,
-    safeToSpend: safeToSpend(liquidity, periodBudgets, reserved),
+    safeToSpend: safeToSpend(effectiveLiquidity, periodBudgets, reserved),
     loading: periodsLoading || txLoading || budgetsLoading || walletsLoading || savingsLoading,
   };
 }

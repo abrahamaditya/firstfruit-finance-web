@@ -11,17 +11,10 @@ export function totalAssets(wallets: Wallet[]): number {
     .reduce((sum, wallet) => sum + wallet.balance, 0);
 }
 
-/** Total tagihan kartu yang masih tercatat sebagai liabilitas saat ini. */
-export function totalCreditLiabilities(wallets: Wallet[]): number {
-  return wallets
-    .filter(wallet => wallet.kind === 'credit')
-    .reduce((sum, wallet) => sum + Math.abs(wallet.balance), 0);
-}
-
 export interface CreditObligationBreakdown {
   /** Bagian tagihan pembuka periode yang belum tertutup pembayaran kartu. */
   previousPeriodDue: number;
-  /** Sisa liabilitas kartu setelah bagian tagihan pembuka dipisahkan. */
+  /** Belanja kartu periode ini yang masih belum tertutup pembayaran. */
   currentPeriodDue: number;
   /** Belanja kartu bruto yang dicatat pada periode aktif. */
   currentPeriodSpending: number;
@@ -30,12 +23,13 @@ export interface CreditObligationBreakdown {
 }
 
 /**
- * Memecah saldo kartu aktual menjadi tagihan lama dan kewajiban periode ini.
+ * Membentuk liabilitas kartu dari baseline yang dikonfirmasi pengguna dan aktivitas
+ * pada periode berjalan.
  *
- * Saldo wallet tetap menjadi sumber kebenaran total kewajiban. Pembayaran lebih dulu
- * menutup tagihan pembuka; bila melebihi tagihan pembuka, sisanya otomatis mengurangi
- * bagian periode ini. Karena `currentPeriodDue` diturunkan dari saldo aktual, jurnal
- * penyesuaian kartu juga tetap tercakup dan kedua bagian selalu berjumlah `total`.
+ * Pembayaran lebih dulu menutup tagihan pembuka; bila melebihi tagihan pembuka,
+ * sisanya otomatis mengurangi belanja periode ini. `wallet.balance` tidak dipakai
+ * sebagai sumber tagihan lama karena nilainya dapat tertinggal ketika baseline kartu
+ * diedit pada data versi lama.
  */
 export function creditObligationBreakdown(
   wallets: Wallet[],
@@ -44,7 +38,6 @@ export function creditObligationBreakdown(
   const creditWallets = wallets.filter(wallet => wallet.kind === 'credit');
 
   return creditWallets.reduce<CreditObligationBreakdown>((result, wallet) => {
-    const outstanding = Math.abs(wallet.balance);
     const spending = periodTransactions
       .filter(transaction => !transaction.adjustment
         && transaction.type === 'expense'
@@ -58,15 +51,17 @@ export function creditObligationBreakdown(
     // Record lama belum memiliki baseline. Rekonstruksi nilai pembukanya dari saldo
     // aktual agar transaksi periode ini tidak keliru dianggap sebagai tagihan lama.
     const openingBill = wallet.previousPeriodBill
-      ?? Math.max(0, outstanding - spending + payments);
-    const previousPeriodDue = Math.min(outstanding, Math.max(0, openingBill - payments));
+      ?? Math.max(0, Math.abs(wallet.balance) - spending + payments);
+    const previousPeriodDue = Math.max(0, openingBill - payments);
+    const paymentOverflow = Math.max(0, payments - openingBill);
+    const currentPeriodDue = Math.max(0, spending - paymentOverflow);
 
     return {
       previousPeriodDue: result.previousPeriodDue + previousPeriodDue,
-      currentPeriodDue: result.currentPeriodDue + (outstanding - previousPeriodDue),
+      currentPeriodDue: result.currentPeriodDue + currentPeriodDue,
       currentPeriodSpending: result.currentPeriodSpending + spending,
       payments: result.payments + payments,
-      total: result.total + outstanding,
+      total: result.total + previousPeriodDue + currentPeriodDue,
     };
   }, {
     previousPeriodDue: 0,

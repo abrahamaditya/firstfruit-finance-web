@@ -19,7 +19,7 @@ export interface Wallet {
   cardNetwork?: CardNetwork;
   balance: number;           // cached, maintained incrementally
   creditLimit?: number;
-  previousPeriodBill?: number; // angka tagihan pembuka yang tetap untuk periode berjalan
+  previousPeriodBill?: number; // auto-fill saat periode dibuka; tetap dapat disesuaikan pengguna
 }
 export interface Transaction {
   id: string; type: TxType; nature: TxNature; amount: number;

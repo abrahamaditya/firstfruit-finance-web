@@ -313,15 +313,13 @@ export default function ReportsScreen() {
     !!transaction.toWalletId && creditWalletIds.has(transaction.toWalletId),
   );
   const creditPaymentsTotal = creditPayments.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const creditBillNextMonth = creditWallets.reduce((sum, wallet) => sum + Math.max(0, wallet.balance), 0);
-  const creditAdjustmentDelta = allTransactions
-    .filter(transaction => transaction.adjustment
-      && inSelectedRange(transaction)
-      && creditWalletIds.has(transaction.walletId))
-    .reduce((sum, transaction) => sum + (transaction.type === 'income' ? transaction.amount : -transaction.amount), 0);
-  const creditBillPreviousPeriod = Math.max(
+  const creditBillNextMonth = dashboard.creditLiabilities;
+  // Untuk periode aktif, angka tagihan sebelumnya harus berasal dari baseline yang
+  // dikonfirmasi pengguna, bukan dibalik dari saldo liabilitas internal yang mungkin
+  // masih menyimpan nilai sebelum baseline terakhir diedit.
+  const creditBillPreviousPeriod = creditWallets.reduce(
+    (sum, wallet) => sum + (wallet.previousPeriodBill ?? Math.max(0, wallet.balance)),
     0,
-    creditBillNextMonth - creditBillFromPeriod + creditPaymentsTotal - creditAdjustmentDelta,
   );
   const totalCreditLimit = creditWallets.reduce((sum, wallet) => sum + (wallet.creditLimit ?? 0), 0);
   const creditLimitRemaining = creditWallets.reduce(

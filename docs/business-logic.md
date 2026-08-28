@@ -25,6 +25,7 @@ Konvensi umum:
 | Field kondisional | `bank` disembunyikan untuk tunai; `last4` hanya bank/kartu kredit; `phone` hanya e-wallet; `creditLimit` hanya kartu kredit. |
 | Record lama | Dompet tanpa `medium` dibaca sebagai `credit` bila `kind === 'credit'`, selain itu `bank`. |
 | Likuiditas | `totalLiquidity = Σ(debit.balance) − Σ(abs(credit.balance))` (`calculations.ts`). |
+| Rollover tagihan kartu | Saat periode baru menjadi `open`, `previousPeriodBill` otomatis diisi dari kewajiban akhir periode yang ditutup: `tagihan pembuka lama − pembayaran kartu + pengeluaran kartu`. Bila tagihan lama lunas, nilainya sama dengan pengeluaran kartu periode sebelumnya. Pengguna tetap boleh menyesuaikannya lewat Edit Kartu. |
 
 ### Dompet default
 
@@ -121,10 +122,11 @@ Aturannya:
 - Saldo tersedia sebuah dompet = `wallet.balance − Σ(tabungan aktif di dompet itu)`.
 - `safeToSpend = saldo aset − sisa tagihan kartu periode sebelumnya − kewajiban kartu
   periode ini − Σ(max(alokasi − realisasi, 0)) − Σ(tabungan)`.
-  Dua komponen kartu selalu berjumlah saldo liabilitas kartu aktual. Pembayaran kartu
-  lebih dulu mengurangi tagihan periode sebelumnya; kelebihannya mengurangi kewajiban
-  periode ini. Pengeluaran tunai/debit tidak dikurangkan lagi karena sudah menurunkan
-  saldo aset. Pengeluaran beranggaran yang sudah terjadi juga tidak dikurangkan ulang:
+  Liabilitas kartu dibentuk dari `tagihan pembuka − pembayaran + pengeluaran kartu periode
+  ini`; field tagihan pembuka yang dikonfirmasi pengguna adalah sumber kebenarannya.
+  Pembayaran lebih dulu mengurangi tagihan periode sebelumnya; kelebihannya mengurangi
+  kewajiban periode ini. Pengeluaran tunai/debit tidak dikurangkan lagi karena sudah
+  menurunkan saldo aset. Pengeluaran beranggaran yang sudah terjadi tidak dikurangkan ulang:
   yang dicadangkan hanya sisa anggarannya. Hasil tidak dijepit ke nol; nilai negatif
   ditampilkan sebagai defisit arus kas bebas.
 - Aksi **Sisihkan** dibatasi saldo tersedia; aksi **Ambil** dibatasi saldo tabungan itu sendiri.

@@ -450,6 +450,19 @@ export function createSupabaseRepositories(
     },
   };
 
+  /**
+   * Saldo liabilitas pada akhir periode menjadi tagihan pembuka periode yang baru.
+   * Menyalin proyeksi saldo membuat operasi ini idempoten; pemanggilan ulang tidak
+   * menggandakan pengeluaran dan pengguna tetap dapat mengubah baseline lewat Edit Kartu.
+   */
+  async function carryCreditBillsToOpenedPeriod() {
+    const creditWallets = (await wallets.list()).filter(wallet => wallet.kind === 'credit');
+    await Promise.all(creditWallets.map(wallet => wallets.update(wallet.id, {
+        balance: Math.max(0, wallet.balance),
+        previousPeriodBill: Math.max(0, wallet.balance),
+      })));
+  }
+
   const budgets: Repository<Budget> = {
     async list() {
       const { data, error } = await supabase
@@ -898,6 +911,8 @@ export function createSupabaseRepositories(
           },
         });
         throwIfError(error, 'Gagal membuat periode');
+        const createdPeriod = await periods.get(data as string);
+        if (createdPeriod?.status === 'open') await carryCreditBillsToOpenedPeriod();
         return data as string;
       },
       async openPeriod(periodId) {
@@ -909,6 +924,7 @@ export function createSupabaseRepositories(
           },
         });
         throwIfError(error, 'Gagal membuka periode');
+        await carryCreditBillsToOpenedPeriod();
       },
       async closePeriod(periodId, options) {
         const command = options.targetDraftId ? 'close_budget_period_to_draft' : 'close_budget_period';
@@ -927,6 +943,8 @@ export function createSupabaseRepositories(
           },
         });
         throwIfError(error, 'Gagal menutup periode');
+        const openedPeriod = (await periods.list()).find(period => period.status === 'open');
+        if (openedPeriod) await carryCreditBillsToOpenedPeriod();
         // Melanjutkan ke draft juga menghasilkan id periode yang kini dibuka.
         return options.createNext || options.targetDraftId ? (data as string) : null;
       },

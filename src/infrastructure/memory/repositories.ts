@@ -22,6 +22,14 @@ export function createMemoryRepositories(): DataRepositories {
   const plans = new MemoryRepo(seed.seedPlans);
   const savings = new MemoryRepo(seed.seedSavings);
   const reminders = new MemoryRepo(seed.seedReminders);
+  // Setelah periode berganti, saldo kartu akhir menjadi tagihan pembuka periode baru.
+  // Operasi ini idempoten dan nilainya tetap dapat diedit setelah auto-fill.
+  const carryCreditBills = async () => {
+    const creditWallets = (await wallets.list()).filter((wallet) => wallet.kind === 'credit');
+    await Promise.all(creditWallets.map((wallet) => wallets.update(wallet.id, {
+      previousPeriodBill: Math.max(0, wallet.balance),
+    })));
+  };
   return {
     wallets,
     transactions,
@@ -68,6 +76,7 @@ export function createMemoryRepositories(): DataRepositories {
         if (options.closeCurrent && activePeriod) {
           await periods.update(activePeriod.id, { closed: true, status: 'closed' });
           await periods.update(created.id, { closed: false, status: 'open' });
+          await carryCreditBills();
         }
         return created.id;
       },
@@ -83,6 +92,7 @@ export function createMemoryRepositories(): DataRepositories {
         );
         if (overlapsArchive) throw new Error('Sesuaikan tanggal draft karena bertumpang tindih dengan periode yang ditutup');
         await periods.update(periodId, { closed: false, status: 'open' });
+        await carryCreditBills();
       },
       async closePeriod(periodId, options) {
         const closed = await periods.get(periodId);
@@ -93,6 +103,7 @@ export function createMemoryRepositories(): DataRepositories {
           }
           await periods.update(periodId, { closed: true, status: 'closed' });
           await periods.update(draft.id, { closed: false, status: 'open' });
+          await carryCreditBills();
           const selected = new Set(options.budgetIds ?? []);
           const sourceBudgets = (await budgets.list()).filter((budget) =>
             budget.periodId === periodId && selected.has(budget.id),
@@ -128,6 +139,7 @@ export function createMemoryRepositories(): DataRepositories {
           closed: false,
           status: 'open',
         });
+        await carryCreditBills();
         const selected = options.budgetIds ? new Set(options.budgetIds) : null;
         const sourceBudgets = (await budgets.list()).filter((budget) =>
           budget.periodId === periodId && (!selected || selected.has(budget.id)),
