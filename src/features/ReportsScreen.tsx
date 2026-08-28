@@ -5,7 +5,13 @@ import { useBudgets, useDashboard, useTransactions } from '../application/hooks'
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { Chevron, Download, TrendUp } from '../components/ui/icons';
 import { addDays, dayKey, startOfDay } from '../core/domain/calendar';
-import { actualExpenseAmount, isActualExpense, isActualIncome, isIncome } from '../core/domain/calculations';
+import {
+  actualExpenseAmount,
+  creditObligationBreakdown,
+  isActualExpense,
+  isActualIncome,
+  isIncome,
+} from '../core/domain/calculations';
 import { categoryPath } from '../core/domain/categories';
 import {
   categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
@@ -322,8 +328,20 @@ export default function ReportsScreen() {
     0,
   );
   const totalCreditLimit = creditWallets.reduce((sum, wallet) => sum + (wallet.creditLimit ?? 0), 0);
+  const activeCreditTransactions = dashboard.period
+    ? allTransactions.filter((transaction) => {
+      if (transaction.periodId) return transaction.periodId === dashboard.period?.id;
+      const at = new Date(transaction.date);
+      const start = startOfDay(new Date(dashboard.period!.start));
+      const endExclusive = addDays(startOfDay(new Date(dashboard.period!.end)), 1);
+      return at >= start && at < endExclusive;
+    })
+    : transactions;
   const creditLimitRemaining = creditWallets.reduce(
-    (sum, wallet) => sum + Math.max(0, (wallet.creditLimit ?? 0) - Math.max(0, wallet.balance)),
+    (sum, wallet) => sum + Math.max(
+      0,
+      (wallet.creditLimit ?? 0) - creditObligationBreakdown([wallet], activeCreditTransactions).total,
+    ),
     0,
   );
   const installments = creditExpenses.filter(transaction => transaction.installmentTenorMonths);

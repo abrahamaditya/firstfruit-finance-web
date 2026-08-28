@@ -4,7 +4,7 @@ import { useUI, useMoney, useT } from '../components/AppShell';
 import { usePeriodTransactions, useWallets, useSavings } from '../application/hooks';
 import { ArrowLeft, CardChip, ChevronR, Down, Eye, EyeOff, ListIcon, Pencil, Plus, TransferCard, Up, WalletIcon } from '../components/ui/icons';
 import type { Transaction, Wallet } from '../core/domain/types';
-import { isActualIncome, isWalletIncome } from '../core/domain/calculations';
+import { creditObligationBreakdown, isActualIncome, isWalletIncome } from '../core/domain/calculations';
 import { walletCardTheme } from '../core/wallet-card-theme';
 import { walletBrandLogo, walletNetworkLogo, walletProductInitial } from '../core/wallet-branding';
 import { walletProduct } from '../core/wallet-products';
@@ -72,7 +72,10 @@ export default function WalletsScreen() {
     : cards.find((wallet) => wallet.id === selectedWalletId);
   const currentReserved = current ? reservedIn(current.id) : 0;
   const totalDebit = debit.reduce((sum, wallet) => sum + wallet.balance, 0);
-  const totalCredit = credit.reduce((sum, wallet) => sum + wallet.balance, 0);
+  // Liabilitas kartu harus mengikuti baseline tagihan yang dikonfirmasi pengguna,
+  // bukan saldo internal lama yang dapat tertinggal setelah field tersebut diedit.
+  // Transaksi dari hook ini sudah dibatasi ke periode yang sedang aktif/dilihat.
+  const totalCredit = creditObligationBreakdown(credit, transactions).total;
   const totalLiquidity = totalDebit - totalCredit;
   const totalReserved = savings.reduce((sum, saving) => sum + saving.balance, 0);
   const availableDebit = totalDebit - totalReserved;
@@ -216,26 +219,13 @@ export default function WalletsScreen() {
   const creditAvailable = current?.kind === 'credit'
     ? Math.max(0, (current.creditLimit ?? 0) - creditLimitUsed)
     : 0;
+  const creditLiabilityForCard = (wallet: typeof cards[number]) =>
+    wallet.kind === 'credit'
+      ? creditObligationBreakdown([wallet], transactions).total
+      : 0;
   const creditAvailableForCard = (wallet: typeof cards[number]) => {
     if (wallet.kind !== 'credit') return wallet.balance;
-    const cardPeriodTransactions = transactions.filter((transaction) => {
-      const at = new Date(transaction.date);
-      return (transaction.walletId === wallet.id || transaction.toWalletId === wallet.id)
-        && at >= periodStart
-        && at <= periodEnd;
-    });
-    const expenses = cardPeriodTransactions
-      .filter((transaction) => !transaction.adjustment
-        && transaction.type === 'expense'
-        && transaction.walletId === wallet.id)
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
-    const payments = cardPeriodTransactions
-      .filter((transaction) => !transaction.adjustment
-        && transaction.type === 'transfer'
-        && transaction.toWalletId === wallet.id)
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
-    const usedLimit = Math.max(0, (wallet.previousPeriodBill ?? 0) - payments + expenses);
-    return Math.max(0, (wallet.creditLimit ?? 0) - usedLimit);
+    return Math.max(0, (wallet.creditLimit ?? 0) - creditLiabilityForCard(wallet));
   };
   const receivedPeriod = current ? periodTransactions
     .filter((transaction) => isWalletIncome(transaction, current.id))
@@ -709,7 +699,7 @@ export default function WalletsScreen() {
             walletProduct(mediumOf(w), w.bank)?.color || '#2F4858',
           )}
           <div className="mid"><div className="t1">{w.name}</div><div className="t2">•••• {w.last4}</div></div>
-          <div className="r"><div className="val out">−{money.fmt(w.balance)}</div><div className="subt">{t('wallets.limit')} {money.fmtCompact(w.creditLimit!)}</div></div>
+          <div className="r"><div className="val out">−{money.fmt(creditLiabilityForCard(w))}</div><div className="subt">{t('wallets.limit')} {money.fmtCompact(w.creditLimit!)}</div></div>
         </div>
       ))}
       </>
