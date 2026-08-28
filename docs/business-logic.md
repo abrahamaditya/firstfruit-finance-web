@@ -119,10 +119,14 @@ Aturannya:
 - Tabungan adalah **earmark**, bukan dompet: uangnya tetap berada di `walletId`, saldo dompet
   tidak berubah.
 - Saldo tersedia sebuah dompet = `wallet.balance − Σ(tabungan aktif di dompet itu)`.
-- `safeToSpend = likuiditas − Σ(max(alokasi − realisasi, 0)) − Σ(tabungan)`.
-  Saldo dompet sudah mencerminkan transaksi, jadi hanya sisa anggaran yang dikurangkan
-  agar pengeluaran beranggaran tidak dihitung dua kali. Hasil tidak dijepit ke nol:
-  nilai negatif ditampilkan sebagai defisit arus kas bebas.
+- `safeToSpend = saldo aset − sisa tagihan kartu periode sebelumnya − kewajiban kartu
+  periode ini − Σ(max(alokasi − realisasi, 0)) − Σ(tabungan)`.
+  Dua komponen kartu selalu berjumlah saldo liabilitas kartu aktual. Pembayaran kartu
+  lebih dulu mengurangi tagihan periode sebelumnya; kelebihannya mengurangi kewajiban
+  periode ini. Pengeluaran tunai/debit tidak dikurangkan lagi karena sudah menurunkan
+  saldo aset. Pengeluaran beranggaran yang sudah terjadi juga tidak dikurangkan ulang:
+  yang dicadangkan hanya sisa anggarannya. Hasil tidak dijepit ke nol; nilai negatif
+  ditampilkan sebagai defisit arus kas bebas.
 - Aksi **Sisihkan** dibatasi saldo tersedia; aksi **Ambil** dibatasi saldo tabungan itu sendiri.
 
 ---

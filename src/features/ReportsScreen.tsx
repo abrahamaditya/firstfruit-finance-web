@@ -531,7 +531,17 @@ export default function ReportsScreen() {
           </span>
         </div>
         <div className="report-executive-formula">
-          <div><span>{t('reports.netLiquidity')}</span><b>{money.fmtCompactSigned(dashboard.liquidity)}</b></div>
+          <div><span>{t('reports.assetBalance')}</span><b>{money.fmtCompactSigned(dashboard.assets)}</b></div>
+          <i>−</i>
+          <div><span>{t('reports.previousCreditDue')}</span><b className="negative">−{money.fmtCompact(dashboard.previousPeriodCreditDue)}</b></div>
+          <i>−</i>
+          <div>
+            <span>{t('reports.currentCreditDue')}</span>
+            <b className="negative">−{money.fmtCompact(dashboard.currentPeriodCreditDue)}</b>
+            <small>{t('reports.currentCreditSpendingRecorded', {
+              amount: money.fmtCompact(dashboard.currentPeriodCreditSpending),
+            })}</small>
+          </div>
           <i>−</i>
           <div><span>{t('planning.lockedSavings')}</span><b className="negative">−{money.fmtCompact(dashboard.reserved)}</b></div>
           <i>−</i>

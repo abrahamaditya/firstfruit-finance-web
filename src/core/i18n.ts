@@ -79,6 +79,12 @@ const D: Record<string, Entry> = {
 
   // Beranda
   'home.liquidity': { id: 'Total likuiditas', en: 'Total liquidity' },
+  'home.assets': { id: 'Saldo aset', en: 'Asset balance' },
+  'home.creditBills': { id: 'Tagihan kartu', en: 'Card bills' },
+  'home.creditBillBreakdown': {
+    id: '{previous} lama · {current} periode ini',
+    en: '{previous} previous · {current} this period',
+  },
   'home.inSavings': { id: 'Di tabungan', en: 'In savings' },
   'home.allocated': { id: 'Sisa anggaran', en: 'Remaining budget' },
   'home.walletBalances': { id: 'Saldo dompet', en: 'Wallet balances' },
@@ -428,6 +434,13 @@ const D: Record<string, Entry> = {
   'reports.freeCashflow': { id: 'Arus Kas Bebas', en: 'Free cash flow' },
   'reports.currentFinancialPosition': { id: 'posisi keuangan saat ini', en: 'current financial position' },
   'reports.netLiquidity': { id: 'Likuiditas bersih', en: 'Net liquidity' },
+  'reports.assetBalance': { id: 'Saldo aset', en: 'Asset balance' },
+  'reports.previousCreditDue': { id: 'Sisa tagihan lama', en: 'Previous bill due' },
+  'reports.currentCreditDue': { id: 'Kewajiban kartu periode ini', en: 'Current-period card due' },
+  'reports.currentCreditSpendingRecorded': {
+    id: 'Pengeluaran tercatat · {amount}',
+    en: 'Recorded spending · {amount}',
+  },
   'reports.realFlowPeriod': { id: 'Arus kas riil periode', en: 'Period real cash flow' },
   'reports.surplus': { id: 'Surplus', en: 'Surplus' },
   'reports.deficit': { id: 'Defisit', en: 'Deficit' },

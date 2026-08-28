@@ -4,6 +4,79 @@ export function totalLiquidity(wallets: Wallet[]): number {
   return wallets.reduce((s, w) => s + (w.kind === 'credit' ? -Math.abs(w.balance) : w.balance), 0);
 }
 
+/** Dana aktual di rekening, e-wallet, dan tunai sebelum dikurangi kewajiban kartu. */
+export function totalAssets(wallets: Wallet[]): number {
+  return wallets
+    .filter(wallet => wallet.kind !== 'credit')
+    .reduce((sum, wallet) => sum + wallet.balance, 0);
+}
+
+/** Total tagihan kartu yang masih tercatat sebagai liabilitas saat ini. */
+export function totalCreditLiabilities(wallets: Wallet[]): number {
+  return wallets
+    .filter(wallet => wallet.kind === 'credit')
+    .reduce((sum, wallet) => sum + Math.abs(wallet.balance), 0);
+}
+
+export interface CreditObligationBreakdown {
+  /** Bagian tagihan pembuka periode yang belum tertutup pembayaran kartu. */
+  previousPeriodDue: number;
+  /** Sisa liabilitas kartu setelah bagian tagihan pembuka dipisahkan. */
+  currentPeriodDue: number;
+  /** Belanja kartu bruto yang dicatat pada periode aktif. */
+  currentPeriodSpending: number;
+  payments: number;
+  total: number;
+}
+
+/**
+ * Memecah saldo kartu aktual menjadi tagihan lama dan kewajiban periode ini.
+ *
+ * Saldo wallet tetap menjadi sumber kebenaran total kewajiban. Pembayaran lebih dulu
+ * menutup tagihan pembuka; bila melebihi tagihan pembuka, sisanya otomatis mengurangi
+ * bagian periode ini. Karena `currentPeriodDue` diturunkan dari saldo aktual, jurnal
+ * penyesuaian kartu juga tetap tercakup dan kedua bagian selalu berjumlah `total`.
+ */
+export function creditObligationBreakdown(
+  wallets: Wallet[],
+  periodTransactions: Transaction[],
+): CreditObligationBreakdown {
+  const creditWallets = wallets.filter(wallet => wallet.kind === 'credit');
+
+  return creditWallets.reduce<CreditObligationBreakdown>((result, wallet) => {
+    const outstanding = Math.abs(wallet.balance);
+    const spending = periodTransactions
+      .filter(transaction => !transaction.adjustment
+        && transaction.type === 'expense'
+        && transaction.walletId === wallet.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    const payments = periodTransactions
+      .filter(transaction => !transaction.adjustment
+        && transaction.type === 'transfer'
+        && transaction.toWalletId === wallet.id)
+      .reduce((sum, transaction) => sum + transaction.amount, 0);
+    // Record lama belum memiliki baseline. Rekonstruksi nilai pembukanya dari saldo
+    // aktual agar transaksi periode ini tidak keliru dianggap sebagai tagihan lama.
+    const openingBill = wallet.previousPeriodBill
+      ?? Math.max(0, outstanding - spending + payments);
+    const previousPeriodDue = Math.min(outstanding, Math.max(0, openingBill - payments));
+
+    return {
+      previousPeriodDue: result.previousPeriodDue + previousPeriodDue,
+      currentPeriodDue: result.currentPeriodDue + (outstanding - previousPeriodDue),
+      currentPeriodSpending: result.currentPeriodSpending + spending,
+      payments: result.payments + payments,
+      total: result.total + outstanding,
+    };
+  }, {
+    previousPeriodDue: 0,
+    currentPeriodDue: 0,
+    currentPeriodSpending: 0,
+    payments: 0,
+    total: 0,
+  });
+}
+
 // ===== Tabungan (earmark di dalam dompet) =====
 const activeSavings = (savings: Saving[]) => savings.filter(s => !s.archived);
 /** Total uang yang disisihkan di satu dompet tertentu. */

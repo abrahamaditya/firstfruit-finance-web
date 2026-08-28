@@ -7,7 +7,7 @@ import {
 import {
   totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet, remainingBudget,
   isActualIncome, isIncome,
-  totalReserved, reservedInWallet,
+  totalReserved, reservedInWallet, totalAssets, creditObligationBreakdown,
 } from '../core/domain/calculations';
 import {
   totalMonthlyBurden, isReminderDue, isEndingSoon, daysUntilBilling, daysUntilEnd,
@@ -173,13 +173,32 @@ export function useDashboard() {
   const { wallets, liquidity, loading: walletsLoading } = useWallets();
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
   const { reserved, loading: savingsLoading } = useSavings();
+  const { data: transactions, loading: transactionsLoading } = useTransactions();
   const { data: periods, loading: periodsLoading } = useCollection<BudgetPeriod>(r => r.periods);
   const period = findActivePeriod(periods);
   const periodBudgets = period
     ? budgets.filter(budget => budget.periodId === period.id)
     : [];
+  const periodTransactions = period
+    ? transactions.filter(transaction => {
+      if (transaction.periodId) return transaction.periodId === period.id;
+      const occurredAt = new Date(transaction.date);
+      const start = new Date(period.start);
+      const end = new Date(period.end);
+      start.setHours(0, 0, 0, 0);
+      end.setHours(23, 59, 59, 999);
+      return occurredAt >= start && occurredAt <= end;
+    })
+    : [];
+  const creditObligations = creditObligationBreakdown(wallets, periodTransactions);
   return {
+    assets: totalAssets(wallets),
     liquidity,
+    creditLiabilities: creditObligations.total,
+    previousPeriodCreditDue: creditObligations.previousPeriodDue,
+    currentPeriodCreditDue: creditObligations.currentPeriodDue,
+    currentPeriodCreditSpending: creditObligations.currentPeriodSpending,
+    creditPayments: creditObligations.payments,
     reserved,
     // Dipakai beranda untuk menjabarkan asal angka "aman dibelanjakan".
     allocated: remainingBudget(periodBudgets),
@@ -188,7 +207,7 @@ export function useDashboard() {
     progress: period ? periodProgress(period) : null,
     netSurplus: periodNet(liquidity, periodBudgets),
     wallets,
-    loading: walletsLoading || budgetsLoading || savingsLoading || periodsLoading,
+    loading: walletsLoading || budgetsLoading || savingsLoading || transactionsLoading || periodsLoading,
   };
 }
 

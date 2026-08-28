@@ -465,8 +465,16 @@ export default function HomeScreen() {
           "−Rp 0" membingungkan sedangkan "Rp 0" jelas. */}
       <div className="home-summary-row">
         <div className="brk-card">
-          <div className="brk-cells">
-            <div><span>{tr('home.liquidity')}</span><b>{moneyOrHidden(d.liquidity)}</b></div>
+          <div className="brk-cells home-cashflow-breakdown">
+            <div><span>{tr('home.assets')}</span><b>{moneyOrHidden(d.assets)}</b></div>
+            <div>
+              <span>{tr('home.creditBills')}</span>
+              <b>{hidden ? '••••' : `${d.creditLiabilities > 0 ? '−' : ''}${money.fmt(d.creditLiabilities)}`}</b>
+              <small>{hidden ? '••••' : tr('home.creditBillBreakdown', {
+                previous: money.fmtCompact(d.previousPeriodCreditDue),
+                current: money.fmtCompact(d.currentPeriodCreditDue),
+              })}</small>
+            </div>
             <div>
               <span>{tr('home.inSavings')}</span>
               <b>{hidden ? '••••' : `${d.reserved > 0 ? '−' : ''}${money.fmt(d.reserved)}`}</b>
