@@ -101,6 +101,7 @@ export const PILLAR_EXPENSE_TREE: CategoryTree = {
     'Debt & Bills': [],
     'Personal Care': [],
     Health: [],
+    'Maintenance & Services': [],
   },
   Wants: {
     'Dining Out': [],
