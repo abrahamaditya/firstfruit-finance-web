@@ -206,7 +206,7 @@ export function useMoney() {
 interface FieldDefinition {
   key: string;
   label: string;
-  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'checkbox' | 'computed' | 'installmentAllocation';
+  type?: 'text' | 'number' | 'date' | 'select' | 'segmented' | 'checkbox' | 'computed' | 'installmentAllocation' | 'creditPaymentSummary';
   options?: CategoryOption[];
   optionsOf?: (form: Record<string, string>) => CategoryOption[];  // pilihan dinamis
   placeholder?: string;
@@ -229,6 +229,7 @@ interface FormConfig {
 
 interface WalletOption extends CategoryOption {
   kind: WalletKind;
+  previousPeriodBill?: number;
 }
 
 interface FormSectionDefinition {
@@ -239,7 +240,7 @@ interface FormSectionDefinition {
 const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Informasi transaksi', keys: ['txType', 'date', 'amount'] },
   { title: 'Sumber dana', keys: ['walletId', 'toWalletId', 'savingId'] },
-  { title: 'Pembayaran kartu', keys: ['paymentTag', 'creditPaymentInstallments'] },
+  { title: 'Pembayaran kartu', keys: ['creditPaymentSummary', 'paymentTag', 'creditPaymentInstallments'] },
   { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor', 'installmentPaidMonths', 'installmentRemainingMonths'] },
   {
     title: 'Klasifikasi',
@@ -603,9 +604,17 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     : undefined;
   const viewPeriod = periods.find((period) => period.id === periodId) ?? activePeriod;
   const isArchivePeriod = viewPeriod?.status === 'closed';
+  const transactionIsInActivePeriod = (transaction: Transaction) => {
+    if (!activePeriod) return false;
+    if (transaction.periodId) return transaction.periodId === activePeriod.id;
+    const occurredAt = new Date(transaction.date);
+    return occurredAt >= new Date(activePeriod.start) && occurredAt <= new Date(activePeriod.end);
+  };
   const [create, setCreate] = useState<CreateDescriptor>({ type: 'wallet', isEdit: false });
   const [form, setForm] = useState<Record<string, string>>({});
   const [creditPaymentInstallments, setCreditPaymentInstallments] = useState<Record<string, number>>({});
+  const [originalCreditPaymentInstallments, setOriginalCreditPaymentInstallments] = useState<Record<string, number>>({});
+  const selectedCreditCardRef = useRef('');
   const [transactionOptions, setTransactionOptions] = useState<Transaction[]>([]);
   const [formDraftReady, setFormDraftReady] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
@@ -1166,6 +1175,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             options: wallets,
           },
           { key: 'toWalletId', label: 'Dompet tujuan', type: 'select', options: wallets, showIf: isTransfer },
+          {
+            key: 'creditPaymentSummary',
+            label: 'Pelunasan tagihan sebelumnya',
+            type: 'creditPaymentSummary',
+            showIf: isCreditPayment,
+          },
           {
             key: 'paymentTag',
             label: 'Tag transaksi',
@@ -1793,6 +1808,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         value: wallet.id,
         label: wallet.name,
         kind: wallet.kind,
+        previousPeriodBill: wallet.previousPeriodBill,
       })));
       setDebitWalletOptions(
         wallets.filter((w) => w.kind === 'debit').map((wallet) => ({ value: wallet.id, label: wallet.name })),
@@ -1923,6 +1939,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       savedDraft = { ...savedDraft, note: '' };
     }
     setCreditPaymentInstallments({});
+    setOriginalCreditPaymentInstallments({});
     setForm({ ...config.defaults, ...presetDate, ...savedDraft, ...presetSavingTransfer });
     setFormDraftReady(true);
     if (!create.id) return;
@@ -1942,6 +1959,16 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       }
       if (!data) return;
       const record = data as Record<string, unknown>;
+      const storedAllocations = (record.creditPaymentInstallments ?? []) as NonNullable<Transaction['creditPaymentInstallments']>;
+      const allocationState = Object.fromEntries(storedAllocations.map((allocation) => [
+        allocation.installmentTransactionId,
+        allocation.installmentsPaid,
+      ]));
+      if (record.type === 'transfer' && record.toWalletId) {
+        selectedCreditCardRef.current = String(record.toWalletId);
+      }
+      setCreditPaymentInstallments(allocationState);
+      setOriginalCreditPaymentInstallments(allocationState);
 
       const loaded = Object.fromEntries(
         config.fields
@@ -2010,7 +2037,6 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
 
   // Alokasi selalu terikat ke satu kartu tujuan. Saat kartu atau jenis transaksi
   // berubah, pilihan dari kartu sebelumnya tidak boleh ikut terbawa diam-diam.
-  const selectedCreditCardRef = useRef('');
   useEffect(() => {
     const isPayment = form.txType === 'transfer'
       && walletOptions.some((wallet) => wallet.value === form.toWalletId && wallet.kind === 'credit');
@@ -2018,6 +2044,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     if (selectedCreditCardRef.current !== nextCardId) {
       selectedCreditCardRef.current = nextCardId;
       setCreditPaymentInstallments({});
+      setOriginalCreditPaymentInstallments({});
     }
   }, [form.toWalletId, form.txType, walletOptions]);
 
@@ -2234,6 +2261,23 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           return;
         }
         const amount = toNumber(form.amount);
+        if (isCreditPayment) {
+          const destinationCard = walletOptions.find((wallet) => wallet.value === form.toWalletId);
+          const paymentsThisPeriod = transactionOptions
+            .filter((transaction) => transaction.type === 'transfer'
+              && transaction.toWalletId === form.toWalletId
+              && transaction.id !== (shouldUpdate ? id : undefined)
+              && transactionIsInActivePeriod(transaction))
+            .reduce((total, transaction) => total + transaction.amount, 0);
+          const remainingPreviousBill = Math.max(
+            0,
+            (destinationCard?.previousPeriodBill ?? 0) - paymentsThisPeriod,
+          );
+          if (amount > remainingPreviousBill) {
+            notify('Nominal transfer melebihi sisa tagihan periode sebelumnya');
+            return;
+          }
+        }
         const selectedInstallments = creditPaymentCandidates
           .flatMap((candidate) => {
             const installmentsPaid = creditPaymentInstallments[candidate.id];
@@ -2243,10 +2287,6 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           });
         if (isCreditPayment && creditPaymentAllocationTotal > amount) {
           notify('Total cicilan yang dipilih tidak boleh melebihi nominal pembayaran kartu');
-          return;
-        }
-        if (shouldUpdate && isCreditPayment) {
-          notify('Pembayaran kartu yang sudah dicatat tidak dapat diedit. Hapus lalu catat ulang agar alokasi cicilan tetap akurat.');
           return;
         }
         const isPiutang = type === 'expense' && form.pillar === 'Receivables';
@@ -2502,7 +2542,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       transaction.type === 'expense'
       && transaction.walletId === form.toWalletId
       && Boolean(transaction.installmentTenorMonths)
-      && (transaction.installmentPaidMonths ?? 0) < (transaction.installmentTenorMonths ?? 0),
+      && (
+        (transaction.installmentPaidMonths ?? 0) < (transaction.installmentTenorMonths ?? 0)
+        || Boolean(originalCreditPaymentInstallments[transaction.id])
+      ),
     )
     .map((transaction) => ({
       id: transaction.id,
@@ -2510,7 +2553,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       date: transaction.date,
       amount: transaction.amount,
       tenor: transaction.installmentTenorMonths!,
-      paid: transaction.installmentPaidMonths ?? 0,
+      paid: Math.max(
+        0,
+        (transaction.installmentPaidMonths ?? 0) - (originalCreditPaymentInstallments[transaction.id] ?? 0),
+      ),
     }));
   const installmentAllocationAmount = (candidate: typeof creditPaymentCandidates[number], count: number) => {
     const base = Math.floor(candidate.amount / candidate.tenor);
@@ -2522,6 +2568,25 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     (total, candidate) => total + installmentAllocationAmount(candidate, creditPaymentInstallments[candidate.id] ?? 0),
     0,
   );
+  const selectedCreditCard = walletOptions.find((wallet) =>
+    wallet.value === form.toWalletId && wallet.kind === 'credit',
+  );
+  const previousBillPayments = selectedCreditCard
+    ? transactionOptions
+      .filter((transaction) => transaction.type === 'transfer'
+        && transaction.toWalletId === selectedCreditCard.value
+        && transaction.id !== (create.isEdit ? create.id : undefined)
+        && transactionIsInActivePeriod(transaction))
+      .reduce((total, transaction) => total + transaction.amount, 0)
+    : 0;
+  const previousBillAmount = selectedCreditCard?.previousPeriodBill ?? 0;
+  const previousBillRemainingBeforeTransfer = Math.max(0, previousBillAmount - previousBillPayments);
+  const creditPaymentAmount = toNumber(form.amount);
+  const previousBillRemainingAfterTransfer = Math.max(
+    0,
+    previousBillRemainingBeforeTransfer - creditPaymentAmount,
+  );
+  const creditPaymentExceedsPreviousBill = creditPaymentAmount > previousBillRemainingBeforeTransfer;
   const isTransactionForm = create.type === 'transaksi' || create.type === 'transfer';
   const visibleFormSections = groupFormFields(
     create.type,
@@ -2532,7 +2597,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   );
   const formIsValid = visibleFormSections
     .flatMap((section) => section.fields)
-    .every((field) => !fieldIsRequired(field, form) || Boolean(form[field.key]?.trim()));
+    .every((field) => !fieldIsRequired(field, form) || Boolean(form[field.key]?.trim()))
+    && !(selectedCreditCard && creditPaymentExceedsPreviousBill);
   const hasTransactionDetails = isTransactionForm && currentConfig.fields.some((field) =>
     field.advanced && (!field.showIf || field.showIf(form)),
   );
@@ -2936,8 +3002,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       const native = field.type === 'text' || field.type === 'number' || field.type === 'date' || !field.type;
                       const Wrapper = native ? 'label' : 'div';
                       const labelId = `field-label-${field.key}`;
+                      const editingCreditPaymentAllocations = create.isEdit
+                        && form.txType === 'transfer'
+                        && walletOptions.some((wallet) => wallet.value === form.toWalletId && wallet.kind === 'credit');
+                      const fieldDisabled = editingCreditPaymentAllocations
+                        && !['creditPaymentSummary', 'paymentTag', 'creditPaymentInstallments'].includes(field.key);
                       return (
-                <Wrapper className="input-field" key={field.key}>
+                <Wrapper className={`input-field${fieldDisabled ? ' disabled' : ''}`} key={field.key}>
                   {field.type !== 'checkbox' && (
                     <span id={native ? undefined : labelId}>
                       {field.labelOf ? field.labelOf(form) : field.label}
@@ -2948,6 +3019,38 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     <div className="computed-form-value" aria-live="polite">
                       <b>{field.computedValue?.(form) ?? '—'}</b>
                       {field.hint && <small>{field.hint}</small>}
+                    </div>
+                  ) : field.type === 'creditPaymentSummary' ? (
+                    <div className={`credit-payment-summary${creditPaymentExceedsPreviousBill ? ' exceeds' : ''}`} aria-live="polite">
+                      <div className="credit-payment-summary-opening">
+                        <span>Tagihan periode sebelumnya</span>
+                        <b>{formatIDR(previousBillAmount)}</b>
+                        <small>Nilai tetap; tidak dipengaruhi transaksi periode ini</small>
+                      </div>
+                      <div className="credit-payment-summary-breakdown">
+                        {previousBillPayments > 0 && (
+                          <div>
+                            <span>Sudah dilunasi periode ini</span>
+                            <b>−{formatIDR(previousBillPayments)}</b>
+                          </div>
+                        )}
+                        <div>
+                          <span>Transfer ini</span>
+                          <b>−{formatIDR(creditPaymentAmount)}</b>
+                        </div>
+                        <div className="credit-payment-summary-result">
+                          <span>Sisa setelah pelunasan</span>
+                          <b>{formatIDR(previousBillRemainingAfterTransfer)}</b>
+                        </div>
+                      </div>
+                      {creditPaymentExceedsPreviousBill && (
+                        <small className="credit-payment-summary-error">
+                          Nominal transfer melebihi sisa tagihan periode sebelumnya.
+                        </small>
+                      )}
+                      <small className="credit-payment-summary-note">
+                        Transaksi kartu periode ini tetap menjadi tagihan periode berikutnya.
+                      </small>
                     </div>
                   ) : field.type === 'installmentAllocation' ? (
                     <div className="installment-allocation" aria-live="polite">
@@ -3046,6 +3149,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         <button
                           type="button"
                           role="radio"
+                          disabled={fieldDisabled}
                           aria-checked={form[field.key] === option.value}
                           className={`${form[field.key] === option.value ? 'on ' : ''}${field.key === 'txType' ? `type-${option.value}` : ''}`.trim()}
                           key={option.value}
@@ -3081,6 +3185,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       >
                         <button
                           type="button"
+                          disabled={fieldDisabled}
                           className={`custom-select-trigger${selected ? '' : ' placeholder'}`}
                           aria-haspopup="listbox"
                           aria-expanded={expanded}
@@ -3123,6 +3228,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       <span className="rp">Rp</span>
                       <input
                         type="text"
+                        disabled={fieldDisabled}
                         inputMode="numeric"
                         value={groupThousands(form[field.key])}
                         placeholder={field.placeholder || '0'}
@@ -3157,6 +3263,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     >
                       <input
                         type={field.type || 'text'}
+                        disabled={fieldDisabled}
                         inputMode={field.type === 'number' ? 'numeric' : undefined}
                         value={form[field.key] || ''}
                         placeholder={field.placeholder}

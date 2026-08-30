@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = public, extensions;
 
-select plan(7);
+select plan(8);
 
 insert into auth.users (
   id, email, raw_user_meta_data, created_at, updated_at
@@ -78,6 +78,24 @@ select is(
   (select current_balance_minor from public.wallets where name = 'Kartu Tidak Sinkron'),
   3140715::bigint,
   'test setup reproduces the stale internal card balance'
+);
+
+select throws_ok(
+  $command$
+    select public.post_credit_payment_with_installments(jsonb_build_object(
+      'workspace_id', (select workspace_id from public.workspace_members where user_id = '90909090-9090-4090-8090-909090909090'),
+      'idempotency_key', '90000000-0000-4000-8000-000000000006',
+      'type', 'credit_payment',
+      'nature', 'planned',
+      'amount_minor', 4000000,
+      'occurred_at', now(),
+      'source_wallet_id', (select id from public.wallets where name = 'Rekening Pembayaran'),
+      'destination_wallet_id', (select id from public.wallets where name = 'Kartu Tidak Sinkron'),
+      'installment_allocations', '[]'::jsonb
+    ))
+  $command$,
+  'Nominal transfer melebihi sisa tagihan periode sebelumnya',
+  'current-period purchases cannot be paid by a previous-statement transfer'
 );
 
 select lives_ok(

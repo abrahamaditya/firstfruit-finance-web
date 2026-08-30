@@ -2539,6 +2539,10 @@ export type Database = {
         Args: { p_new_owner_id: string; p_workspace_id: string }
         Returns: undefined
       }
+      update_credit_payment_installments: {
+        Args: { p_payload: Json }
+        Returns: string
+      }
       update_saving_goal: { Args: { p_payload: Json }; Returns: string }
       update_wallet: { Args: { p_payload: Json }; Returns: string }
       update_wallet_with_network: { Args: { p_payload: Json }; Returns: string }

@@ -80,7 +80,8 @@ menyesuaikan pilihan ini; berganti jenis mengosongkan field khusus jenis sebelum
 | --- | --- |
 | Expense dengan pilar `Piutang` | Piutang dibuat sebesar **seluruh** nominal untuk nama pengutang yang diisi. |
 | `budgetId` terisi pada expense/transfer biasa | `budget.spent += amount`. Transfer tetap netral terhadap total likuiditas. |
-| Transfer pembayaran kartu kredit | Tidak menerima `budgetId`; hanya mengurangi saldo rekening dan tagihan kartu tanpa realisasi anggaran baru. |
+| Transfer pembayaran kartu kredit | Tidak menerima `budgetId`; hanya melunasi sisa tagihan periode sebelumnya dan mengurangi saldo rekening tanpa realisasi anggaran baru. Belanja kartu periode berjalan tetap menjadi tagihan periode berikutnya. |
+| Edit pembayaran kartu kredit | Hanya alokasi cicilan yang dapat diubah. Nominal, rekening asal, kartu tujuan, tanggal, dan jurnal pembayaran tetap terkunci; perubahan alokasi tidak mengubah saldo. |
 | Expense kartu + tenor cicilan | Tenor 2–120 bulan disimpan sebagai metadata; nominal transaksi dan realisasi anggaran tetap memakai jumlah yang dicatat. |
 | `settlesReceivableId` terisi | `receivable.paid += amount`; lunas bila `paid ≥ amount`. |
 | Pemasukan tanpa pilihan piutang | Dicocokkan otomatis bila **nama pihak sama persis** dan **sisa piutang == nominal**. |

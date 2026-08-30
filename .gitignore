@@ -57,11 +57,15 @@ next-env.d.ts
 !/supabase/migrations/
 /supabase/migrations/*
 !/supabase/migrations/202608300066_reconcile_credit_card_payment_balance.sql
+!/supabase/migrations/202608300067_limit_credit_payments_to_previous_bill.sql
+!/supabase/migrations/202608300068_accept_credit_allocation_field_formats.sql
+!/supabase/migrations/202608300069_edit_credit_payment_allocations.sql
 !/supabase/tests/
 /supabase/tests/*
 !/supabase/tests/database/
 /supabase/tests/database/*
 !/supabase/tests/database/009_credit_card_balance_reconciliation.test.sql
+!/supabase/tests/database/010_credit_allocation_field_format.test.sql
 
 # Local database dumps and exports
 *.dump

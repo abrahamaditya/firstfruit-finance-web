@@ -290,7 +290,10 @@ export function createSupabaseRepositories(
         ? item.installmentInitialPaidMonths ?? item.installmentPaidMonths ?? null
         : null,
       installment_allocations: dbType === 'credit_payment'
-        ? item.creditPaymentInstallments ?? []
+        ? (item.creditPaymentInstallments ?? []).map((allocation) => ({
+            installment_transaction_id: allocation.installmentTransactionId,
+            installments_paid: allocation.installmentsPaid,
+          }))
         : [],
       benefit_scope: item.type === 'expense' ? item.benefitScope ?? null : null,
       recipient: item.recipient ?? null,
@@ -409,7 +412,21 @@ export function createSupabaseRepositories(
         .from('v_transactions').select('*')
         .eq('workspace_id', workspaceId).eq('id', id).maybeSingle();
       throwIfError(error, 'Gagal memuat transaksi');
-      return data ? mapTransaction(data) : null;
+      if (!data) return null;
+      const transaction = mapTransaction(data);
+      if (data.type === 'credit_payment') {
+        const { data: allocations, error: allocationError } = await supabase
+          .from('credit_payment_installment_allocations')
+          .select('installment_transaction_id, installments_paid')
+          .eq('workspace_id', workspaceId)
+          .eq('payment_transaction_id', id);
+        throwIfError(allocationError, 'Gagal memuat alokasi cicilan');
+        transaction.creditPaymentInstallments = (allocations ?? []).map((allocation) => ({
+          installmentTransactionId: allocation.installment_transaction_id,
+          installmentsPaid: allocation.installments_paid,
+        }));
+      }
+      return transaction;
     },
     async create(item) {
       const payload = await postPayload(item);
@@ -423,6 +440,20 @@ export function createSupabaseRepositories(
       const before = await transactions.get(id);
       if (!before) throw new Error('Transaksi tidak ditemukan');
       const next = { ...before, ...patch };
+      if (before.creditPaymentInstallments !== undefined) {
+        const { error } = await supabase.rpc('update_credit_payment_installments', {
+          p_payload: {
+            workspace_id: workspaceId,
+            transaction_id: id,
+            installment_allocations: (next.creditPaymentInstallments ?? []).map((allocation) => ({
+              installment_transaction_id: allocation.installmentTransactionId,
+              installments_paid: allocation.installmentsPaid,
+            })),
+          },
+        });
+        throwIfError(error, 'Gagal memperbarui alokasi cicilan');
+        return (await transactions.get(id))!;
+      }
       const replacement = await postPayload(next);
       const { data, error } = await supabase.rpc('replace_transaction_with_benefit_scope', {
         p_payload: {

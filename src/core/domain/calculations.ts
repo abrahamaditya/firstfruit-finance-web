@@ -26,10 +26,10 @@ export interface CreditObligationBreakdown {
  * Membentuk liabilitas kartu dari baseline yang dikonfirmasi pengguna dan aktivitas
  * pada periode berjalan.
  *
- * Pembayaran lebih dulu menutup tagihan pembuka; bila melebihi tagihan pembuka,
- * sisanya otomatis mengurangi belanja periode ini. `wallet.balance` tidak dipakai
- * sebagai sumber tagihan lama karena nilainya dapat tertinggal ketika baseline kartu
- * diedit pada data versi lama.
+ * Pembayaran hanya menutup tagihan pembuka periode sebelumnya. Belanja periode ini
+ * tetap menjadi tagihan periode berikutnya dan tidak boleh berkurang akibat transfer
+ * kartu. `wallet.balance` tidak dipakai sebagai sumber tagihan lama karena nilainya
+ * dapat tertinggal ketika baseline kartu diedit pada data versi lama.
  */
 export function creditObligationBreakdown(
   wallets: Wallet[],
@@ -53,8 +53,7 @@ export function creditObligationBreakdown(
     const openingBill = wallet.previousPeriodBill
       ?? Math.max(0, Math.abs(wallet.balance) - spending + payments);
     const previousPeriodDue = Math.max(0, openingBill - payments);
-    const paymentOverflow = Math.max(0, payments - openingBill);
-    const currentPeriodDue = Math.max(0, spending - paymentOverflow);
+    const currentPeriodDue = spending;
 
     return {
       previousPeriodDue: result.previousPeriodDue + previousPeriodDue,
