@@ -51,8 +51,17 @@ next-env.d.ts
 /.nyc_output/
 /junit.xml
 
-# Supabase schema, migrations, tests, CLI artifacts, and local configuration
-/supabase/
+# Supabase schema, migrations, tests, CLI artifacts, and local configuration.
+# Explicitly keep this bug fix and its regression test visible to Git.
+/supabase/*
+!/supabase/migrations/
+/supabase/migrations/*
+!/supabase/migrations/202608300066_reconcile_credit_card_payment_balance.sql
+!/supabase/tests/
+/supabase/tests/*
+!/supabase/tests/database/
+/supabase/tests/database/*
+!/supabase/tests/database/009_credit_card_balance_reconciliation.test.sql
 
 # Local database dumps and exports
 *.dump
