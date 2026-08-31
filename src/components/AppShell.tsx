@@ -314,7 +314,11 @@ const groupFormFields = (type: CreateType, fields: FieldDefinition[]) => {
 };
 
 const fieldIsRequired = (field: FieldDefinition, form: Record<string, string> = {}) => {
-  if (field.type === 'computed' || field.type === 'installmentAllocation') return false;
+  if (
+    field.type === 'computed'
+    || field.type === 'installmentAllocation'
+    || field.type === 'creditPaymentSummary'
+  ) return false;
   if (field.requiredIf?.(form)) return true;
   if (field.optional) return false;
   if (field.type === 'select' || field.type === 'segmented') return true;
