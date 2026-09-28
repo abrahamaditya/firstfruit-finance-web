@@ -454,12 +454,17 @@ export default function HomeScreen() {
           <div className="brk-cells home-cashflow-breakdown">
             <div><span>{tr('home.assets')}</span><b>{moneyOrHidden(d.assets)}</b></div>
             <div>
-              <span>{tr('home.creditBills')}</span>
-              <b>{hidden ? '••••' : `${d.creditLiabilities > 0 ? '−' : ''}${money.fmt(d.creditLiabilities)}`}</b>
-              <small>{hidden ? '••••' : tr('home.creditBillBreakdown', {
-                previous: money.fmtCompact(d.previousPeriodCreditDue),
-                current: money.fmtCompact(d.currentPeriodCreditDue),
-              })}</small>
+              <span>{tr(d.installmentCoveredByCredit > 0 ? 'home.creditBillsOutsideInstallments' : 'home.creditBills')}</span>
+              <b>{hidden ? '••••' : `${d.cashflowCreditLiabilities > 0 ? '−' : ''}${money.fmt(d.cashflowCreditLiabilities)}`}</b>
+              <small>{hidden ? '••••' : d.installmentCoveredByCredit > 0
+                ? tr('home.creditBillInstallmentOverlap', {
+                  total: money.fmtCompact(d.creditLiabilities),
+                  covered: money.fmtCompact(d.installmentCoveredByCredit),
+                })
+                : tr('home.creditBillBreakdown', {
+                  previous: money.fmtCompact(d.previousPeriodCreditDue),
+                  current: money.fmtCompact(d.currentPeriodCreditDue),
+                })}</small>
             </div>
             <div>
               <span>{tr('home.inSavings')}</span>
@@ -468,6 +473,10 @@ export default function HomeScreen() {
             <div>
               <span>{tr('home.allocated')}</span>
               <b>{hidden ? '••••' : `${d.allocated > 0 ? '−' : ''}${money.fmt(d.allocated)}`}</b>
+              {d.installmentBudgetRemaining > 0 && <small>{hidden ? '••••' : tr('home.installmentBudgetBreakdown', {
+                manual: money.fmtCompact(d.manualBudgetRemaining),
+                installment: money.fmtCompact(d.installmentBudgetRemaining),
+              })}</small>}
             </div>
           </div>
           {d.progress && (

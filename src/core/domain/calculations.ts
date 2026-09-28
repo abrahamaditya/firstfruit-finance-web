@@ -1,4 +1,4 @@
-import { Wallet, Transaction, Budget, BudgetPeriod, Saving } from './types';
+import type { Wallet, Transaction, Budget, BudgetPeriod, Saving } from './types';
 
 export function totalLiquidity(wallets: Wallet[]): number {
   return wallets.reduce((s, w) => s + (w.kind === 'credit' ? -Math.abs(w.balance) : w.balance), 0);

@@ -561,11 +561,11 @@ export default function ReportsScreen() {
         <div className="report-executive-formula">
           <div><span>{t('reports.assetBalance')}</span><b>{money.fmtCompactSigned(dashboard.assets)}</b></div>
           <i>−</i>
-          <div><span>{t('reports.previousCreditDue')}</span><b className="negative">−{money.fmtCompact(dashboard.previousPeriodCreditDue)}</b></div>
+          <div><span>{t(dashboard.cashflowPreviousCreditDue < dashboard.previousPeriodCreditDue ? 'reports.previousCreditDueOutsideInstallments' : 'reports.previousCreditDue')}</span><b className="negative">−{money.fmtCompact(dashboard.cashflowPreviousCreditDue)}</b></div>
           <i>−</i>
           <div>
-            <span>{t('reports.currentCreditDue')}</span>
-            <b className="negative">−{money.fmtCompact(dashboard.currentPeriodCreditDue)}</b>
+            <span>{t(dashboard.cashflowCurrentCreditDue < dashboard.currentPeriodCreditDue ? 'reports.currentCreditDueOutsideInstallments' : 'reports.currentCreditDue')}</span>
+            <b className="negative">−{money.fmtCompact(dashboard.cashflowCurrentCreditDue)}</b>
             <small>{t('reports.currentCreditSpendingRecorded', {
               amount: money.fmtCompact(dashboard.currentPeriodCreditSpending),
             })}</small>
@@ -573,7 +573,12 @@ export default function ReportsScreen() {
           <i>−</i>
           <div><span>{t('planning.lockedSavings')}</span><b className="negative">−{money.fmtCompact(dashboard.reserved)}</b></div>
           <i>−</i>
-          <div><span>{t('planning.remainingBudget')}</span><b className="negative">−{money.fmtCompact(dashboard.allocated)}</b></div>
+          <div><span>{t('planning.remainingBudget')}</span><b className="negative">−{money.fmtCompact(dashboard.allocated)}</b>
+            {dashboard.installmentBudgetRemaining > 0 && <small>{t('home.installmentBudgetBreakdown', {
+              manual: money.fmtCompact(dashboard.manualBudgetRemaining),
+              installment: money.fmtCompact(dashboard.installmentBudgetRemaining),
+            })}</small>}
+          </div>
           <i>=</i>
           <div><span>{t('reports.freeCashflow')}</span><b className={dashboard.safeToSpend >= 0 ? 'positive' : 'negative'}>{money.fmtCompactSigned(dashboard.safeToSpend)}</b></div>
         </div>

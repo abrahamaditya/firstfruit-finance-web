@@ -135,7 +135,9 @@ ketika periode baru dibuat; menyalin struktur tidak menyalin realisasi. **Anggar
 cicilan otomatis** pada layar Anggaran diturunkan dari jadwal cicilan (`installmentDuesForPeriod`),
 bukan baris `Budget` baru. Layar Anggaran menambahkannya ke total periode yang dilihat;
 bagian Laporan “Realisasi anggaran” dan proyeksi saat ini memakai baris `Budget` manual
-periode aktif saja. Perbedaan cakupan ini penting saat membandingkan kedua layar.
+periode aktif saja. Arus kas bebas menggunakan sisa anggaran manual ditambah cicilan
+periode aktif yang belum lunas, dan merekonsiliasi bagian yang sudah ada dalam tagihan
+kartu. Perbedaan cakupan ini penting saat membandingkan kedua layar.
 
 ## Langganan (`Subscription`)
 

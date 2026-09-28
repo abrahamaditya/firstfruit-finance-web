@@ -273,6 +273,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .brk-cells span{display:block;font-size:10px;font-weight:700;color:var(--ink-faint);white-space:nowrap;margin-bottom:4px}
 .brk-cells b{font-size:13.5px;font-weight:800;font-variant-numeric:tabular-nums;font-family:var(--nominal);white-space:nowrap}
 .brk-cells small{display:block;margin-top:3px;color:var(--ink-faint);font-size:8.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.home-cashflow-breakdown span,.home-cashflow-breakdown small{white-space:normal;overflow-wrap:anywhere}
 .brk-bar{height:5px;border-radius:99px;background:var(--surface-3);overflow:hidden}
 .brk-bar i{display:block;height:100%;border-radius:99px;background:var(--grad)}
 .card-foot .brk-bar+span{display:block;margin-top:7px;font-size:10.5px;font-weight:700}
@@ -949,6 +950,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .report-executive.deficit .report-executive-status{background:rgba(239,134,118,.11);color:var(--neg)}
 .report-executive-formula{display:grid;grid-template-columns:repeat(5,minmax(0,1fr) auto) minmax(0,1fr);align-items:center;padding:15px 22px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 .report-executive-formula>div{min-width:0}.report-executive-formula span{display:block;font-size:9.5px;font-weight:700;color:var(--ink-faint);margin-bottom:5px}.report-executive-formula b{display:block;font-size:14px;font-family:var(--nominal);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.report-executive-formula small{display:block;margin-top:4px;color:var(--ink-faint);font-size:8.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.report-executive-formula>i{padding:0 14px;color:var(--ink-faint);font-size:14px;font-style:normal;font-weight:800}
+.report-executive-formula small{white-space:normal;overflow-wrap:anywhere}
 @media(max-width:900px){
   .report-executive-formula{grid-template-columns:1fr;padding:4px 16px}.report-executive-formula>div{padding:10px 0}.report-executive-formula>div+div{border-top:1px solid var(--line)}.report-executive-formula>i{display:none}
 }

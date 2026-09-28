@@ -34,7 +34,7 @@ dompet debit, bukan dompet baru.
 | Kewajiban kartu untuk arus kas bebas | Sisa tagihan pembuka periode setelah pembayaran kartu **ditambah** belanja kartu pada periode aktif (`creditObligationBreakdown`). |
 | Sisa anggaran manual | `Σ max(allocated − spent, 0)` untuk anggaran periode aktif. |
 | Dana disisihkan | Jumlah saldo tabungan aktif; tidak mengubah saldo rekening, tetapi mengurangi uang bebas. |
-| Aman dibelanjakan | Saldo aset − kewajiban kartu − sisa anggaran manual − dana disisihkan. Hasil negatif tetap ditampilkan sebagai defisit. |
+| Aman dibelanjakan / arus kas bebas | Saldo aset − tagihan kartu di luar cicilan yang sudah masuk anggaran − sisa anggaran manual − cicilan belum lunas yang jatuh tempo pada periode aktif − dana disisihkan. Hasil negatif tetap ditampilkan sebagai defisit. |
 
 `previousPeriodBill` adalah baseline tagihan kartu yang dapat dikoreksi pengguna. Saat
 periode baru dibuka, tagihan itu digulir dari kewajiban periode sebelumnya. Pembayaran
@@ -100,8 +100,8 @@ bulan**, sehingga totalBayar Rp1.500.000, bukan Rp500.000 untuk seluruh tenor.
 
 `installmentInitialPaidMonths` adalah angsuran yang sudah lunas sebelum transaksi
 dicatat. `installmentPaidMonths` mencakup baseline itu dan pembayaran kartu yang
-dialokasikan kemudian. Jatuh tempo ke-`n` berada pada hari transaksi yang sama di
-bulan ke-`n` berikutnya; bila bulan tujuan lebih pendek, tanggalnya dijepit ke hari
+dialokasikan kemudian. Angsuran **1/n berada pada bulan transaksi**, angsuran 2/n
+pada bulan berikutnya, dan seterusnya, pada hari yang sama; bila bulan tujuan lebih pendek, tanggalnya dijepit ke hari
 terakhir bulan tersebut. Hanya angsuran belum lunas yang menjadi tagihan mendatang.
 
 Layar **Cicilan** menampilkan aktif, semua, dan lunas; jadwal periode ini/berikutnya
@@ -125,9 +125,11 @@ di periode yang sedang dilihat**. Bagian cicilan otomatis memperhitungkan angsur
 terjadwal dan yang sudah dibayar; daftar periode berikutnya ditampilkan terpisah.
 Laporan “Realisasi anggaran” dan proyeksinya menggunakan **anggaran manual periode
 aktif** (`Budget`), bukan seluruh pengeluaran dan bukan total cicilan otomatis pada
-layar Anggaran. Formula `safeToSpend` juga mencadangkan sisa anggaran manual; komponen
-cicilan kartu masuk melalui kewajiban kartu sesuai periode, sedangkan sisa limit kartu
-memperhitungkan seluruh tenor lintas periode.
+layar Anggaran. Arus kas bebas juga mencadangkan angsuran **belum lunas** yang jatuh tempo
+di periode aktif. Bila angsuran itu sudah tercatat dalam tagihan kartu, bagian yang sama
+dikeluarkan dari komponen tagihan agar tidak dipotong dua kali. Angsuran yang sudah
+dibayar tidak dicadangkan lagi; angsuran periode berikutnya baru masuk pada periode itu.
+Sisa limit kartu tetap memperhitungkan seluruh tenor lintas periode.
 
 Hanya satu periode berstatus `open` menjadi periode aktif. `draft` belum menghasilkan
 laporan periode aktif; `closed` menjadi arsip. Periode dapat ditutup tanpa membuka

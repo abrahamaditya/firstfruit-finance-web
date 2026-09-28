@@ -13,10 +13,10 @@ export interface InstallmentDue {
   paid: boolean;
 }
 
-/** Tanggal cicilan tetap mengikuti hari transaksi awal, termasuk setelah Februari. */
+/** Angsuran 1 jatuh pada bulan transaksi; berikutnya tiap bulan pada hari yang sama. */
 export function installmentDueDate(transactionDate: string, number: number): string {
   const [year, month, day] = transactionDate.slice(0, 10).split('-').map(Number);
-  const target = new Date(Date.UTC(year, month - 1 + number, 1));
+  const target = new Date(Date.UTC(year, month + number - 2, 1));
   const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
   target.setUTCDate(Math.min(day, lastDay));
   return target.toISOString().slice(0, 10);

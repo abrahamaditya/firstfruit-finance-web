@@ -101,14 +101,14 @@ export default function PlanningScreen() {
         <div className="financial-condition-breakdown">
           <div><span>{t('planning.assetBalance')}</span><b className="positive">+{money0(context.cashBalance)}</b></div>
           <div><span>{t('planning.lockedSavings')}</span><b>−{money0(context.reserved)}</b></div>
-          <div><span>{t('planning.creditBill')}</span><b>−{money0(context.nextMonthBills)}</b></div>
+          <div><span>{t(context.cashflowCreditBill < context.nextMonthBills ? 'planning.creditBillOutsideInstallments' : 'planning.creditBill')}</span><b>−{money0(context.cashflowCreditBill)}</b></div>
           <div><span>{t('planning.remainingBudget')}</span><b>−{money0(context.budgetRemaining)}</b></div>
         </div>
 
         <div className="financial-condition-equation">
           <span>{t('planning.formula')}</span>
           <b>
-            {money0(context.cashBalance)} − {money0(context.reserved)} − {money0(context.nextMonthBills)} − {money0(context.budgetRemaining)} = <em>{moneySigned0(financialCondition)}</em>
+            {money0(context.cashBalance)} − {money0(context.reserved)} − {money0(context.cashflowCreditBill)} − {money0(context.budgetRemaining)} = <em>{moneySigned0(financialCondition)}</em>
           </b>
         </div>
 

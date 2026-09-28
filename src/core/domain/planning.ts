@@ -11,6 +11,7 @@ export interface PlanningContext {
   cashBalance: number;        // saldo rekening, e-wallet, dan tunai sebelum tabungan dikunci
   reserved: number;           // dana yang disisihkan di tabungan
   budgetRemaining: number;    // alokasi anggaran yang belum terealisasi
+  cashflowCreditBill: number;  // tagihan kartu di luar angsuran yang sudah masuk anggaran
   allocatedTotal: number;     // total alokasi anggaran periode berjalan
   spentTotal: number;         // realisasi anggaran
   monthlyIncome: number;      // estimasi pemasukan rutin per bulan

@@ -13,6 +13,7 @@ import {
   totalMonthlyBurden, isReminderDue, isEndingSoon, daysUntilBilling, daysUntilEnd,
 } from '../core/domain/subscription';
 import { PlanningContext, estimateMonthlyIncome } from '../core/domain/planning';
+import { installmentCashflowForPeriod } from '../core/domain/installment-cashflow';
 
 type CollectionCacheEntry<T> = {
   data?: T[];
@@ -184,6 +185,7 @@ export function useDashboard() {
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
   const { reserved, loading: savingsLoading } = useSavings();
   const { data: transactions, loading: transactionsLoading } = useTransactions();
+  const { data: installments, loading: installmentsLoading } = useInstallments();
   const { data: periods, loading: periodsLoading } = useCollection<BudgetPeriod>(r => r.periods);
   const period = findActivePeriod(periods);
   const periodBudgets = period
@@ -201,26 +203,41 @@ export function useDashboard() {
     })
     : [];
   const creditObligations = creditObligationBreakdown(wallets, periodTransactions);
+  const installmentCashflow = period
+    ? installmentCashflowForPeriod(wallets, periodTransactions, installments, period)
+    : { unpaid: 0, coveredByPreviousBill: 0, coveredByCurrentBill: 0, additionalReserve: 0 };
   const assets = totalAssets(wallets);
   const effectiveLiquidity = assets - creditObligations.total;
+  const manualBudgetRemaining = remainingBudget(periodBudgets);
+  const freeCashflow = safeToSpend(effectiveLiquidity, periodBudgets, reserved)
+    - installmentCashflow.additionalReserve;
   return {
     assets,
     liquidity: effectiveLiquidity,
     recordedLiquidity: liquidity,
     creditLiabilities: creditObligations.total,
+    cashflowCreditLiabilities: creditObligations.total
+      - installmentCashflow.coveredByPreviousBill - installmentCashflow.coveredByCurrentBill,
     previousPeriodCreditDue: creditObligations.previousPeriodDue,
+    cashflowPreviousCreditDue: creditObligations.previousPeriodDue
+      - installmentCashflow.coveredByPreviousBill,
     currentPeriodCreditDue: creditObligations.currentPeriodDue,
+    cashflowCurrentCreditDue: creditObligations.currentPeriodDue
+      - installmentCashflow.coveredByCurrentBill,
     currentPeriodCreditSpending: creditObligations.currentPeriodSpending,
     creditPayments: creditObligations.payments,
     reserved,
     // Dipakai beranda untuk menjabarkan asal angka "aman dibelanjakan".
-    allocated: remainingBudget(periodBudgets),
-    safeToSpend: safeToSpend(effectiveLiquidity, periodBudgets, reserved),
+    allocated: manualBudgetRemaining + installmentCashflow.unpaid,
+    manualBudgetRemaining,
+    installmentBudgetRemaining: installmentCashflow.unpaid,
+    installmentCoveredByCredit: installmentCashflow.unpaid - installmentCashflow.additionalReserve,
+    safeToSpend: freeCashflow,
     period,
     progress: period ? periodProgress(period) : null,
-    netSurplus: periodNet(effectiveLiquidity, periodBudgets),
+    netSurplus: periodNet(effectiveLiquidity, periodBudgets) - installmentCashflow.additionalReserve,
     wallets,
-    loading: walletsLoading || budgetsLoading || savingsLoading || transactionsLoading || periodsLoading,
+    loading: walletsLoading || budgetsLoading || savingsLoading || transactionsLoading || installmentsLoading || periodsLoading,
   };
 }
 
@@ -258,6 +275,7 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
   const { raw: budgets } = useBudgets();
   const { reserved } = useSavings();
   const { data: transactions } = useTransactions();
+  const { data: installments } = useInstallments();
   const { total: receivableTotal } = useReceivables();
   const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
   const period = findActivePeriod(periods);
@@ -281,19 +299,25 @@ export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
   // Konsisten dengan Dompet dan Arus Kas Bebas: baseline tagihan yang dikonfirmasi
   // pengguna, dikurangi pembayaran, lalu ditambah belanja kartu periode berjalan.
   const creditBillNextMonth = creditObligationBreakdown(wallets, periodTransactions).total;
+  const installmentCashflow = period
+    ? installmentCashflowForPeriod(wallets, periodTransactions, installments, period)
+    : { unpaid: 0, additionalReserve: 0 };
   const cashBalance = wallets
     .filter(wallet => wallet.kind !== 'credit')
     .reduce((sum, wallet) => sum + wallet.balance, 0);
   const allocatedTotal = periodBudgets.reduce((sum, budget) => sum + budget.allocated, 0);
-  const budgetRemaining = remainingBudget(periodBudgets);
+  const budgetRemaining = remainingBudget(periodBudgets) + installmentCashflow.unpaid;
+  const cashflowCreditBill = creditBillNextMonth
+    - (installmentCashflow.unpaid - installmentCashflow.additionalReserve);
 
   return {
     budgets: periodBudgets,
     cashBalance,
     reserved,
     budgetRemaining,
-    available: cashBalance - reserved - creditBillNextMonth,
-    financialCondition: cashBalance - reserved - creditBillNextMonth - budgetRemaining,
+    cashflowCreditBill,
+    available: cashBalance - reserved - cashflowCreditBill,
+    financialCondition: cashBalance - reserved - cashflowCreditBill - budgetRemaining,
     allocatedTotal,
     spentTotal: periodBudgets.reduce((sum, b) => sum + b.spent, 0),
     monthlyIncome: estimateMonthlyIncome(transactions, today),
@@ -342,6 +366,7 @@ export interface PeriodReport {
 export function usePeriodReport(periodId?: string | null): PeriodReport {
   const { periods, loading: periodsLoading } = usePeriods();
   const { data: transactions, loading: txLoading } = useTransactions();
+  const { data: installments, loading: installmentsLoading } = useInstallments();
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
   const { wallets, liquidity, loading: walletsLoading } = useWallets();
   const { reserved, loading: savingsLoading } = useSavings();
@@ -375,6 +400,9 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
   const effectiveLiquidity = isActive
     ? totalAssets(wallets) - creditObligationBreakdown(wallets, periodTransactions).total
     : liquidity;
+  const installmentReserve = isActive && period
+    ? installmentCashflowForPeriod(wallets, periodTransactions, installments, period).additionalReserve
+    : 0;
 
   const totals = new Map<string, number>();
   inPeriod
@@ -402,8 +430,8 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
       .slice(0, 6),
     liquidity: effectiveLiquidity,
     reserved,
-    safeToSpend: safeToSpend(effectiveLiquidity, periodBudgets, reserved),
-    loading: periodsLoading || txLoading || budgetsLoading || walletsLoading || savingsLoading,
+    safeToSpend: safeToSpend(effectiveLiquidity, periodBudgets, reserved) - installmentReserve,
+    loading: periodsLoading || txLoading || budgetsLoading || walletsLoading || savingsLoading || installmentsLoading,
   };
 }
 
