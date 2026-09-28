@@ -1,259 +1,245 @@
-# Aturan Bisnis — Abraham Finance
+# Aturan Bisnis — FirstFruit Finance
 
-Dokumen ini adalah **sumber kebenaran perilaku aplikasi**. Setiap aturan di bawah punya
-implementasi di `src/core/domain/*` (murni, tanpa React) atau di lapisan aksi `AppShell.tsx`.
-Kalau ada perbedaan antara dokumen dan kode, dokumen ini yang harus dikoreksi lebih dulu
-sebelum kode diubah.
+Dokumen ini menjelaskan perilaku aplikasi **saat ini**, bukan rencana fitur. Sumber
+implementasi ada di `src/core/domain/`, `src/application/hooks.ts`,
+`src/infrastructure/supabase/repositories.ts`, dan fungsi SQL. Bila dokumen dan kode
+berbeda, verifikasi jalur runtime dan tes terlebih dahulu, lalu perbaiki keduanya secara
+bersama. [Skema domain](schema.md) menjelaskan bentuk data dan pemetaan tabelnya.
 
-Konvensi umum:
+## Konvensi yang berlaku di semua fitur
 
-- **Semua nominal disimpan dalam Rupiah (IDR), integer.** USD hanya lapisan tampilan
-  (`money.ts`, kurs live harian, cache `abraham.fx`).
-- **Tanggal disimpan sebagai ISO string.** Perbandingan tanggal di kalender memakai kunci
-  lokal `YYYY-MM-DD` (`calendar.ts → dayKey`) supaya tidak bergeser sehari karena UTC.
-- Bila sebuah aturan berjalan "hanya saat CREATE", itu disengaja: perubahan turunan
-  (saldo, realisasi anggaran, piutang) tidak dihitung ulang saat edit agar tidak dobel.
+- Nominal sumber adalah **integer Rupiah (IDR)**. Kolom SQL `*_minor` juga berisi Rupiah,
+  bukan sen. USD hanya konversi pada tampilan.
+- Periode menggunakan tanggal awal dan akhir **inklusif**. Perbandingan tanggal kalender
+  memakai hari lokal agar transaksi tidak berpindah hari karena konversi UTC.
+- Data finansial dipisahkan menurut `workspace_id`; kewenangan berasal dari membership
+  workspace dan RLS. Tombol yang disembunyikan di UI bukan pengganti validasi server.
+- Posting transaksi memakai RPC atomik. Transaksi yang telah diposting tidak diubah
+  langsung pada ledger: koreksi umum dilakukan melalui reversal/pengganti. Pengecualian
+  terbatas seperti koreksi metadata harga cicilan memakai RPC khusus tanpa mengubah
+  jurnal pembayaran yang sudah ada.
+- Saldo, alokasi, dan laporan tidak boleh menghitung transfer antar-dompet sebagai
+  pemasukan baru atau mengurangi anggaran dua kali.
 
----
+## Dompet, kartu kredit, dan saldo tersedia
 
-## 1. Dompet (Wallet)
+`Wallet.kind` membedakan aset (`debit`) dari liabilitas (`credit`); `medium` membedakan
+rekening, e-wallet, tunai, dan kartu. Tabungan adalah dana yang disisihkan di dalam
+dompet debit, bukan dompet baru.
 
-| Aturan | Detail |
+| Ukuran | Aturan |
 | --- | --- |
-| Klasifikasi akuntansi | `kind` hanya `debit` (aset) atau `credit` (liabilitas). |
-| Bentuk fisik | `medium` = `bank` \| `credit` \| `ewallet` \| `cash`. E-wallet & tunai tetap `kind: debit`. |
-| Field kondisional | `bank` disembunyikan untuk tunai; `last4` hanya bank/kartu kredit; `phone` hanya e-wallet; `creditLimit` hanya kartu kredit. |
-| Record lama | Dompet tanpa `medium` dibaca sebagai `credit` bila `kind === 'credit'`, selain itu `bank`. |
-| Likuiditas | `totalLiquidity = Σ(debit.balance) − Σ(abs(credit.balance))` (`calculations.ts`). |
-| Rollover tagihan kartu | Saat periode baru menjadi `open`, `previousPeriodBill` otomatis diisi dari kewajiban akhir periode yang ditutup: `tagihan pembuka lama − pembayaran kartu + pengeluaran kartu`. Bila tagihan lama lunas, nilainya sama dengan pengeluaran kartu periode sebelumnya. Pengguna tetap boleh menyesuaikannya lewat Edit Kartu. |
+| Saldo aset | Jumlah saldo semua dompet debit. |
+| Likuiditas sederhana | Saldo debit dikurangi nilai mutlak saldo kartu kredit (`totalLiquidity`). |
+| Kewajiban kartu untuk arus kas bebas | Sisa tagihan pembuka periode setelah pembayaran kartu **ditambah** belanja kartu pada periode aktif (`creditObligationBreakdown`). |
+| Sisa anggaran manual | `Σ max(allocated − spent, 0)` untuk anggaran periode aktif. |
+| Dana disisihkan | Jumlah saldo tabungan aktif; tidak mengubah saldo rekening, tetapi mengurangi uang bebas. |
+| Aman dibelanjakan | Saldo aset − kewajiban kartu − sisa anggaran manual − dana disisihkan. Hasil negatif tetap ditampilkan sebagai defisit. |
 
-### Dompet default
+`previousPeriodBill` adalah baseline tagihan kartu yang dapat dikoreksi pengguna. Saat
+periode baru dibuka, tagihan itu digulir dari kewajiban periode sebelumnya. Pembayaran
+kartu menutup baseline lama; belanja kartu periode berjalan tetap menjadi kewajiban
+periode berikutnya. Perubahan saldo manual dan pengarsipan dompet diproses melalui
+perintah finansial agar jejaknya dapat ditelusuri.
 
-Preferensi `defaultWalletId` (Profil → Uang). Dipakai untuk:
+### Sisa limit kredit lintas periode
 
-1. isian awal `walletId` pada form transaksi;
-2. tujuan pemindahan saldo saat sebuah dompet dihapus.
+Sisa limit memakai **seluruh cicilan yang belum lunas**, termasuk transaksi dari periode
+tertutup. Rumus di `creditLimitBreakdown` merekonsiliasi saldo kartu yang tercatat di
+ledger dengan transaksi cicilan dan alokasi pembayaran, lalu mengganti bagian cicilan
+tercatat dengan seluruh sisa cicilan:
 
-Kalau dompet default sendiri yang dihapus, preferensinya dipindahkan ke dompet debit lain
-yang tersisa (atau dikosongkan bila tidak ada).
+```text
+saldo_lain = saldo_kartu − bagian_cicilan_yang_sudah_tercatat_di_saldo
+limit_terpakai = max(0, saldo_lain + seluruh_sisa_cicilan)
+sisa_limit = max(0, limit_kartu − limit_terpakai)
+```
 
-### Jejak penyesuaian (audit trail)
+Cicilan yang sudah lunas tetap diperlukan dalam rekonsiliasi saldo ledger, tetapi tidak
+menambah `seluruh_sisa_cicilan`. Bila rincian harga/bunga transaksi lama belum tersedia,
+total cicilan lama masih merupakan **perkiraan** dari nominal bulanan × tenor.
 
-Uang tidak boleh muncul atau hilang tanpa jejak. Dua aksi berikut **selalu** membuat transaksi
-dengan `adjustment: true` dan `adjustmentReason` (label `Penyesuaian Saldo`, `nature: unexpected`):
+## Transaksi dan kategori
 
-| Aksi | Yang terjadi |
+Satu form mencatat `expense`, `income`, atau `transfer`; field berubah sesuai jenis.
+Pengeluaran dapat terkait `budgetId`, pemanfaatan (`self`, `shared`, `other`), dan
+piutang. Transfer dapat mengisi tabungan pada dompet tujuan. Transfer ke kartu kredit
+menjadi pembayaran kartu dan **tidak** boleh merealisasikan anggaran lagi.
+
+- Kategori transaksi disimpan sebagai satu kategori terpilih pada database; repository
+  membentuk jalur induk → anak untuk UI. Filter Transaksi dapat menyaring bertahap,
+  termasuk seluruh tingkat di bawah **Giving**. Giving dihitung sebagai manfaat untuk
+  orang lain pada analisis pemanfaatan.
+- `budgetId` adalah hubungan eksplisit ke anggaran. Realisasi berasal dari transaksi
+  posted yang teralokasi, bukan angka bebas yang dinaikkan oleh UI. Pembayaran kartu
+  dikecualikan agar pembelian kartu tidak dihitung dua kali.
+- Pembayaran kartu boleh dialokasikan ke satu atau beberapa cicilan. Nominal yang tidak
+  dialokasikan tetap mengurangi tagihan kartu, tetapi tidak menaikkan progres cicilan.
+  Mengubah alokasinya memakai RPC tersendiri tanpa menulis ulang jurnal pembayaran.
+- Pemasukan pelunasan piutang menambah saldo dompet, tetapi bukan **pemasukan riil**.
+  Transfer dan penyesuaian saldo juga bukan pemasukan/pengeluaran riil.
+- **Pengeluaran riil** = `max(0, nominal pengeluaran − porsi piutang)`; transfer dan
+  penyesuaian saldo bernilai nol untuk ukuran ini.
+
+## Cicilan kartu kredit
+
+Cicilan hanya tersedia untuk pengeluaran kartu kredit, dengan tenor **2–120 bulan**.
+Form menyediakan dua cara input (`installmentQuote`):
+
+| Cara input | Perhitungan |
 | --- | --- |
-| Edit saldo dompet **debit** | Selisih `saldoBaru − saldoLama` dicatat: naik → `income`, turun → `expense`. |
-| Edit saldo **kartu kredit** | Tagihan naik → `expense`, tagihan turun (dibayar) → `income`. |
-| Hapus dompet debit bersaldo | Saldo dipindahkan ke dompet default → dicatat sebagai `transfer` dari dompet terhapus ke dompet default. |
-| Hapus kartu kredit bertagihan | Sisa tagihan dibayar dari dompet default (saldo default berkurang) → dicatat sebagai `expense`. |
-| Hapus dompet, tidak ada dompet tujuan | Saldo ikut terhapus; toast memberi tahu secara eksplisit. |
-| Hapus dompet yang menampung tabungan | Semua `Saving` di dompet itu dipindahkan `walletId`-nya ke dompet default agar earmark tidak menggantung. |
+| Cicilan per bulan | `totalBayar = cicilanBulanan × tenor`; `hargaBarang = totalBayar − totalBunga`. Harga barang harus positif. |
+| Harga barang | `totalBayar = hargaBarang + totalBunga`; nominal bulanan diturunkan dari total dan tenor. |
 
-Transaksi penyesuaian ditandai chip "⚖️ penyesuaian" di daftar transaksi sehingga bisa
-dikecualikan saat menganalisa perilaku belanja.
+Bunga adalah **nominal total selama tenor**, bukan persen atau bunga per bulan. Jika
+totalBayar tidak habis dibagi tenor, sisa pembulatan Rp1 dibagikan ke angsuran paling
+awal; jumlah semua angsuran tetap tepat sama dengan totalBayar. Contoh: harga barang
+Rp1.000.000 + bunga Rp100.000 untuk 3 bulan menghasilkan Rp366.667, Rp366.667, dan
+Rp366.666. Sebaliknya, input Rp500.000/bulan selama 3 bulan berarti **Rp500.000 tiap
+bulan**, sehingga totalBayar Rp1.500.000, bukan Rp500.000 untuk seluruh tenor.
 
----
+`installmentInitialPaidMonths` adalah angsuran yang sudah lunas sebelum transaksi
+dicatat. `installmentPaidMonths` mencakup baseline itu dan pembayaran kartu yang
+dialokasikan kemudian. Jatuh tempo ke-`n` berada pada hari transaksi yang sama di
+bulan ke-`n` berikutnya; bila bulan tujuan lebih pendek, tanggalnya dijepit ke hari
+terakhir bulan tersebut. Hanya angsuran belum lunas yang menjadi tagihan mendatang.
 
-## 2. Transaksi
+Layar **Cicilan** menampilkan aktif, semua, dan lunas; jadwal periode ini/berikutnya
+ditampilkan pada **Anggaran cicilan otomatis**. Transaksi lama yang belum memiliki
+`itemTotal`/`interestTotal` tidak diisi dengan angka rekaan. Koreksi rincian harga
+setelah ada pembayaran hanya boleh lewat jalur metadata; total yang harus dibayar
+tidak boleh berubah agar alokasi dan progres yang sudah diposting tetap sah.
+Cicilan yang seluruh angsurannya sudah lunas tidak lagi menghasilkan tagihan anggaran
+otomatis.
 
-Satu form menangani tiga jenis (`txType`): `expense`, `income`, `transfer`. Field lain
-menyesuaikan pilihan ini; berganti jenis mengosongkan field khusus jenis sebelumnya.
+## Anggaran dan periode
 
-### Field per jenis
+Anggaran manual menempel ke satu `BudgetPeriod`. `spent` dibaca dari
+`v_budget_progress`, yakni realisasi transaksi posted yang dihubungkan ke anggaran.
+`velocity = spent / allocated` bila alokasi positif; `remaining = allocated − spent`;
+`over` bila spent melebihi alokasi. Jatah harian/mingguan pada layar Anggaran membagi
+sisa anggaran **manual** dengan sisa hari periode (pembagi minimal satu).
 
-| Field | expense | income | transfer |
-| --- | :-: | :-: | :-: |
-| `walletId` | dibayar dari | masuk ke | dari dompet |
-| `toWalletId` | — | — | ✔ ke dompet |
-| Kategori 3 tingkat | ✔ (pohon pengeluaran) | ✔ (pohon pemasukan) | — |
-| `merchant` (tempat) | ✔ | ✔ | — |
-| `budgetId` | ✔ | — | ✔ |
-| `settlesReceivableId` | — | ✔ | — |
-| `savingId` (sisihkan) | — | — | ✔ |
-| `nature` | terencana / tak terduga | rutin / tidak rutin | selalu `fixed` |
+Layar Anggaran menggabungkan alokasi manual dengan **cicilan otomatis yang jatuh tempo
+di periode yang sedang dilihat**. Bagian cicilan otomatis memperhitungkan angsuran
+terjadwal dan yang sudah dibayar; daftar periode berikutnya ditampilkan terpisah.
+Laporan “Realisasi anggaran” dan proyeksinya menggunakan **anggaran manual periode
+aktif** (`Budget`), bukan seluruh pengeluaran dan bukan total cicilan otomatis pada
+layar Anggaran. Formula `safeToSpend` juga mencadangkan sisa anggaran manual; komponen
+cicilan kartu masuk melalui kewajiban kartu sesuai periode, sedangkan sisa limit kartu
+memperhitungkan seluruh tenor lintas periode.
 
-### Efek samping saat CREATE
+Hanya satu periode berstatus `open` menjadi periode aktif. `draft` belum menghasilkan
+laporan periode aktif; `closed` menjadi arsip. Periode dapat ditutup tanpa membuka
+periode baru, membuka draft yang sudah ada, atau membuat periode berikutnya. Struktur
+anggaran terpilih dapat disalin, tetapi realisasinya dimulai dari nol. Hari pertama
+dan terakhir periode sama-sama dihitung (`periodProgress`).
 
-| Kondisi | Efek |
+### Proyeksi akhir periode
+
+`forecastBudgetRealization` memperkirakan **total realisasi anggaran manual** per
+kategori. Di UI ia tampil saat filter Laporan **Periode aktif** dipilih dan periode
+tersebut belum selesai. Untuk kategori yang
+punya riwayat, dipakai hingga **tiga periode tertutup sebelumnya** dengan nama anggaran
+yang sama. Algoritme mengambil nilai tengah total historis dan porsi yang biasanya
+muncul setelah posisi hari yang sebanding. Riwayat transaksi yang tidak cukup lengkap
+memakai pembagian waktu netral; durasi periode yang sangat berbeda dinormalkan.
+
+Biaya yang sudah dibayar di awal tidak dikalikan terus sampai akhir periode. Tagihan
+yang biasanya dibayar di awal tetapi belum muncul pada periode ini tetap diantisipasi.
+Pola aktual saat ini dapat menyesuaikan estimasi sisa secara terbatas. Tanpa riwayat
+kategori, alokasi anggaran menjadi acuan awal; laju transaksi baru ikut diperhitungkan
+setelah minimal **7 hari berjalan dan 3 hari belanja berbeda**. Satu transaksi besar
+tidak otomatis dianggap biaya harian. Proyeksi tidak bisa lebih rendah daripada
+realisasi yang sudah terjadi. Ini estimasi, bukan transaksi atau komitmen baru.
+
+## Tabungan, piutang, dan split bill
+
+- **Tabungan:** dana tetap berada di dompet debit. “Sisihkan” dibatasi uang yang
+  tersedia setelah tabungan lain; “Ambil” dibatasi saldo tabungan tersebut. Tabungan
+  arsip tidak dihitung sebagai dana terkunci.
+- **Piutang:** nominal awal, jumlah terbayar, status (`open`, `partial`, `settled`,
+  `written_off`), tanggal lunas, dan transaksi pelunas tersimpan terpisah. Pembentukan
+  piutang dari pengeluaran tidak dianggap konsumsi riil untuk porsi yang ditagih balik.
+- **Split bill:** nota berisi item dan pajak/servis; bagian tiap orang mencakup porsi
+  harga item dan pajaknya. Penyelesaian dihitung di server; transfer yang menuju pemilik
+  dapat membentuk piutang. Finalisasi dirancang idempoten.
+
+Pada split bill, pajak/servis diisi **sekali per nota**, tetapi dihitung proporsional
+pada setiap item: `totalItem = round(hargaItem × (1 + persenPajak/100))` dan porsi
+peserta = `totalItem / jumlah peserta item`. Untuk setiap orang,
+`net = total nota yang ditalangi − total porsi konsumsi`. Perhitungan transfer
+penyelesaian menggunakan saldo `net` tersebut; pembulatan transfer akhir dilakukan
+ke Rupiah.
+
+**Catatan implementasi:** `useReceivables().total` saat ini menjumlahkan nominal awal
+`amount` dari piutang aktif, bukan `amount − paid`. Karena itu, ringkasan total piutang
+dan simulasi yang menggunakan `expectedReceivables` dapat lebih tinggi daripada sisa
+yang benar-benar belum dibayar. Jangan menafsirkan angka tersebut sebagai total sisa
+piutang sampai implementasinya diselaraskan.
+
+## Langganan, kalender, dan notifikasi
+
+Langganan adalah **jadwal tagihan/pengingat**, bukan transaksi finansial. Form hanya
+meminta nama, nominal per tagihan, siklus, tanggal tagihan berikutnya, opsi **tanpa
+tanggal berakhir**, dan hari pengingat. Menambah atau mengubahnya tidak mengurangi
+saldo dompet dan tidak memposting transaksi; pembayaran dicatat tersendiri di Transaksi.
+`endDate = null` berarti jadwal tanpa batas akhir yang diketahui. Siklus domain mendukung
+mingguan, bulanan, kuartalan, tahunan, dan `custom` untuk data lama/API; form saat ini
+menawarkan empat siklus pertama.
+
+`monthlyCost` hanya menormalkan nominal tagihan menjadi perkiraan beban bulanan.
+Siklus mingguan dikalikan `52/12`, kuartalan dibagi 3, tahunan dibagi 12, dan
+`custom` dinormalkan menurut `30/customIntervalDays`. Ini bukan transaksi otomatis.
+Kalender menampilkan tanggal tagihan dalam rentang berdasarkan `nextBillingDate`,
+`startDate`, dan `endDate`, bersama transaksi dan pengingat. Grid bulan selalu 6 × 7
+hari, dimulai pada Senin. Notifikasi langganan aktif
+muncul bila jatuh tempo berada dalam `reminderDaysBefore`; pemberitahuan berakhir
+memerlukan `endDate`. Notifikasi dan status baca disimpan per user/workspace; membuka
+panel lonceng tidak otomatis menandai semuanya dibaca. Job database harian menyiapkan
+notifikasi tagihan, masa akhir langganan, pengingat, dan anggaran yang melampaui pagu;
+client membaca hasilnya dan memperbarui status baca secara terpisah.
+
+## Laporan dan Pola
+
+Ringkasan Laporan menyediakan rentang harian, periode aktif, tiga bulan, dan enam
+bulan. Perbandingan dengan rentang sebelumnya memakai **jumlah hari yang sama**.
+Tren saldo direkonstruksi dari saldo saat ini dan delta transaksi; penyesuaian saldo
+tetap memengaruhi tren, sementara transfer antar-dompet berdelta bersih nol. Analisis
+arus kas riil mengecualikan transfer, penyesuaian, pelunasan piutang dari pemasukan,
+dan porsi pengeluaran yang menjadi piutang.
+
+Submenu **Pola** (`periodPatterns`) memakai paling banyak **delapan periode `closed`**,
+urut dari lama ke baru. Untuk tiap periode: pemasukan riil, pengeluaran riil, arus kas
+bersih, alokasi/realisasi anggaran manual, serta kelompok pengeluaran. Angka tren
+dibagi dengan **semua hari kalender dalam periode**, bukan hanya hari transaksi.
+Tampilan membandingkan periode terbaru dengan periode sebelumnya, menampilkan rata-rata
+hingga tiga periode terakhir dan empat kelompok pengeluaran terbesar. Periode `open`
+dan `draft` tidak dimasukkan agar bulan parsial tidak disandingkan dengan bulan selesai.
+
+## Rencana keuangan
+
+Rencana adalah simulasi murni; menghitung hasilnya tidak menulis transaksi atau
+mengubah saldo. `usePlanningContext` memakai:
+
+```text
+available = saldo aset − tabungan disisihkan − kewajiban kartu periode aktif
+financialCondition = available − sisa anggaran manual
+monthlyIncome = pemasukan riil 31 hari terakhir;
+                jika nol, rata-rata pemasukan riil 90 hari / 3
+nextMonthBills = kewajiban kartu dari creditObligationBreakdown
+monthlyCapacity = max(0, monthlyIncome − total alokasi anggaran − nextMonthBills)
+```
+
+Nama `nextMonthBills` dalam konteks rencana saat ini berarti **kewajiban kartu**, bukan
+penjumlahan jadwal langganan/pengingat. Kalkulator target dana, tenggat, kemampuan
+membeli, belanja dadakan, dan target sisa memakai konteks tersebut. Piutang opsional
+pada simulasi kemampuan membeli mengikuti keterbatasan `expectedReceivables` di atas.
+
+| Simulasi | Aturan inti |
 | --- | --- |
-| Expense dengan pilar `Piutang` | Piutang dibuat sebesar **seluruh** nominal untuk nama pengutang yang diisi. |
-| `budgetId` terisi pada expense/transfer biasa | `budget.spent += amount`. Transfer tetap netral terhadap total likuiditas. |
-| Transfer pembayaran kartu kredit | Tidak menerima `budgetId`; hanya melunasi sisa tagihan periode sebelumnya dan mengurangi saldo rekening tanpa realisasi anggaran baru. Belanja kartu periode berjalan tetap menjadi tagihan periode berikutnya. |
-| Edit pembayaran kartu kredit | Hanya alokasi cicilan yang dapat diubah. Nominal, rekening asal, kartu tujuan, tanggal, dan jurnal pembayaran tetap terkunci; perubahan alokasi tidak mengubah saldo. |
-| Expense kartu + tenor cicilan | Tenor 2–120 bulan disimpan sebagai metadata; nominal transaksi dan realisasi anggaran tetap memakai jumlah yang dicatat. |
-| `settlesReceivableId` terisi | `receivable.paid += amount`; lunas bila `paid ≥ amount`. |
-| Pemasukan tanpa pilihan piutang | Dicocokkan otomatis bila **nama pihak sama persis** dan **sisa piutang == nominal**. |
-| Transfer + `savingId` | `saving.balance += amount` (tabungan harus berada di dompet tujuan). |
-
-### Kategori
-
-Taksonomi 3 tingkat di `categories.ts`:
-
-- **Tingkat 1** kelompok besar (11 pengeluaran, 5 pemasukan) — untuk gambaran besar.
-- **Tingkat 2** kategori (33 / 12) — setara pos anggaran.
-- **Tingkat 3** spesifik (114 / 38) — yang dicatat sehari-hari.
-
-Aturannya:
-
-1. Yang disimpan di `labels[0]` adalah **satu label paling dalam yang dipilih**.
-2. Induknya dicari lewat indeks `categoryPath(label)` → `[besar, menengah, spesifik?]`.
-3. Label di luar taksonomi (kategori bebas / data lama) tetap valid dan berdiri sendiri
-   sebagai jalur satu elemen, dan muncul di grup "Kategori kamu".
-4. Nama label harus unik lintas tingkat dalam satu pohon — indeks memakai nama sebagai kunci.
-5. Bila tidak ada yang dipilih, kategori jatuh ke `Lainnya`.
-
----
-
-## 3. Anggaran
-
-- `velocity = spent / allocated`; `over = spent > allocated`; `remaining = allocated − spent`.
-- **Jatah harian** = `sisa anggaran ÷ sisa hari periode` (minimal 1 hari). Mingguan = harian × 7.
-- **Laju ideal** = `allocated × (hari berjalan ÷ total hari)`. Realisasi di bawah laju ideal =
-  aman; di atasnya = kecepatan; melewati alokasi = jebol (tidak ada jatah harian tersisa).
-- Realisasi (`spent`) bertambah otomatis hanya lewat transaksi yang memilih `budgetId`.
-
----
-
-## 4. Tabungan (sinking fund)
-
-- Tabungan adalah **earmark**, bukan dompet: uangnya tetap berada di `walletId`, saldo dompet
-  tidak berubah.
-- Saldo tersedia sebuah dompet = `wallet.balance − Σ(tabungan aktif di dompet itu)`.
-- `safeToSpend = saldo aset − sisa tagihan kartu periode sebelumnya − kewajiban kartu
-  periode ini − Σ(max(alokasi − realisasi, 0)) − Σ(tabungan)`.
-  Liabilitas kartu dibentuk dari `tagihan pembuka − pembayaran + pengeluaran kartu periode
-  ini`; field tagihan pembuka yang dikonfirmasi pengguna adalah sumber kebenarannya.
-  Pembayaran lebih dulu mengurangi tagihan periode sebelumnya; kelebihannya mengurangi
-  kewajiban periode ini. Pengeluaran tunai/debit tidak dikurangkan lagi karena sudah
-  menurunkan saldo aset. Pengeluaran beranggaran yang sudah terjadi tidak dikurangkan ulang:
-  yang dicadangkan hanya sisa anggarannya. Hasil tidak dijepit ke nol; nilai negatif
-  ditampilkan sebagai defisit arus kas bebas.
-- Aksi **Sisihkan** dibatasi saldo tersedia; aksi **Ambil** dibatasi saldo tabungan itu sendiri.
-
----
-
-## 5. Piutang (Receivable)
-
-- Sumbernya: dibuat manual, otomatis dari transaksi `lent`/`shared`, atau dari hasil split bill.
-- `paid` mengakumulasi pembayaran; `settled = paid ≥ amount`. Total piutang aktif memakai
-  **sisa** (`amount − paid`), bukan nominal awal.
-- Saat lunas lewat transaksi, `settledAt` dan `settledByTxId` diisi sehingga bisa ditelusuri
-  balik ke transaksi pemasukannya.
-
----
-
-## 6. Split bill (`split.ts`)
-
-- Struktur: **nota** → **item**. Tiap nota punya satu `payerId` (yang menalangi) dan satu
-  `taxPercent` (pajak/servis untuk seluruh nota).
-- **Pajak diisi sekali per nota, lalu disebar ke tiap item sesuai harganya**:
-  `itemTotal = price × (1 + taxPercent/100)`. Konsekuensinya porsi tiap orang membawa
-  pajaknya sendiri — orang yang memesan lebih mahal menanggung pajak lebih besar —
-  bukan pajak yang dibagi rata per kepala.
-- Porsi seseorang atas sebuah item = `itemTotal ÷ jumlah orang yang berbagi item itu`.
-- `net = total yang dia talangi − total yang dia konsumsi`. Jumlah seluruh `net` selalu 0.
-- **Settle-up greedy**: utang terbesar dilunasi ke piutang terbesar sampai habis, sehingga
-  jumlah transfer seminimal mungkin. Hanya transfer yang menuju "saya" yang dituliskan
-  sebagai piutang.
-
----
-
-## 7. Langganan (`subscription.ts`, `calendar.ts`)
-
-- `monthlyCost` menormalkan siklus ke bulanan (mingguan ×52/12, kuartalan ÷3, tahunan ÷12).
-- Pengingat aktif bila `0 ≤ hari menuju tagihan ≤ reminderDaysBefore` dan status `active`.
-- "Akan berakhir" bila `endDate` ada dan tinggal ≤14 hari.
-- Kategori langganan memakai pilar dan sub-kategori pengeluaran yang sama dengan form
-  transaksi (`PILLAR_EXPENSE_TREE`); nilai terdalam yang dipilih disimpan. Kategori lama
-  tetap ditampilkan saat edit sampai pengguna memilih nilai dari taksonomi baru.
-- `billingDatesInRange` menghitung tanggal tagihan di rentang tampilan kalender: ditarik mundur
-  dari `nextBillingDate` (tidak melewati `startDate`) lalu maju sampai batas rentang atau `endDate`.
-
----
-
-## 8. Kalender & pengingat
-
-- Grid bulan = 6×7 hari penuh, minggu dimulai **Senin**.
-- Isi sebuah tanggal: transaksi (opsional lewat toggle), jatuh tempo langganan, dan pengingat.
-- Pengingat (`Reminder`) punya nominal opsional; yang bernominal ikut dihitung sebagai
-  "tagihan bulan depan" pada simulasi rencana keuangan.
-
----
-
-## 9. Laporan & insight
-
-- Rentang **Periode aktif** memakai `start`–`end` periode berstatus `open`, termasuk
-  periode yang dimulai tanggal 28; `draft` tidak dianggap periode aktif.
-- Metrik pemasukan, pengeluaran, kategori, dan laporan harian mengecualikan transaksi
-  penyesuaian. Transfer juga tidak menjadi pemasukan/pengeluaran karena netral terhadap kas.
-- Tren saldo direkonstruksi dari likuiditas aktual (`debit − liabilitas kartu`) dan delta
-  transaksi. Penyesuaian ikut mengubah tren; transfer, termasuk pembayaran kartu, berdelta 0.
-  Belanja kartu tetap menurunkan likuiditas pada tanggal transaksi sebesar nominal penuh.
-- Rata-rata harian membagi total belanja dengan seluruh hari kalender dalam rentang, bukan
-  hanya hari yang memiliki transaksi. Persentase kategori memakai seluruh pengeluaran
-  sebagai penyebut, termasuk kategori di luar delapan teratas.
-- Insight transaksi mengikuti rentang terpilih dan merangkum pengeluaran terbesar,
-  rata-rata per transaksi, hari belanja tertinggi, porsi kartu kredit, serta jumlah dan
-  nominal transaksi cicilan.
-- Total anggaran selalu merujuk ke periode aktif dan menampilkan alokasi, persentase
-  realisasi, serta sisa yang boleh bernilai negatif. Analisis kategori membandingkan
-  setiap kategori dengan rentang sebelumnya yang berdurasi sama, selain menampilkan
-  porsi pengeluaran, jumlah transaksi, dan rata-rata nominalnya. Laporan memakai tingkat
-  kategori menengah; label spesifik otomatis digabungkan ke kategori induknya.
-
----
-
-## 10. Rencana keuangan (`planning.ts`)
-
-Konteks angka (`usePlanningContext`):
-
-- `available` = likuiditas − tabungan terkunci.
-- `monthlyIncome` = pemasukan 31 hari terakhir; bila nol, rata-rata 90 hari ÷ 3.
-- `nextMonthBills` = tagihan langganan bulan depan + pengingat bernominal bulan depan.
-- `monthlyCapacity` = `max(0, monthlyIncome − allocatedTotal − nextMonthBills)`.
-
-| Metode | Rumus inti |
-| --- | --- |
-| Target dana | `needed = target − sudahPunya`; `months = ceil(needed ÷ setoran)`; setoran kosong → pakai `monthlyCapacity`. `strain = setoran ÷ kapasitas` (>1 = memaksa). |
-| Deadline → setoran | `requiredPerMonth = ceil(needed ÷ bulan)`; realistis bila ≤ kapasitas. |
-| Sanggup beli | `surplus = (pemasukan + piutang opsional) − (anggaran + tagihan bulan depan)`; `leftover = surplus − harga`. Bila minus, dicek apakah bisa ditutup dari kas sekarang. |
-| Belanja dadakan | Sisa & jatah harian sebuah anggaran sebelum vs sesudah tambahan belanja. |
-| Target sisa | `projected = available − Σ sisa anggaran`; `needed = max(0, target − projected)`; pemotongan proporsional `ratio = needed ÷ Σ sisa`, per kategori `cut = sisa × ratio`. Tidak mungkin bila `needed > Σ sisa`. |
-
-Semua metode **murni simulasi** — tidak menulis data apa pun.
-
----
-
-## 11. Periode & tutup buku
-
-- Hanya satu periode berstatus `open` yang dianggap aktif; `draft` belum berjalan.
-- Periode `draft` dapat dibuka secara eksplisit bila tidak ada periode aktif dan
-  rentangnya tidak bertumpang tindih dengan periode yang sudah ditutup.
-- Menutup periode: periode berjalan diberi `closed: true`, lalu periode baru dapat dibuat
-  mulai H+1 dari `end` sepanjang satu bulan dengan nama yang diisi pengguna.
-- Jika sudah ada periode draft setelah periode berjalan, pengguna dapat melanjutkan ke
-  draft tersebut alih-alih membuat periode baru. Anggaran pilihan di-upsert ke draft;
-  kategori yang sudah ada diperbarui dan anggaran draft lainnya tetap dipertahankan.
-- Periode **tidak boleh diduplikat** (harus unik); tombol duplikat disembunyikan.
-- Daftar periode diurutkan dari yang terbaru.
-
----
-
-## 12. Notifikasi
-
-Dibangun dari data nyata setiap kali data berubah:
-
-| Sumber | Muncul bila |
-| --- | --- |
-| Langganan | `0 ≤ hari menuju tagihan ≤ reminderDaysBefore`. |
-| Langganan | akan berakhir dalam ≤14 hari. |
-| Pengingat | belum selesai dan jatuh tempo ≤3 hari lagi (termasuk yang telat). |
-| Anggaran | `spent > allocated`. |
-
-Notifikasi dihasilkan job PostgreSQL harian dan status baca disimpan per user/workspace
-di tabel `notifications`; membuka panel lonceng **tidak** menandai apa pun. Perubahan status
-baca tersinkron realtime dan lonceng menampilkan jumlah yang belum dibaca.
-
----
+| Target dana | `needed = max(0, target − sudahTerkumpul)`; bulan = `ceil(needed / setoranBulanan)`. Jika setoran tidak diisi, gunakan `monthlyCapacity`. |
+| Tenggat waktu | Setoran minimum = `ceil(needed / jumlahBulan)`. |
+| Sanggup beli | Bandingkan harga dengan `financialCondition` ditambah piutang bila pengguna memilihnya. |
+| Belanja dadakan | Tampilkan sisa dan jatah harian satu anggaran sebelum/sesudah nominal tambahan. |
+| Target sisa | Hitung kekurangan terhadap `available − sisaAnggaran`; pemotongan dibagi proporsional pada sisa tiap anggaran. |
