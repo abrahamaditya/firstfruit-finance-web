@@ -33,6 +33,11 @@ export function createMemoryRepositories(): DataRepositories {
   return {
     wallets,
     transactions,
+    installments: {
+      async list() {
+        return (await transactions.list()).filter((transaction) => transaction.installmentTenorMonths != null);
+      },
+    },
     budgets,
     periods: {
       list: () => periods.list(),

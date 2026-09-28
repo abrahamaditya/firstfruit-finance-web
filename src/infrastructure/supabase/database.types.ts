@@ -1429,7 +1429,7 @@ export type Database = {
       subscriptions: {
         Row: {
           amount_minor: number
-          category_id: string
+          category_id: string | null
           created_at: string
           created_by: string
           custom_interval_days: number | null
@@ -1443,12 +1443,12 @@ export type Database = {
           status: Database["public"]["Enums"]["subscription_status"]
           updated_at: string
           version: number
-          wallet_id: string
+          wallet_id: string | null
           workspace_id: string
         }
         Insert: {
           amount_minor: number
-          category_id: string
+          category_id?: string | null
           created_at?: string
           created_by: string
           custom_interval_days?: number | null
@@ -1462,12 +1462,12 @@ export type Database = {
           status?: Database["public"]["Enums"]["subscription_status"]
           updated_at?: string
           version?: number
-          wallet_id: string
+          wallet_id?: string | null
           workspace_id: string
         }
         Update: {
           amount_minor?: number
-          category_id?: string
+          category_id?: string | null
           created_at?: string
           created_by?: string
           custom_interval_days?: number | null
@@ -1481,7 +1481,7 @@ export type Database = {
           status?: Database["public"]["Enums"]["subscription_status"]
           updated_at?: string
           version?: number
-          wallet_id?: string
+          wallet_id?: string | null
           workspace_id?: string
         }
         Relationships: [

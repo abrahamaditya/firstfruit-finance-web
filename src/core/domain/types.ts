@@ -57,7 +57,9 @@ export interface BudgetPeriod {
   status?: 'draft' | 'open' | 'closed';
 }
 export interface Subscription {
-  id: string; name: string; amount: number; walletId: string; category: string;
+  id: string; name: string; amount: number;
+  /** Kolom lama tetap dapat ada pada data historis, tetapi tidak diperlukan untuk jadwal tagihan. */
+  walletId?: string; category?: string;
   cycle: BillingCycle; customIntervalDays?: number; startDate: string;
   endDate?: string | null; nextBillingDate: string; reminderDaysBefore: number; status: SubStatus;
 }

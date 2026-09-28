@@ -60,6 +60,7 @@ next-env.d.ts
 !/supabase/migrations/202608300067_limit_credit_payments_to_previous_bill.sql
 !/supabase/migrations/202608300068_accept_credit_allocation_field_formats.sql
 !/supabase/migrations/202608300069_edit_credit_payment_allocations.sql
+!/supabase/migrations/202609280070_subscription_schedule_without_payment_fields.sql
 !/supabase/tests/
 /supabase/tests/*
 !/supabase/tests/database/

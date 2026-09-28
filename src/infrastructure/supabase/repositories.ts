@@ -119,13 +119,10 @@ function mapPeriod(row: DbRow): BudgetPeriod {
 }
 
 function mapSubscription(row: DbRow): Subscription {
-  const category = row.categories?.name ?? row.category_name ?? 'Lainnya';
   return {
     id: row.id,
     name: row.name,
     amount: amount(row.amount_minor),
-    walletId: row.wallet_id,
-    category,
     cycle: row.cycle,
     customIntervalDays: row.custom_interval_days ?? undefined,
     startDate: new Date(`${row.start_date}T12:00:00`).toISOString(),
@@ -606,26 +603,23 @@ export function createSupabaseRepositories(
   const subscriptions: Repository<Subscription> = {
     async list() {
       const { data, error } = await supabase.from('subscriptions')
-        .select('*, categories(name)')
+        .select('*')
         .eq('workspace_id', workspaceId).order('next_billing_date');
       throwIfError(error, 'Gagal memuat langganan');
       return (data ?? []).map(mapSubscription);
     },
     async get(id) {
       const { data, error } = await supabase.from('subscriptions')
-        .select('*, categories(name)')
+        .select('*')
         .eq('workspace_id', workspaceId).eq('id', id).maybeSingle();
       throwIfError(error, 'Gagal memuat langganan');
       return data ? mapSubscription(data) : null;
     },
     async create(item) {
-      const categoryId = await ensureCategory(item.category, 'expense');
       const { data, error } = await supabase.from('subscriptions').insert({
         workspace_id: workspaceId,
         name: item.name,
         amount_minor: item.amount,
-        wallet_id: item.walletId,
-        category_id: categoryId,
         cycle: item.cycle,
         custom_interval_days: item.customIntervalDays ?? null,
         start_date: item.startDate.slice(0, 10),
@@ -642,12 +636,9 @@ export function createSupabaseRepositories(
       const current = await subscriptions.get(id);
       if (!current) throw new Error('Langganan tidak ditemukan');
       const next = { ...current, ...patch };
-      const categoryId = await ensureCategory(next.category, 'expense');
       const { error } = await supabase.from('subscriptions').update({
         name: next.name,
         amount_minor: next.amount,
-        wallet_id: next.walletId,
-        category_id: categoryId,
         cycle: next.cycle,
         custom_interval_days: next.customIntervalDays ?? null,
         end_date: next.endDate?.slice(0, 10) ?? null,
@@ -921,6 +912,24 @@ export function createSupabaseRepositories(
   return {
     wallets,
     transactions,
+    installments: {
+      async list() {
+        const pageSize = 500;
+        const all: Transaction[] = [];
+        for (let offset = 0; ; offset += pageSize) {
+          const { data, error } = await supabase
+            .from('v_transactions').select('*')
+            .eq('workspace_id', workspaceId)
+            .not('installment_tenor_months', 'is', null)
+            .order('occurred_at', { ascending: false })
+            .range(offset, offset + pageSize - 1);
+          throwIfError(error, 'Gagal memuat daftar cicilan');
+          all.push(...(data ?? []).map(mapTransaction));
+          if ((data ?? []).length < pageSize) break;
+        }
+        return all;
+      },
+    },
     budgets,
     periods,
     subscriptions,

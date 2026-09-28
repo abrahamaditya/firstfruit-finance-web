@@ -53,6 +53,7 @@ export interface FinanceCommands {
 export interface DataRepositories {
   wallets: Repository<Wallet>;
   transactions: Repository<Transaction>;
+  installments: Pick<Repository<Transaction>, 'list'>;
   budgets: Repository<Budget>;
   periods: Repository<BudgetPeriod>;
   subscriptions: Repository<Subscription>;

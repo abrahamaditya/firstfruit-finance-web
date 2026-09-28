@@ -20,8 +20,8 @@ import {
 } from '../infrastructure/supabase/AuthProvider';
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
-import { periodProgress } from '../core/domain/calculations';
-import { BudgetPeriod, CardNetwork, Transaction, WalletKind, WalletMedium } from '../core/domain/types';
+import { creditObligationBreakdown, periodProgress } from '../core/domain/calculations';
+import { BudgetPeriod, CardNetwork, Transaction, Wallet, WalletKind, WalletMedium } from '../core/domain/types';
 import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
@@ -74,6 +74,7 @@ import {
 import HomeScreen from '../features/HomeScreen';
 import WalletsScreen from '../features/WalletsScreen';
 import TransactionsScreen from '../features/TransactionsScreen';
+import InstallmentsScreen from '../features/InstallmentsScreen';
 import SubscriptionsScreen from '../features/SubscriptionsScreen';
 import BudgetScreen from '../features/BudgetScreen';
 import ReceivablesScreen from '../features/ReceivablesScreen';
@@ -89,6 +90,7 @@ export type Tab =
   | 'home'
   | 'wallets'
   | 'tx'
+  | 'installments'
   | 'subs'
   | 'budget'
   | 'split'
@@ -230,6 +232,12 @@ interface FormConfig {
 interface WalletOption extends CategoryOption {
   kind: WalletKind;
   previousPeriodBill?: number;
+  wallet: Wallet;
+}
+
+interface SavingOption extends CategoryOption {
+  walletId: string;
+  balance: number;
 }
 
 interface FormSectionDefinition {
@@ -262,8 +270,7 @@ const FORM_SECTIONS: Record<CreateType, FormSectionDefinition[]> = {
   ],
   subscription: [
     { title: 'Informasi langganan', keys: ['name', 'amount', 'cycle'] },
-    { title: 'Pembayaran & kategori', keys: ['walletId', 'pillar', 'subCategory', 'categoryDetail'] },
-    { title: 'Jadwal tagihan', keys: ['nextBillingDate', 'endDate', 'reminderDaysBefore'] },
+    { title: 'Jadwal tagihan', keys: ['nextBillingDate', 'noEndDate', 'endDate', 'reminderDaysBefore'] },
   ],
   planning: [
     { title: 'Informasi rencana', keys: ['title', 'status'] },
@@ -350,6 +357,7 @@ const mainNavigation: Array<{ tab: Tab; label: string; icon: React.ReactNode }> 
 ];
 
 const toolNavigation: Array<{ tab: Tab; label: string; icon: React.ReactNode }> = [
+  { tab: 'installments', label: 'nav.installments', icon: <Card /> },
   { tab: 'split', label: 'nav.split', icon: <Split /> },
   { tab: 'piutang', label: 'nav.piutang', icon: <Receivable /> },
   { tab: 'planning', label: 'nav.planning', icon: <Target /> },
@@ -482,18 +490,6 @@ const spreadCategory = (label?: string, txType?: string) => {
   };
 };
 
-/** Langganan memakai taksonomi pengeluaran baru; nilai lama tetap terlihat sampai diganti. */
-const spreadSubscriptionCategory = (label?: string) => {
-  if (!label) return null;
-  const spread = spreadCategory(label, 'expense');
-  if (spread?.pillar) return spread;
-  return {
-    pillar: label,
-    subCategory: '',
-    categoryDetail: '',
-  };
-};
-
 /** Perubahan satu field kadang membatalkan pilihan di bawahnya. */
 const applyFieldChange = (form: Record<string, string>, key: string, value: string) => {
   const cleared = {
@@ -620,10 +616,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [originalCreditPaymentInstallments, setOriginalCreditPaymentInstallments] = useState<Record<string, number>>({});
   const selectedCreditCardRef = useRef('');
   const [transactionOptions, setTransactionOptions] = useState<Transaction[]>([]);
+  const [transactionsLoaded, setTransactionsLoaded] = useState(false);
   const [formDraftReady, setFormDraftReady] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
+  const [walletsLoaded, setWalletsLoaded] = useState(false);
   const [debitWalletOptions, setDebitWalletOptions] = useState<Array<{ value: string; label: string }>>([]);
-  const [savingOptions, setSavingOptions] = useState<Array<{ value: string; label: string; walletId: string }>>([]);
+  const [savingOptions, setSavingOptions] = useState<SavingOption[]>([]);
+  const [savingsLoaded, setSavingsLoaded] = useState(false);
   const [budgetOptions, setBudgetOptions] = useState<CategoryOption[]>([]);
   const [periodBudgetTemplates, setPeriodBudgetTemplates] = useState<Array<{
     id: string; category: string; allocated: number;
@@ -1105,6 +1104,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     [
       'wallets',
       'transactions',
+      'transaction_installments',
+      'credit_payment_installment_allocations',
       'budgets',
       'budget_periods',
       'subscriptions',
@@ -1488,10 +1489,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         transfer: { ...transaksiConfig, defaults: { ...transaksiConfig.defaults, txType: 'transfer', note: '' } },
         subscription: {
           title: 'langganan',
-          description: 'Pantau pembayaran berulang dan dapatkan pengingat sebelum ditagih.',
+          description: 'Catat jadwal dan biaya langganan untuk mendapat pengingat. Pembayaran dicatat terpisah di Transaksi.',
           fields: [
             { key: 'name', label: 'Nama layanan', placeholder: 'Contoh: Netflix' },
-            { key: 'amount', label: 'Nominal per tagihan', type: 'number' },
+            {
+              key: 'amount', label: 'Nominal per tagihan', type: 'number',
+              hint: 'Perkiraan biaya per tagihan; tidak mengurangi saldo dompet.',
+            },
             {
               key: 'cycle',
               label: 'Siklus',
@@ -1503,55 +1507,21 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 { value: 'yearly', label: 'Tahunan' },
               ],
             },
-            { key: 'walletId', label: 'Dompet pembayaran', type: 'select', options: wallets },
-            {
-              key: 'pillar',
-              label: 'Kategori 1 (Pilar utama)',
-              type: 'select',
-              optionsOf: (f) => {
-                const options = EXPENSE_PILLAR_OPTIONS.filter(option => option.value !== 'Receivables');
-                return f.pillar && !options.some(option => option.value === f.pillar)
-                  ? [
-                      {
-                        value: f.pillar,
-                        label: `${f.pillar} (kategori sebelumnya)`,
-                        group: 'Kategori sebelumnya',
-                      },
-                      ...options,
-                    ]
-                  : options;
-              },
-            },
-            {
-              key: 'subCategory',
-              label: 'Kategori 2 (Sub-kategori)',
-              type: 'select',
-              optionsOf: (f) => Object.keys(PILLAR_EXPENSE_TREE[f.pillar] ?? {})
-                .map(name => ({ value: name, label: name })),
-              showIf: (f) => Boolean(f.pillar) && Boolean(PILLAR_EXPENSE_TREE[f.pillar]),
-            },
-            {
-              key: 'categoryDetail',
-              label: 'Kategori 3 / Level lanjutan',
-              type: 'select',
-              optionsOf: (f) => (PILLAR_EXPENSE_TREE[f.pillar]?.[f.subCategory] ?? [])
-                .map(name => ({ value: name, label: name })),
-              showIf: (f) =>
-                (PILLAR_EXPENSE_TREE[f.pillar]?.[f.subCategory]?.length ?? 0) > 0,
-            },
             { key: 'nextBillingDate', label: 'Tagihan berikutnya', type: 'date' },
-            { key: 'endDate', label: 'Tanggal berakhir', type: 'date' },
+            { key: 'noEndDate', label: 'Tidak ada tanggal berakhir', type: 'checkbox', optional: true },
+            {
+              key: 'endDate', label: 'Tanggal berakhir', type: 'date',
+              showIf: (f) => f.noEndDate !== 'yes',
+              requiredIf: (f) => f.noEndDate !== 'yes',
+            },
             { key: 'reminderDaysBefore', label: 'Ingatkan (hari sebelumnya)', type: 'number' },
           ],
           defaults: {
             name: '',
             amount: '',
             cycle: '',
-            walletId: '',
-            pillar: '',
-            subCategory: '',
-            categoryDetail: '',
             nextBillingDate: '',
+            noEndDate: 'yes',
             endDate: '',
             reminderDaysBefore: '',
           },
@@ -1582,7 +1552,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           description: 'Catat uang yang harus dikembalikan kepada kamu.',
           fields: [
             { key: 'person', label: 'Nama orang', placeholder: 'Contoh: Budi' },
-            { key: 'amount', label: 'Nominal', type: 'number' },
+            { key: 'amount', label: 'Nominal', type: 'number', hint: 'Dicatat sebagai piutang; saldo dompet tidak berubah.' },
             { key: 'source', label: 'Sumber', placeholder: 'Pinjaman / split bill' },
             { key: 'date', label: 'Tanggal', type: 'date' },
           ],
@@ -1593,7 +1563,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           description: 'Buat anggaran bebas untuk periode berjalan. Transaksi ditautkan secara manual.',
           fields: [
             { key: 'name', label: 'Nama anggaran', placeholder: 'Contoh: Makan bulan ini' },
-            { key: 'allocated', label: 'Alokasi', type: 'number' },
+            { key: 'allocated', label: 'Alokasi', type: 'number', hint: 'Batas anggaran; dana tidak dipindahkan dari dompet.' },
           ],
           defaults: { name: '', allocated: '' },
         },
@@ -1688,7 +1658,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           fields: [
             { key: 'title', label: 'Judul pengingat', placeholder: 'Contoh: Bayar SPP Jeje' },
             { key: 'date', label: 'Tanggal', type: 'date' },
-            { key: 'amount', label: 'Nominal', type: 'number', optional: true },
+            { key: 'amount', label: 'Nominal', type: 'number', optional: true, hint: 'Hanya untuk pengingat; tidak membuat transaksi.' },
             { key: 'note', label: 'Catatan', placeholder: 'Detail tambahan', optional: true },
           ],
           defaults: { title: '', date: '', amount: '', note: '' },
@@ -1797,35 +1767,47 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   }, [repos, dataVersion]);
 
   useEffect(() => {
-    repos.savings.list().then((savings) =>
+    setSavingsLoaded(false);
+    repos.savings.list().then((savings) => {
       setSavingOptions(
         savings
           .filter((s) => !s.archived)
-          .map((s) => ({ value: s.id, label: `${s.emoji ? s.emoji + ' ' : ''}${s.name}`, walletId: s.walletId })),
-      ),
-    );
+          .map((s) => ({
+            value: s.id,
+            label: `${s.emoji ? s.emoji + ' ' : ''}${s.name}`,
+            walletId: s.walletId,
+            balance: s.balance,
+          })),
+      );
+      setSavingsLoaded(true);
+    });
   }, [repos, dataVersion]);
 
   useEffect(() => {
+    setWalletsLoaded(false);
     repos.wallets.list().then((wallets) => {
       setWalletOptions(wallets.map((wallet) => ({
         value: wallet.id,
         label: wallet.name,
         kind: wallet.kind,
         previousPeriodBill: wallet.previousPeriodBill,
+        wallet,
       })));
       setDebitWalletOptions(
         wallets.filter((w) => w.kind === 'debit').map((wallet) => ({ value: wallet.id, label: wallet.name })),
       );
+      setWalletsLoaded(true);
     });
   }, [repos, dataVersion]);
 
   useEffect(() => {
     // Anggaran berdiri sendiri dari kategori transaksi dan hanya dapat dipilih
     // oleh transaksi di periode aktif yang sama.
+    setTransactionsLoaded(false);
     Promise.all([repos.budgets.list(), repos.transactions.list(), repos.periods.list()])
       .then(([budgets, txs, periods]) => {
       setTransactionOptions(txs);
+      setTransactionsLoaded(true);
       const activePeriod = periods.find(period => period.status === 'open')
         ?? periods.find(period => period.status == null && !period.closed);
       const budgetSource = activePeriod
@@ -2008,6 +1990,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             }
             if (field.key === 'receivableId') value = record.settlesReceivableId;
             if (field.key === 'name' && create.type === 'budget') value = record.category;
+            if (field.key === 'noEndDate' && create.type === 'subscription') {
+              value = record.endDate ? 'no' : 'yes';
+            }
             if (field.type === 'date') value = value ? toDateInput(value as string) : undefined;
             return [field.key, value] as const;
           })
@@ -2019,7 +2004,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       // Kategori tersimpan cuma satu string — dipecah kembali jadi tiga tingkat pilihan.
       const storedCategory = (record.labels as string[] | undefined)?.at(-1) ?? (record.category as string | undefined);
       const spread = create.type === 'subscription'
-        ? spreadSubscriptionCategory(storedCategory)
+        ? null
         : spreadCategory(storedCategory, record.type as string | undefined);
       setForm({ ...config.defaults, ...loaded, ...(spread ?? {}), ...savedDraft });
     };
@@ -2345,11 +2330,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         const payload = {
           name: form.name.trim(),
           amount: toNumber(form.amount),
-          walletId: form.walletId,
-          category: form.categoryDetail || form.subCategory || form.pillar,
           cycle: form.cycle as 'weekly' | 'monthly' | 'quarterly' | 'yearly',
           startDate: new Date().toISOString(),
-          endDate: form.endDate ? toIso(form.endDate) : null,
+          endDate: form.noEndDate === 'yes' ? null : toIso(form.endDate),
           nextBillingDate: toIso(form.nextBillingDate),
           reminderDaysBefore: toNumber(form.reminderDaysBefore),
           status: 'active' as const,
@@ -2591,6 +2574,69 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     previousBillRemainingBeforeTransfer - creditPaymentAmount,
   );
   const creditPaymentExceedsPreviousBill = creditPaymentAmount > previousBillRemainingBeforeTransfer;
+  const moneyFieldContext = (field: FieldDefinition): { text: string; warning?: string } | null => {
+    // Semua input nominal di form memakai Rp, sehingga hint mengikuti satuan yang sama.
+    const formatted = (value: number) => `${value < 0 ? '−' : ''}${formatIDR(value)}`;
+    const enteredAmount = toNumber(form[field.key]);
+    if (field.key === 'amount' && (create.type === 'transaksi' || create.type === 'transfer')) {
+      if (!walletsLoaded) return { text: 'Memuat saldo dompet…' };
+      const selected = walletOptions.find((option) => option.value === form.walletId);
+      if (!selected) return { text: 'Pilih dompet pada bagian Sumber dana untuk melihat saldonya.' };
+      if (selected.kind === 'credit') {
+        if (!transactionsLoaded) return { text: `Memuat sisa limit ${selected.label}…` };
+        const periodTransactions = transactionOptions.filter(transactionIsInActivePeriod);
+        const used = creditObligationBreakdown([selected.wallet], periodTransactions).total;
+        const available = Math.max(0, (selected.wallet.creditLimit ?? 0) - used);
+        return {
+          text: `Sisa limit ${selected.label}: ${formatted(available)}`,
+          warning: !create.isEdit && form.txType === 'expense' && enteredAmount > available
+            ? 'Nominal melebihi sisa limit kartu.' : undefined,
+        };
+      }
+      if (!savingsLoaded) {
+        return { text: `Saldo ${selected.label}: ${formatted(selected.wallet.balance)} · Menghitung dana tersedia…` };
+      }
+      const reserved = savingOptions
+        .filter((saving) => saving.walletId === selected.value)
+        .reduce((total, saving) => total + saving.balance, 0);
+      const available = selected.wallet.balance - reserved;
+      return {
+        text: `Saldo ${selected.label}: ${formatted(selected.wallet.balance)}`
+          + (reserved > 0 ? ` · Tersedia setelah tabungan: ${formatted(available)}` : ''),
+        warning: !create.isEdit && form.txType !== 'income' && enteredAmount > available
+          ? 'Nominal melebihi saldo tersedia.' : undefined,
+      };
+    }
+    if (field.key === 'amount' && (create.type === 'ambil' || create.type === 'sisihkan')) {
+      if (!savingsLoaded) return { text: 'Memuat saldo tabungan…' };
+      const saving = savingOptions.find((option) => option.value === create.id);
+      if (!saving) return null;
+      if (create.type === 'ambil') {
+        return {
+          text: `Saldo tabungan ${saving.label}: ${formatted(saving.balance)}`,
+          warning: enteredAmount > saving.balance ? 'Nominal melebihi saldo tabungan.' : undefined,
+        };
+      }
+      if (!walletsLoaded) return { text: 'Memuat saldo dompet…' };
+      const wallet = walletOptions.find((option) => option.value === saving.walletId);
+      if (!wallet) return null;
+      const reserved = savingOptions
+        .filter((option) => option.walletId === wallet.value)
+        .reduce((total, option) => total + option.balance, 0);
+      const available = wallet.wallet.balance - reserved;
+      return {
+        text: `Saldo ${wallet.label}: ${formatted(wallet.wallet.balance)}`
+          + ` · Tersedia setelah tabungan: ${formatted(available)}`,
+        warning: enteredAmount > available ? 'Nominal melebihi saldo tersedia.' : undefined,
+      };
+    }
+    if (field.key === 'target' && create.type === 'tabungan' && create.isEdit) {
+      if (!savingsLoaded) return { text: 'Memuat saldo tabungan…' };
+      const saving = savingOptions.find((option) => option.value === create.id);
+      return saving ? { text: `Sudah terkumpul: ${formatted(saving.balance)}` } : null;
+    }
+    return null;
+  };
   const isTransactionForm = create.type === 'transaksi' || create.type === 'transfer';
   const visibleFormSections = groupFormFields(
     create.type,
@@ -2624,6 +2670,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     home: <HomeScreen />,
     wallets: <WalletsScreen />,
     tx: <TransactionsScreen />,
+    installments: <InstallmentsScreen />,
     subs: <SubscriptionsScreen />,
     budget: <BudgetScreen />,
     split: <SplitScreen />,
@@ -3011,6 +3058,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         && walletOptions.some((wallet) => wallet.value === form.toWalletId && wallet.kind === 'credit');
                       const fieldDisabled = editingCreditPaymentAllocations
                         && !['creditPaymentSummary', 'paymentTag', 'creditPaymentInstallments'].includes(field.key);
+                      const moneyContext = MONEY_FIELDS.has(field.key) ? moneyFieldContext(field) : null;
+                      const moneyHintId = `money-hint-${create.type}-${field.key}`;
                       return (
                 <Wrapper className={`input-field${fieldDisabled ? ' disabled' : ''}`} key={field.key}>
                   {field.type !== 'checkbox' && (
@@ -3228,17 +3277,27 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                     );
                   })()
                   : MONEY_FIELDS.has(field.key) ? (
-                    <div className="money-input">
-                      <span className="rp">Rp</span>
-                      <input
-                        type="text"
-                        disabled={fieldDisabled}
-                        inputMode="numeric"
-                        value={groupThousands(form[field.key])}
-                        placeholder={field.placeholder || '0'}
-                        onChange={(event) => setForm({ ...form, [field.key]: event.target.value.replace(/\D/g, '') })}
-                        required={fieldIsRequired(field, form)}
-                      />
+                    <div className="money-field-body">
+                      <div className="money-input">
+                        <span className="rp">Rp</span>
+                        <input
+                          type="text"
+                          disabled={fieldDisabled}
+                          inputMode="numeric"
+                          value={groupThousands(form[field.key])}
+                          placeholder={field.placeholder || '0'}
+                          aria-describedby={moneyContext || field.hint ? moneyHintId : undefined}
+                          onChange={(event) => setForm({ ...form, [field.key]: event.target.value.replace(/\D/g, '') })}
+                          required={fieldIsRequired(field, form)}
+                        />
+                      </div>
+                      {(moneyContext || field.hint) && (
+                        <small className="money-field-hint" id={moneyHintId}>
+                          {moneyContext?.text && <span>{moneyContext.text}</span>}
+                          {field.hint && <span>{field.hint}</span>}
+                          {moneyContext?.warning && <strong>{moneyContext.warning}</strong>}
+                        </small>
+                      )}
                     </div>
                   ) : (
                     // Field bersaran memakai dropdown milik aplikasi (bukan <datalist> bawaan

@@ -109,6 +109,16 @@ export function useTransactions() {
   return { ...result, data };
 }
 
+/** Seluruh cicilan kartu kredit, termasuk yang berasal dari periode arsip. */
+export function useInstallments() {
+  const result = useCollection<Transaction>(r => r.installments);
+  const data = useMemo(
+    () => [...result.data].sort((a, b) => +new Date(b.date) - +new Date(a.date)),
+    [result.data],
+  );
+  return { ...result, data };
+}
+
 /** Transaksi untuk periode yang dipilih; tanpa id, gunakan periode berjalan. */
 export function usePeriodTransactions(periodId?: string | null) {
   const result = useTransactions();

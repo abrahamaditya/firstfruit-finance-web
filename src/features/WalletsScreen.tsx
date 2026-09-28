@@ -687,7 +687,13 @@ export default function WalletsScreen() {
         );
       })}
 
-      <div className="sec"><span className="t">{t('wallets.liabilityCredit')}</span><button className="addg" onClick={() => ui.openCreate('wallet')}><Plus />{t('common.add')}</button></div>
+      <div className="sec">
+        <span className="t">{t('wallets.liabilityCredit')}</span>
+        <div className="wallet-credit-actions">
+          <button className="addg" onClick={() => ui.go('installments')}><ListIcon />{t('nav.installments')}</button>
+          <button className="addg" onClick={() => ui.openCreate('wallet')}><Plus />{t('common.add')}</button>
+        </div>
+      </div>
       {credit.length === 0 && (
         <div className="saving-empty">{t('wallets.creditEmpty')}</div>
       )}

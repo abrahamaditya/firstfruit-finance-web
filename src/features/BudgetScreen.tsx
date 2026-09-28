@@ -1,14 +1,65 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useBudgets, useDashboard, usePeriodTransactions } from '../application/hooks';
-import { Check, Chevron, Plus, Warn } from '../components/ui/icons';
+import { useBudgets, useDashboard, useInstallments, usePeriodTransactions, usePeriods } from '../application/hooks';
+import { installmentDuesForPeriod, type InstallmentDue } from '../core/domain/installment-schedule';
+import { Card, Check, Chevron, Plus, Warn } from '../components/ui/icons';
+
+function InstallmentBudgetSection({
+  title, detail, dues, future,
+}: {
+  title: string;
+  detail?: string;
+  dues: InstallmentDue[];
+  future?: boolean;
+}) {
+  const ui = useUI();
+  const money = useMoney();
+  const t = useT();
+  const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
+  const total = dues.reduce((sum, due) => sum + due.amount, 0);
+  const unpaid = dues.filter((due) => !due.paid).reduce((sum, due) => sum + due.amount, 0);
+  return (
+    <section className="installment-budget-section">
+      <div className="sec"><span className="t">{title}</span></div>
+      <div className="installment-budget-card">
+        <div className="installment-budget-summary">
+          <div><b>{money.fmt(future ? unpaid : total)}</b><small>{detail}</small></div>
+          <span>{dues.length} {t('budget.installmentCount')}</span>
+        </div>
+        {dues.length > 0 ? dues.map((due) => (
+          <button
+            type="button"
+            className="installment-budget-row"
+            key={due.id}
+            onClick={() => ui.openItem(due.title, 'transaksi', due.transactionId)}
+          >
+            <span className="installment-budget-icon"><Card /></span>
+            <span className="installment-budget-name">
+              <b>{due.title}</b>
+              <small>
+                {new Date(`${due.dueDate}T12:00:00`).toLocaleDateString(locale, {
+                  day: 'numeric', month: 'short', year: 'numeric',
+                })} · {due.number}/{due.tenor}
+                {due.paid && ` · ${t('installments.paid')}`}
+              </small>
+            </span>
+            <strong>{money.fmt(due.amount)}</strong>
+          </button>
+        )) : <p className="installment-budget-empty">{t('budget.noInstallments')}</p>}
+        <p className="installment-budget-note">{t('budget.installmentAccounting')}</p>
+      </div>
+    </section>
+  );
+}
 
 export default function BudgetScreen() {
   const ui = useUI();
   const money = useMoney();
   const t = useT();
   const { budgets: allBudgets } = useBudgets();
+  const { data: installments } = useInstallments();
+  const { periods } = usePeriods();
   const { data: transactions, period: viewedPeriod } = usePeriodTransactions(ui.periodId);
   const d = useDashboard();
   const [expandedBudgetId, setExpandedBudgetId] = React.useState<string | null>(null);
@@ -20,9 +71,50 @@ export default function BudgetScreen() {
         .filter(budget => budget.periodId === viewedPeriodId)
         .sort((a, b) => a.category.localeCompare(b.category, locale, { sensitivity: 'base' }))
     : [];
-  const allocated = budgets.reduce((s, b) => s + b.allocated, 0);
-  const spent = budgets.reduce((s, b) => s + b.spent, 0);
+  const currentDues = viewedPeriod && viewedPeriod.status !== 'closed'
+    ? installmentDuesForPeriod(installments, viewedPeriod)
+    : [];
+  const followingDraft = viewedPeriod && !isArchive
+    ? periods.filter((period) => period.status === 'draft'
+        && period.start.slice(0, 10) > viewedPeriod.end.slice(0, 10))
+      .sort((a, b) => a.start.localeCompare(b.start))[0]
+    : undefined;
+  const nextStart = viewedPeriod ? new Date(viewedPeriod.end.slice(0, 10) + 'T12:00:00Z') : null;
+  nextStart?.setUTCDate(nextStart.getUTCDate() + 1);
+  const nextEnd = nextStart ? (() => {
+    const year = nextStart.getUTCFullYear();
+    const month = nextStart.getUTCMonth();
+    const lastDay = new Date(Date.UTC(year, month + 2, 0)).getUTCDate();
+    return new Date(Date.UTC(year, month + 1, Math.min(nextStart.getUTCDate(), lastDay) - 1, 12));
+  })() : null;
+  const nextPeriod = followingDraft ?? (nextStart && nextEnd ? {
+    start: nextStart.toISOString(), end: nextEnd.toISOString(),
+  } : null);
+  const nextDues = !isArchive && nextPeriod
+    ? installmentDuesForPeriod(installments, nextPeriod).filter((due) => !due.paid)
+    : [];
+  const hasInstallmentDues = currentDues.length + nextDues.length > 0;
+  const nextRange = nextPeriod
+    ? `${new Date(nextPeriod.start).toLocaleDateString(locale, { day: 'numeric', month: 'short' })} – `
+      + new Date(nextPeriod.end).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
+    : '';
+  const installmentSections = <>
+    {currentDues.length > 0 && (
+      <InstallmentBudgetSection title={t('budget.installmentsCurrent')} dues={currentDues}
+        detail={t('budget.installmentsCurrentDetail')} />
+    )}
+    {nextDues.length > 0 && (
+      <InstallmentBudgetSection title={t('budget.installmentsNext')} dues={nextDues} future
+        detail={nextRange} />
+    )}
+  </>;
+  const manualAllocated = budgets.reduce((s, b) => s + b.allocated, 0);
+  const manualSpent = budgets.reduce((s, b) => s + b.spent, 0);
+  const allocated = manualAllocated + currentDues.reduce((sum, due) => sum + due.amount, 0);
+  const spent = manualSpent + currentDues.filter((due) => due.paid)
+    .reduce((sum, due) => sum + due.amount, 0);
   const remaining = allocated - spent;
+  const manualRemaining = manualAllocated - manualSpent;
   const progress = allocated ? Math.round((spent / allocated) * 100) : 0;
   const transactionsByBudget = React.useMemo(() => transactions.reduce((groups, transaction) => {
     if (!transaction.budgetId) return groups;
@@ -36,11 +128,11 @@ export default function BudgetScreen() {
   const daysLeft = Math.max(1, d.progress?.daysLeft ?? 1);
   const dayOf = d.progress?.dayOf ?? 0;
   const totalDays = d.progress?.totalDays ?? 30;
-  const perDay = Math.round(remaining / daysLeft);
+  const perDay = Math.round(manualRemaining / daysLeft);
   const perWeek = perDay * 7;
   // Pace: sudah pakai berapa persen dibanding porsi hari yang sudah lewat.
-  const idealSpent = totalDays ? allocated * (dayOf / totalDays) : 0;
-  const paceDiff = spent - idealSpent;
+  const idealSpent = totalDays ? manualAllocated * (dayOf / totalDays) : 0;
+  const paceDiff = manualSpent - idealSpent;
   const onTrack = paceDiff <= 0;
 
   if (budgets.length === 0) {
@@ -48,17 +140,18 @@ export default function BudgetScreen() {
       <>
         <div className="shero">
           <div className="sl">{t('budget.allocated')} · {viewedPeriod?.alias ?? d.period?.alias}</div>
-          <div className="sa">{money.fmt(0)}</div>
+          <div className="sa">{money.fmt(allocated)}</div>
         </div>
-        <div className="empty-state budget-empty-screen">
-          <b>{t('budget.emptyTitle')}</b>
-          <span>{t('budget.emptyBody')}</span>
+        <div className={`empty-state budget-empty-screen${hasInstallmentDues ? ' compact' : ''}`}>
+          <b>{t(hasInstallmentDues ? 'budget.emptyManualTitle' : 'budget.emptyTitle')}</b>
+          <span>{t(hasInstallmentDues ? 'budget.emptyManualBody' : 'budget.emptyBody')}</span>
           {!isArchive && (
             <button className="cta compact" onClick={() => ui.openCreate('budget')}>
               <Plus />{t('common.add')}
             </button>
           )}
         </div>
+        {installmentSections}
       </>
     );
   }
@@ -95,12 +188,13 @@ export default function BudgetScreen() {
           <div><span>{t('budget.perWeek')}</span><b className={perWeek < 0 ? 'negative' : ''}>{money.fmt(Math.max(0, perWeek))}</b></div>
         </div>
         <div className={`pace-note${onTrack ? ' ok' : ' warn'}`}>
-          {remaining < 0
-            ? t('budget.paceOver', { amount: money.fmt(-remaining) })
+          {manualRemaining < 0
+            ? t('budget.paceOver', { amount: money.fmt(-manualRemaining) })
             : onTrack
               ? t('budget.paceOk', { amount: money.fmt(Math.round(-paceDiff)) })
               : t('budget.paceFast', { amount: money.fmt(Math.round(paceDiff)) })}
         </div>
+        {currentDues.length > 0 && <small className="pace-scope-note">{t('budget.dailyExcludesInstallments')}</small>}
       </div>
       </>}
 
@@ -174,6 +268,7 @@ export default function BudgetScreen() {
           </div>
         ))}
       </div>
+      {installmentSections}
     </>
   );
 }

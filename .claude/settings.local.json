@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(npx eslint *)",
+      "Bash(npm run *)",
+      "Bash(node -e ' *)",
+      "Bash(awk 'NR>=880 && NR<=916 && /@media|^}/ {print NR\": \"$0}' src/app/globals.css)",
+      "Bash(awk -F: '$1<930')",
+      "Bash(timeout 90 npx supabase migration list --linked)",
+      "Bash(timeout 90 npx supabase functions list)",
+      "Bash(timeout 90 npx supabase secrets list)",
+      "Bash(timeout 60 npx supabase inspect db --help)",
+      "Bash(node run.js)"
+    ]
+  }
+}
