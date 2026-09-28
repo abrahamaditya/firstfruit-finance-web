@@ -56,7 +56,7 @@ select public.post_transaction_with_benefit_scope(jsonb_build_object(
   'idempotency_key', '10000000-0000-4000-8000-000000000003',
   'type', 'expense',
   'nature', 'planned',
-  'amount_minor', 300000,
+  'amount_minor', 150000,
   'occurred_at', now(),
   'source_wallet_id', (select id from public.wallets where name = 'Kartu Alokasi'),
   'category_name', 'Installment format test',
@@ -100,7 +100,7 @@ select is(
 
 select is(
   (select current_balance_minor from public.wallets where name = 'Kartu Alokasi'),
-  300000::bigint,
+  150000::bigint,
   'paying the old statement leaves current-period card spending untouched'
 );
 
@@ -153,7 +153,7 @@ select is(
 
 select is(
   (select current_balance_minor from public.wallets where name = 'Kartu Alokasi'),
-  300000::bigint,
+  150000::bigint,
   'editing allocation does not change the payment or wallet balance'
 );
 

@@ -1,22 +1,24 @@
 'use client';
 
 import React, { useState } from 'react';
-import { useBudgets, useDashboard, useTransactions } from '../application/hooks';
+import { useBudgets, useDashboard, useTransactions, useInstallments, usePeriods } from '../application/hooks';
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { Chevron, Download, TrendUp } from '../components/ui/icons';
 import { addDays, dayKey, startOfDay } from '../core/domain/calendar';
 import {
   actualExpenseAmount,
-  creditObligationBreakdown,
   isActualExpense,
   isActualIncome,
   isIncome,
 } from '../core/domain/calculations';
+import { creditLimitBreakdown } from '../core/domain/installment-pricing';
 import { categoryPath } from '../core/domain/categories';
 import {
   categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
-  projectedSpending, runwayDays, transactionPath, weekdayPattern,
+  runwayDays, transactionPath, weekdayPattern,
 } from '../core/domain/report-insights';
+import { forecastBudgetRealization, periodPatterns } from '../core/domain/period-patterns';
+import PeriodPatternsScreen from './PeriodPatternsScreen';
 import type { Transaction, TransactionBenefitScope } from '../core/domain/types';
 
 type Range = 'daily' | 'activePeriod' | '3months' | '6months';
@@ -114,9 +116,12 @@ export default function ReportsScreen() {
   };
   const t = useT();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const { data: allTransactions } = useTransactions();
-  const { budgets } = useBudgets();
+  const { data: allTransactions, loading: transactionsLoading } = useTransactions();
+  const { data: allInstallments } = useInstallments();
+  const { budgets, loading: budgetsLoading } = useBudgets();
+  const { periods, loading: periodsLoading } = usePeriods();
   const dashboard = useDashboard();
+  const [section, setSection] = useState<'overview' | 'patterns'>('overview');
   const [range, setRange] = useState<Range>('activePeriod');
   const [flow, setFlow] = useState<Flow>('expense');
   const [openSector, setOpenSector] = useState<string | null>(null);
@@ -328,20 +333,8 @@ export default function ReportsScreen() {
     0,
   );
   const totalCreditLimit = creditWallets.reduce((sum, wallet) => sum + (wallet.creditLimit ?? 0), 0);
-  const activeCreditTransactions = dashboard.period
-    ? allTransactions.filter((transaction) => {
-      if (transaction.periodId) return transaction.periodId === dashboard.period?.id;
-      const at = new Date(transaction.date);
-      const start = startOfDay(new Date(dashboard.period!.start));
-      const endExclusive = addDays(startOfDay(new Date(dashboard.period!.end)), 1);
-      return at >= start && at < endExclusive;
-    })
-    : transactions;
   const creditLimitRemaining = creditWallets.reduce(
-    (sum, wallet) => sum + Math.max(
-      0,
-      (wallet.creditLimit ?? 0) - creditObligationBreakdown([wallet], activeCreditTransactions).total,
-    ),
+    (sum, wallet) => sum + creditLimitBreakdown(wallet, allInstallments).available,
     0,
   );
   const installments = creditExpenses.filter(transaction => transaction.installmentTenorMonths);
@@ -357,8 +350,8 @@ export default function ReportsScreen() {
   // ===== Realisasi anggaran & proyeksi =====
   const budgetRows = [...activeBudgets].sort((a, b) => b.spent - a.spent);
   const progress = range === 'activePeriod' ? dashboard.progress : null;
-  const projected = progress && progress.dayOf > 0 && progress.dayOf < progress.totalDays
-    ? projectedSpending(spending, progress.dayOf, progress.totalDays)
+  const projected = dashboard.period && progress
+    ? forecastBudgetRealization(dashboard.period, today, activeBudgets, periods, budgets, allTransactions)
     : null;
 
   // Saldo historis direkonstruksi dari likuiditas saat ini dengan membalik delta kas.
@@ -522,8 +515,27 @@ export default function ReportsScreen() {
     ui.notify(t('reports.exported'));
   };
 
+  const reportSections = (
+    <div className="report-section-switch" role="group" aria-label={t('reports.sectionLabel')}>
+      <button type="button" aria-pressed={section === 'overview'}
+        className={section === 'overview' ? 'on' : ''} onClick={() => setSection('overview')}>
+        {t('reports.sectionOverview')}
+      </button>
+      <button type="button" aria-pressed={section === 'patterns'}
+        className={section === 'patterns' ? 'on' : ''} onClick={() => setSection('patterns')}>
+        {t('reports.sectionPatterns')}
+      </button>
+    </div>
+  );
+
+  if (section === 'patterns') return (
+    <>{reportSections}<PeriodPatternsScreen patterns={periodPatterns(periods, allTransactions, budgets)}
+      loading={transactionsLoading || budgetsLoading || periodsLoading} /></>
+  );
+
   return (
     <>
+      {reportSections}
       <div className="report-actions">
         <div className="filter-pills report-range">
           {rangeOptions.map(([value, label]) => (
@@ -1185,15 +1197,21 @@ export default function ReportsScreen() {
       {budgetRows.length > 0 && (
         <>
           <div className="sec">
-            <span className="t">{t('reports.budgetRealization')}</span>
-            <span className="daily-avg">{budgetUsage}% {t('reports.ofSpending')}</span>
+            <span className="t">{t('reports.budgetRealization')}{dashboard.period ? ` · ${dashboard.period.alias}` : ''}</span>
+            <span className="daily-avg">{budgetUsage}% {t('reports.ofAllocation')}</span>
           </div>
           <div className="breakdown-card">
             {projected != null && (
-              <div className={`projection-note${projected > totalBudget && totalBudget > 0 ? ' over' : ''}`}>
+              <div className={`projection-note${projected.total > totalBudget && totalBudget > 0 ? ' over' : ''}`}>
                 <span>{t('reports.projection')}</span>
-                <b>{money.fmtCompact(projected)}</b>
-                <small>{t('reports.projectionNote')}</small>
+                <b>{money.fmtCompact(projected.total)}</b>
+                <small>{projected.historicalCategories > 0
+                  ? t('reports.projectionHistory', {
+                    periods: projected.historicalPeriods,
+                    categories: projected.historicalCategories,
+                    fallback: projected.fallbackCategories,
+                  })
+                  : t('reports.projectionBudgetFallback')}</small>
               </div>
             )}
             {budgetRows.map((budget) => {

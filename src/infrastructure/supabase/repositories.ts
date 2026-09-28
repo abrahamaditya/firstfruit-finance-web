@@ -84,6 +84,14 @@ function mapTransaction(row: DbRow): Transaction {
     installmentInitialPaidMonths: row.installment_initial_paid_months == null
       ? undefined
       : amount(row.installment_initial_paid_months),
+    installmentItemTotal: row.installment_item_total_minor == null
+      ? undefined
+      : amount(row.installment_item_total_minor),
+    installmentInterestTotal: row.installment_interest_total_minor == null
+      ? undefined
+      : amount(row.installment_interest_total_minor),
+    installmentPricingMode: row.installment_pricing_mode === 'item_total' ? 'item_total'
+      : row.installment_pricing_mode === 'monthly' ? 'monthly' : undefined,
     settlesReceivableId: row.settles_receivable_id ?? undefined,
     adjustment: rawType === 'adjustment',
     adjustmentReason: rawType === 'adjustment' ? row.note ?? undefined : undefined,
@@ -286,6 +294,15 @@ export function createSupabaseRepositories(
       installment_paid_months: item.type === 'expense'
         ? item.installmentInitialPaidMonths ?? item.installmentPaidMonths ?? null
         : null,
+      installment_item_total_minor: item.type === 'expense'
+        ? item.installmentItemTotal ?? null
+        : null,
+      installment_interest_total_minor: item.type === 'expense'
+        ? item.installmentInterestTotal ?? null
+        : null,
+      installment_pricing_mode: item.type === 'expense'
+        ? item.installmentPricingMode ?? null
+        : null,
       installment_allocations: dbType === 'credit_payment'
         ? (item.creditPaymentInstallments ?? []).map((allocation) => ({
             installment_transaction_id: allocation.installmentTransactionId,
@@ -387,22 +404,22 @@ export function createSupabaseRepositories(
 
   const transactions: Repository<Transaction> = {
     async list() {
-      const { data, error } = await supabase
-        .from('v_transactions').select('*')
-        .eq('workspace_id', workspaceId)
-        // Urutannya harus mengikuti `occurred_at`, karena itulah tanggal yang dipakai
-        // layar transaksi untuk mengelompokkan per hari. Diurut menurut `created_at`,
-        // transaksi bertanggal mundur akan mendarat di antara tanggal yang lebih baru.
-        // Ini juga jalur indeks (workspace_id, occurred_at desc, id desc), sekaligus
-        // membuat batas 500 baris mengambil transaksi terbaru, bukan yang terakhir dicatat.
-        .order('occurred_at', { ascending: false })
-        // Sesama hari dipisah waktu pencatatan. Edit mempertahankan `created_at`
-        // transaksi pertama, sehingga card tidak meloncat hanya karena baru direvisi.
-        .order('created_at', { ascending: false })
-        .order('id', { ascending: false })
-        .limit(500);
-      throwIfError(error, 'Gagal memuat transaksi');
-      return (data ?? []).map(mapTransaction);
+      const pageSize = 500;
+      const all: Transaction[] = [];
+      for (let offset = 0; ; offset += pageSize) {
+        const { data, error } = await supabase
+          .from('v_transactions').select('*')
+          .eq('workspace_id', workspaceId)
+          // Urutan stabil penting untuk paging dan tanggal transaksi yang dimundurkan.
+          .order('occurred_at', { ascending: false })
+          .order('created_at', { ascending: false })
+          .order('id', { ascending: false })
+          .range(offset, offset + pageSize - 1);
+        throwIfError(error, 'Gagal memuat transaksi');
+        all.push(...(data ?? []).map(mapTransaction));
+        if ((data ?? []).length < pageSize) break;
+      }
+      return all;
     },
     async get(id) {
       const { data, error } = await supabase
@@ -437,6 +454,40 @@ export function createSupabaseRepositories(
       const before = await transactions.get(id);
       if (!before) throw new Error('Transaksi tidak ditemukan');
       const next = { ...before, ...patch };
+      const pricingOnly = Boolean(before.installmentTenorMonths && next.installmentTenorMonths)
+        && before.type === next.type
+        && before.nature === next.nature
+        && before.walletId === next.walletId
+        && before.toWalletId === next.toWalletId
+        && before.savingId === next.savingId
+        && before.labels.at(-1) === next.labels.at(-1)
+        && before.budgetId === next.budgetId
+        && (before.benefitScope ?? 'self') === (next.benefitScope ?? 'self')
+        && (before.note ?? '').trim() === (next.note ?? '').trim()
+        && before.recipient === next.recipient
+        && before.owedAmount === next.owedAmount
+        && before.settlesReceivableId === next.settlesReceivableId
+        && before.date.slice(0, 10) === next.date.slice(0, 10)
+        && before.installmentTenorMonths === next.installmentTenorMonths
+        && (before.installmentInitialPaidMonths ?? 0) === (patch.installmentPaidMonths ?? before.installmentInitialPaidMonths ?? 0)
+        && (next.installmentPricingMode === 'item_total' || before.amount === next.amount);
+      if (pricingOnly && next.installmentItemTotal != null) {
+        const { error } = await supabase.rpc('update_installment_pricing', {
+          p_payload: {
+            workspace_id: workspaceId,
+            transaction_id: id,
+            item_total_minor: next.installmentItemTotal,
+            interest_total_minor: next.installmentInterestTotal ?? 0,
+            pricing_mode: next.installmentPricingMode ?? 'monthly',
+          },
+        });
+        throwIfError(error, 'Gagal memperbarui harga dan bunga cicilan');
+        return (await transactions.get(id))!;
+      }
+      if (before.installmentTenorMonths
+        && (before.installmentPaidMonths ?? 0) > (before.installmentInitialPaidMonths ?? 0)) {
+        throw new Error('Cicilan ini sudah memiliki pembayaran. Ubah hanya rincian harga barang dan bunga agar progresnya tetap terjaga.');
+      }
       if (before.creditPaymentInstallments !== undefined) {
         const { error } = await supabase.rpc('update_credit_payment_installments', {
           p_payload: {

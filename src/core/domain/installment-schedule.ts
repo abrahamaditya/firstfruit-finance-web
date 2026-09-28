@@ -1,4 +1,5 @@
 import type { BudgetPeriod, Transaction } from './types';
+import { installmentPaymentAmount } from './installment-pricing';
 
 export interface InstallmentDue {
   id: string;
@@ -32,8 +33,7 @@ export function installmentDuesForPeriod(
     if (tenor < 2 || transaction.amount <= 0) return [];
     const initialPaid = Math.min(tenor, Math.max(0, transaction.installmentInitialPaidMonths ?? 0));
     const completed = Math.min(tenor, Math.max(initialPaid, transaction.installmentPaidMonths ?? 0));
-    const base = Math.floor(transaction.amount / tenor);
-    const extra = transaction.amount % tenor;
+    if (completed >= tenor) return [];
     const title = (transaction.note || transaction.merchant || 'Cicilan kartu kredit')
       .replace(/\s*\(cicilan\s*\d+\s*\/\s*\d+\)\s*$/i, '').trim();
     const dues: InstallmentDue[] = [];
@@ -48,7 +48,7 @@ export function installmentDuesForPeriod(
         dueDate,
         number,
         tenor,
-        amount: base + Number(number <= extra),
+        amount: installmentPaymentAmount(transaction, number),
         paid: number <= completed,
       });
     }
@@ -61,8 +61,6 @@ export function nextUnpaidInstallment(transaction: Transaction): InstallmentDue 
   const completed = Math.max(0, transaction.installmentPaidMonths ?? 0);
   if (tenor < 2 || completed >= tenor) return null;
   const number = completed + 1;
-  const base = Math.floor(transaction.amount / tenor);
-  const extra = transaction.amount % tenor;
   return {
     id: `${transaction.id}:${number}`,
     transactionId: transaction.id,
@@ -71,7 +69,7 @@ export function nextUnpaidInstallment(transaction: Transaction): InstallmentDue 
     dueDate: installmentDueDate(transaction.date, number),
     number,
     tenor,
-    amount: base + Number(number <= extra),
+    amount: installmentPaymentAmount(transaction, number),
     paid: false,
   };
 }

@@ -1,10 +1,11 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { usePeriodTransactions, useWallets, useSavings } from '../application/hooks';
+import { usePeriodTransactions, useWallets, useSavings, useInstallments } from '../application/hooks';
 import { ArrowLeft, CardChip, ChevronR, Down, Eye, EyeOff, ListIcon, Pencil, Plus, TransferCard, Up, WalletIcon } from '../components/ui/icons';
 import type { Transaction, Wallet } from '../core/domain/types';
 import { creditObligationBreakdown, isActualIncome, isWalletIncome } from '../core/domain/calculations';
+import { creditLimitBreakdown } from '../core/domain/installment-pricing';
 import { walletCardTheme } from '../core/wallet-card-theme';
 import { walletBrandLogo, walletNetworkLogo, walletProductInitial } from '../core/wallet-branding';
 import { walletProduct } from '../core/wallet-products';
@@ -29,6 +30,7 @@ export default function WalletsScreen() {
   const t = useT();
   const { wallets } = useWallets();
   const { savings, reservedIn } = useSavings();
+  const { data: installments } = useInstallments();
   const { data: transactions, period: viewedPeriod, isArchive } = usePeriodTransactions(ui.periodId);
   const mediumRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
   const byCategoryThenName = (a: typeof wallets[number], b: typeof wallets[number]) =>
@@ -210,18 +212,12 @@ export default function WalletsScreen() {
   const previousCreditBill = current?.kind === 'credit'
     ? current.previousPeriodBill ?? 0
     : 0;
-  // Pemakaian limit mengikuti siklus tagihan, bukan proyeksi saldo kartu yang
-  // bisa saja pernah disesuaikan manual: tagihan pembuka dikurangi pelunasan,
-  // lalu ditambah belanja pada periode ini.
-  const creditLimitUsed = current?.kind === 'credit'
-    ? Math.max(0, previousCreditBill - creditPaymentPeriod + actualExpensePeriod)
-    : 0;
-  const creditAvailable = current?.kind === 'credit'
-    ? Math.max(0, (current.creditLimit ?? 0) - creditLimitUsed)
-    : 0;
+  const currentCreditLimit = current?.kind === 'credit'
+    ? creditLimitBreakdown(current, installments) : null;
+  const creditAvailable = currentCreditLimit?.available ?? 0;
   const creditLiabilityForCard = (wallet: typeof cards[number]) =>
     wallet.kind === 'credit'
-      ? creditObligationBreakdown([wallet], transactions).total
+      ? creditLimitBreakdown(wallet, installments).used
       : 0;
   const creditAvailableForCard = (wallet: typeof cards[number]) => {
     if (wallet.kind !== 'credit') return wallet.balance;
@@ -520,7 +516,7 @@ export default function WalletsScreen() {
           <div className="wallet-insight-grid wallet-balance-grid">
             {current.kind === 'credit' ? <>
               <div><span>Tagihan periode sebelumnya</span><b className="out">{money.fmt(previousCreditBill)}</b><small>Nilai tetap; tidak dipengaruhi transaksi periode ini</small></div>
-              <div><span>Sisa limit</span><b>{money.fmt(creditAvailable)}</b><small>Limit − (tagihan sebelumnya − pelunasan + pengeluaran periode ini)</small></div>
+              <div><span>Sisa limit</span><b>{money.fmt(creditAvailable)}</b><small>Limit − kewajiban kartu, termasuk {money.fmt(currentCreditLimit?.installmentRemaining ?? 0)} sisa cicilan lintas periode</small></div>
             </> : <>
               <div><span>Saldo</span><b>{money.fmt(current.balance)}</b><small>Total dana di dompet ini</small></div>
               <div><span>Tersedia</span><b>{money.fmt(current.balance - currentReserved)}</b><small>Saldo setelah dikurangi tabungan</small></div>

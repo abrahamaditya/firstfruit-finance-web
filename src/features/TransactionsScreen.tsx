@@ -5,7 +5,7 @@ import { useUI, useMoney, useT } from '../components/AppShell';
 import { usePeriodTransactions, useSavings, useWallets } from '../application/hooks';
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
-import { categoryTone } from '../core/domain/categories';
+import { GIVING_LABELS_ID, categoryPath, categoryTone } from '../core/domain/categories';
 import { isActualIncome } from '../core/domain/calculations';
 
 export default function TransactionsScreen() {
@@ -52,7 +52,7 @@ export default function TransactionsScreen() {
     `${type === 'income' ? '+' : type === 'expense' ? '-' : ''}${money.fmt(amount)}`;
   const [filter, setFilter] = useState<'all' | 'expense' | 'income' | 'actualIncome' | 'transfer'>('all');
   const [wallet, setWallet] = useState('all');
-  const [category, setCategory] = useState('all');
+  const [selectedCategoryTrail, setSelectedCategoryTrail] = useState<string[]>([]);
   const [query, setQuery] = useState('');
   const deferredQuery = useDeferredValue(query.toLowerCase());
 
@@ -86,24 +86,55 @@ export default function TransactionsScreen() {
   const matchesWallet = (transaction: { walletId: string; toWalletId?: string }) =>
     activeWallet === 'all' || transaction.walletId === activeWallet || transaction.toWalletId === activeWallet;
 
-  // Kategori menyaring lebih lanjut hasil jenis + dompet, jadi angkanya selalu cocok
-  // dengan daftar yang sedang tampak.
+  // Tiap tingkat kategori dihitung dari hasil jenis + dompet yang sedang dipilih.
   const scoped = byType.filter(matchesWallet);
-  const categoryCounts = new Map<string, number>();
-  scoped.forEach((transaction) =>
-    transaction.labels.forEach((label) => categoryCounts.set(label, (categoryCounts.get(label) || 0) + 1)),
+  const categoryTrailOf = (transaction: typeof data[number]) => categoryPath(
+    transaction.labels.at(-1) ?? '',
+    transaction.type === 'income' ? 'income' : 'expense',
   );
-  const categories = [...categoryCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  const activeCategory = categoryCounts.has(category) ? category : 'all';
+  const matchesCategoryTrail = (transaction: typeof data[number], trail: string[]) => {
+    const transactionTrail = categoryTrailOf(transaction);
+    return trail.every((part, index) => transactionTrail[index] === part);
+  };
+  const categoryChoices = (parent: string[]): Array<[string, number]> => {
+    const counts = new Map<string, number>();
+    scoped.forEach((transaction) => {
+      const trail = categoryTrailOf(transaction);
+      if (parent.every((part, index) => trail[index] === part) && trail[parent.length]) {
+        const name = trail[parent.length];
+        counts.set(name, (counts.get(name) ?? 0) + 1);
+      }
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], locale));
+  };
+  const activeCategoryTrail: string[] = [];
+  for (const name of selectedCategoryTrail) {
+    if (!categoryChoices(activeCategoryTrail).some(([choice]) => choice === name)) break;
+    activeCategoryTrail.push(name);
+  }
+  const categoryLevels: Array<{ parent: string[]; choices: Array<[string, number]> }> = [
+    { parent: [], choices: categoryChoices([]) },
+  ];
+  activeCategoryTrail.forEach((_, index) => {
+    const parent = activeCategoryTrail.slice(0, index + 1);
+    const choices = categoryChoices(parent);
+    if (choices.length > 0) categoryLevels.push({ parent, choices });
+  });
+  const displayCategory = (name: string, parent: string[] = []) =>
+    ui.prefs.language === 'EN' || parent[0] !== 'Giving' ? name : GIVING_LABELS_ID[name] ?? name;
   // Nominal bisa dicari dengan format apa pun yang umum diketik pengguna: 30000,
   // 30.000, 30,000, atau Rp30.000 semuanya menjadi 30000.
   const amountQuery = deferredQuery.replace(/\D/g, '');
 
   const visible = scoped.filter((transaction) => {
-    const matchesText = `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${walletName(transaction.walletId) || ''} ${walletName(transaction.toWalletId) || ''} ${savingName(transaction.savingId) || ''} ${money.fmt(transaction.amount)}`
+    const categoryTrail = categoryTrailOf(transaction);
+    const translatedCategory = categoryTrail
+      .map((name, index) => displayCategory(name, categoryTrail.slice(0, index)))
+      .join(' ');
+    const matchesText = `${transaction.note} ${transaction.merchant || ''} ${transaction.labels.join(' ')} ${translatedCategory} ${walletName(transaction.walletId) || ''} ${walletName(transaction.toWalletId) || ''} ${savingName(transaction.savingId) || ''} ${money.fmt(transaction.amount)}`
       .toLowerCase().includes(deferredQuery);
     const matchesAmount = amountQuery.length > 0 && String(transaction.amount).includes(amountQuery);
-    return (activeCategory === 'all' || transaction.labels.includes(activeCategory))
+    return matchesCategoryTrail(transaction, activeCategoryTrail)
       && (matchesText || matchesAmount);
   });
   const groups: Record<string, typeof data> = {};
@@ -170,18 +201,44 @@ export default function TransactionsScreen() {
         </div>
       )}
 
-      {categories.length > 0 && (
-        <div className="filter-pills sub-filter">
-          <button className={activeCategory === 'all' ? 'on' : ''} onClick={() => setCategory('all')}>
-            {tr('tx.filterAllCategories')}
-            <span className="pill-count">{scoped.length}</span>
-          </button>
-          {categories.map(([name, count]) => (
-            <button key={name} className={activeCategory === name ? 'on' : ''} onClick={() => setCategory(name)}>
-              {name}
-              <span className="pill-count">{count}</span>
-            </button>
-          ))}
+      {categoryLevels[0].choices.length > 0 && (
+        <div className="tx-category-filters">
+          {categoryLevels.map(({ parent, choices }) => {
+            const depth = parent.length;
+            const heading = depth === 0 ? tr('tx.category')
+              : parent[0] === 'Giving'
+                ? depth === 1 ? tr('tx.givingType') : tr('tx.givingDetail')
+                : depth === 1 ? tr('tx.subcategory') : tr('tx.categoryDetail');
+            return (
+              <div className="tx-category-level" key={parent.join('/') || 'root'}>
+                <div className="tx-category-level-heading">
+                  <span>{heading}</span>
+                  {depth > 0 && <small>{parent.map((name, index) => displayCategory(name, parent.slice(0, index))).join(' › ')}</small>}
+                </div>
+                <div className="filter-pills sub-filter tx-category-level-pills" role="group" aria-label={heading}>
+                  <button
+                    className={activeCategoryTrail.length === depth ? 'on' : ''}
+                    aria-pressed={activeCategoryTrail.length === depth}
+                    onClick={() => setSelectedCategoryTrail(parent)}
+                  >
+                    {depth === 0 ? tr('tx.filterAllCategories') : `${tr('tx.filterAll')} ${displayCategory(parent.at(-1) ?? '', parent.slice(0, -1))}`}
+                    <span className="pill-count">{scoped.filter((transaction) => matchesCategoryTrail(transaction, parent)).length}</span>
+                  </button>
+                  {choices.map(([name, count]) => (
+                    <button
+                      key={name}
+                      className={activeCategoryTrail[depth] === name ? 'on' : ''}
+                      aria-pressed={activeCategoryTrail[depth] === name}
+                      onClick={() => setSelectedCategoryTrail([...parent, name])}
+                    >
+                      {displayCategory(name, parent)}
+                      <span className="pill-count">{count}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 

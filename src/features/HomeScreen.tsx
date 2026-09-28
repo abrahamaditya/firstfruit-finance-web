@@ -1,12 +1,13 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
-import { useActivePeriodTransactions, useDashboard, useSubscriptions, useReminders, useSavings } from '../application/hooks';
+import { useActivePeriodTransactions, useDashboard, useSubscriptions, useReminders, useSavings, useInstallments } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar, ChevronR } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
 import { isActualIncome } from '../core/domain/calculations';
 import { categoryTone } from '../core/domain/categories';
+import { creditLimitBreakdown } from '../core/domain/installment-pricing';
 
 const randomScramble = (value: string, lockedDigits = 0) => {
   let digitIndex = 0;
@@ -227,6 +228,7 @@ export default function HomeScreen() {
   const tr = useT();
   const d = useDashboard();
   const { data: txs } = useActivePeriodTransactions();
+  const { data: installments } = useInstallments();
   const { all: savings, reservedIn } = useSavings();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();
@@ -337,24 +339,8 @@ export default function HomeScreen() {
     <div className="home-wallet-set" aria-hidden={duplicate || undefined}>
       {walletBalances.map((wallet) => {
         const logo = walletBrandLogo(wallet);
-        const creditPeriodTransactions = wallet.kind === 'credit'
-          ? txs.filter((transaction) => transaction.walletId === wallet.id || transaction.toWalletId === wallet.id)
-          : [];
-        const creditExpense = creditPeriodTransactions
-          .filter((transaction) => !transaction.adjustment
-            && transaction.type === 'expense'
-            && transaction.walletId === wallet.id)
-          .reduce((sum, transaction) => sum + transaction.amount, 0);
-        const creditPayment = creditPeriodTransactions
-          .filter((transaction) => !transaction.adjustment
-            && transaction.type === 'transfer'
-            && transaction.toWalletId === wallet.id)
-          .reduce((sum, transaction) => sum + transaction.amount, 0);
         const displayBalance = wallet.kind === 'credit'
-          ? Math.max(0, (wallet.creditLimit ?? 0) - Math.max(
-            0,
-            (wallet.previousPeriodBill ?? 0) - creditPayment + creditExpense,
-          ))
+          ? creditLimitBreakdown(wallet, installments).available
           : wallet.balance - reservedIn(wallet.id);
         const amount = hidden
           ? '••••'

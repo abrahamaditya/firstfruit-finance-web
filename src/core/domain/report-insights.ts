@@ -241,15 +241,6 @@ export function groupBy(
   return [...totals.values()].sort((a, b) => b.total - a.total);
 }
 
-/**
- * Perkiraan total belanja sampai akhir periode dengan laju yang sedang berjalan.
- * Hanya masuk akal untuk periode yang belum lewat; pemanggil yang memutuskan.
- */
-export function projectedSpending(spentSoFar: number, daysElapsed: number, daysTotal: number) {
-  if (daysElapsed <= 0) return spentSoFar;
-  return Math.round((spentSoFar / daysElapsed) * daysTotal);
-}
-
 /** Berapa hari uang bertahan pada laju belanja sekarang. */
 export function runwayDays(liquidity: number, dailyBurn: number) {
   if (dailyBurn <= 0 || liquidity <= 0) return null;

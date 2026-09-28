@@ -61,12 +61,18 @@ next-env.d.ts
 !/supabase/migrations/202608300068_accept_credit_allocation_field_formats.sql
 !/supabase/migrations/202608300069_edit_credit_payment_allocations.sql
 !/supabase/migrations/202609280070_subscription_schedule_without_payment_fields.sql
+!/supabase/migrations/202609280071_installment_amount_is_monthly.sql
+!/supabase/migrations/202609280072_installment_pricing_and_credit_limit.sql
+!/supabase/migrations/202609280073_update_installment_pricing_metadata.sql
+!/supabase/migrations/202609280074_validate_monthly_installment_allocation.sql
 !/supabase/tests/
 /supabase/tests/*
 !/supabase/tests/database/
 /supabase/tests/database/*
+!/supabase/tests/database/006_period_updates.test.sql
 !/supabase/tests/database/009_credit_card_balance_reconciliation.test.sql
 !/supabase/tests/database/010_credit_allocation_field_format.test.sql
+!/supabase/tests/database/011_installment_pricing.test.sql
 
 # Local database dumps and exports
 *.dump

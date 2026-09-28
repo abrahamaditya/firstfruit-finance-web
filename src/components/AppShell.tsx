@@ -21,12 +21,14 @@ import {
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { creditObligationBreakdown, periodProgress } from '../core/domain/calculations';
+import { creditLimitBreakdown, installmentPaidAmount, installmentQuote } from '../core/domain/installment-pricing';
 import { BudgetPeriod, CardNetwork, Transaction, Wallet, WalletKind, WalletMedium } from '../core/domain/types';
 import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
   CATEGORY_CUSTOM,
   CategoryOption,
+  GIVING_LABELS_ID,
   INCOME_TREE,
   PILLAR_EXPENSE_TREE,
   categoryPath,
@@ -177,7 +179,7 @@ const FX_KEY = 'abraham.fx';
 const FX_FALLBACK = 16000; // dipakai bila API & cache gagal
 
 // Field nominal uang: input diberi pemisah ribuan otomatis (digit mentah disimpan di state).
-const MONEY_FIELDS = new Set(['amount', 'balance', 'creditLimit', 'creditOutstanding', 'owed', 'target', 'saved', 'allocated', 'spent', 'share']);
+const MONEY_FIELDS = new Set(['amount', 'balance', 'creditLimit', 'creditOutstanding', 'owed', 'target', 'saved', 'allocated', 'spent', 'share', 'installmentItemTotal', 'installmentInterestTotal']);
 // Kapsul nominal cepat (menambah ke nilai saat ini).
 const QUICK_AMOUNTS = [50_000, 100_000, 500_000, 1_000_000, 5_000_000];
 
@@ -249,7 +251,11 @@ const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Informasi transaksi', keys: ['txType', 'date', 'amount'] },
   { title: 'Sumber dana', keys: ['walletId', 'toWalletId', 'savingId'] },
   { title: 'Pembayaran kartu', keys: ['creditPaymentSummary', 'paymentTag', 'creditPaymentInstallments'] },
-  { title: 'Cicilan kartu kredit', keys: ['isInstallment', 'installmentTenor', 'installmentPaidMonths', 'installmentRemainingMonths'] },
+  { title: 'Cicilan kartu kredit', keys: [
+    'isInstallment', 'installmentTenor', 'installmentPricingMode', 'installmentItemTotal',
+    'installmentInterestTotal', 'installmentItemComputed', 'installmentTotalComputed',
+    'installmentMonthlyComputed', 'installmentPaidMonths', 'installmentRemainingMonths',
+  ] },
   {
     title: 'Klasifikasi',
     keys: ['pillar', 'debtor', 'subCategory', 'categoryDetail', 'incomePillar', 'incomeCategory', 'receivableId'],
@@ -422,6 +428,15 @@ const toDateInput = (value?: string | null) =>
   value ? new Date(value).toISOString().slice(0, 10) : '';
 const toIso = (value: string) => new Date(`${value}T12:00:00`).toISOString();
 const toNumber = (value?: string) => Number((value || '0').replace(/[^\d.-]/g, '')) || 0;
+const quoteForInstallmentForm = (form: Record<string, string>) => {
+  const mode = form.installmentPricingMode === 'item_total' ? 'item_total' : 'monthly';
+  return installmentQuote(
+    mode,
+    toNumber(form.installmentTenor),
+    toNumber(mode === 'item_total' ? form.installmentItemTotal : form.amount),
+    toNumber(form.installmentInterestTotal),
+  );
+};
 
 /** Pecah opsi jadi rentetan berurutan per grup agar bisa dirender sebagai <optgroup>. */
 const groupOptions = (options: CategoryOption[] = []): Array<[string | undefined, CategoryOption[]]> =>
@@ -447,6 +462,9 @@ const EXPENSE_PILLAR_OPTIONS: CategoryOption[] = [
   { value: 'Savings', label: 'Savings — Tabungan & Investasi' },
   { value: 'Receivables', label: 'Receivables — Talangan yang Harus Kembali' },
 ];
+
+const givingCategoryIsComplete = (form: Record<string, string>) =>
+  (PILLAR_EXPENSE_TREE.Giving[form.subCategory] ?? []).includes(form.categoryDetail);
 
 const CATEGORY_KEYS = { l1: 'catL1', l2: 'catL2', l3: 'catL3', custom: 'catCustom' } as const;
 
@@ -477,7 +495,7 @@ const spreadCategory = (label?: string, txType?: string) => {
     pillar: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0]) ? path[0] : '',
     subCategory: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0]) ? path[1] ?? '' : '',
     categoryDetail: ['Needs', 'Wants', 'Giving', 'Savings', 'Receivables'].includes(path[0])
-      ? path[2] ?? (path[1] === 'Social' || path[1] === 'Giving' ? '' : 'none')
+      ? path[2] ?? (path[0] === 'Giving' || path[1] === 'Social' ? '' : 'none')
       : '',
     incomePillar: txType === 'income' ? path[0] ?? '' : '',
     incomeCategory: txType === 'income'
@@ -510,6 +528,9 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
     isInstallment: 'no',
     installmentTenor: '',
     installmentPaidMonths: '',
+    installmentPricingMode: 'monthly',
+    installmentItemTotal: '',
+    installmentInterestTotal: '0',
   };
   if (key === 'txType' && value !== form.txType) {
     return {
@@ -557,6 +578,9 @@ const applyFieldChange = (form: Record<string, string>, key: string, value: stri
       isInstallment: value,
       installmentTenor: value === 'yes' ? form.installmentTenor : '',
       installmentPaidMonths: value === 'yes' ? form.installmentPaidMonths : '',
+      installmentPricingMode: value === 'yes' ? form.installmentPricingMode || 'monthly' : 'monthly',
+      installmentItemTotal: value === 'yes' ? form.installmentItemTotal : '',
+      installmentInterestTotal: value === 'yes' ? form.installmentInterestTotal || '0' : '0',
     };
   }
   if (key === 'toWalletId') {
@@ -617,6 +641,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const selectedCreditCardRef = useRef('');
   const [transactionOptions, setTransactionOptions] = useState<Transaction[]>([]);
   const [transactionsLoaded, setTransactionsLoaded] = useState(false);
+  const [installmentOptions, setInstallmentOptions] = useState<Transaction[]>([]);
+  const [installmentsLoaded, setInstallmentsLoaded] = useState(false);
   const [formDraftReady, setFormDraftReady] = useState(false);
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
   const [walletsLoaded, setWalletsLoaded] = useState(false);
@@ -644,7 +670,15 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [rate, setRate] = useState(FX_FALLBACK);
   const [rateUpdated, setRateUpdated] = useState('');
   const appRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
   const formScrollRef = useRef<HTMLDivElement>(null);
+
+  // Semua layar memakai viewport yang sama, sehingga posisi gulir layar sebelumnya
+  // harus dibersihkan saat menu berganti. Layout effect mencegah layar baru sempat
+  // terlihat pada posisi lama, terutama ketika navigasi lewat bilah bawah mobile.
+  useLayoutEffect(() => {
+    if (viewportRef.current) viewportRef.current.scrollTop = 0;
+  }, [tab]);
 
   /**
    * Dropdown ditutup oleh satu sentuhan/klik di luar pembungkusnya.
@@ -1171,7 +1205,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             ],
           },
           { key: 'date', label: 'Hari/Tanggal', type: 'date' },
-          { key: 'amount', label: 'Jumlah nominal', type: 'number' },
+          {
+            key: 'amount', label: 'Jumlah nominal', type: 'number',
+            labelOf: (f) => usesCreditCard(f) && f.isInstallment === 'yes'
+              ? 'Tagihan cicilan per bulan' : 'Jumlah nominal',
+            showIf: (f) => !(usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode === 'item_total'),
+          },
           {
             key: 'walletId',
             label: 'Dompet / sumber dana',
@@ -1238,6 +1277,65 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
+            key: 'installmentPricingMode',
+            label: 'Angka yang sudah diketahui',
+            type: 'segmented',
+            options: [
+              { value: 'monthly', label: 'Cicilan/bulan' },
+              { value: 'item_total', label: 'Harga barang' },
+            ],
+            hint: 'Pilih salah satu; aplikasi menghitung angka lainnya. Bunga diisi sebagai total selama tenor.',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
+          },
+          {
+            key: 'installmentItemTotal',
+            label: 'Total harga barang sebelum bunga',
+            type: 'number',
+            placeholder: '0',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode === 'item_total',
+          },
+          {
+            key: 'installmentInterestTotal',
+            label: 'Total bunga selama tenor',
+            type: 'number',
+            placeholder: '0 jika tanpa bunga',
+            optional: true,
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
+          },
+          {
+            key: 'installmentItemComputed',
+            label: 'Perkiraan harga barang sebelum bunga',
+            type: 'computed',
+            computedValue: (f) => {
+              const quote = quoteForInstallmentForm(f);
+              return quote ? formatIDR(quote.itemTotal) : 'Isi cicilan, tenor, dan bunga yang valid';
+            },
+            hint: 'Dihitung dari cicilan per bulan × tenor − total bunga.',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode !== 'item_total',
+          },
+          {
+            key: 'installmentTotalComputed',
+            label: 'Total yang harus dibayar',
+            type: 'computed',
+            computedValue: (f) => {
+              const quote = quoteForInstallmentForm(f);
+              return quote ? formatIDR(quote.totalPayable) : 'Isi rincian cicilan terlebih dahulu';
+            },
+            hint: 'Harga barang + seluruh bunga; nilai inilah yang dihitung untuk pemakaian limit.',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
+          },
+          {
+            key: 'installmentMonthlyComputed',
+            label: 'Tagihan cicilan per bulan',
+            type: 'computed',
+            computedValue: (f) => {
+              const quote = quoteForInstallmentForm(f);
+              return quote ? formatIDR(quote.monthlyAmount) : 'Isi harga barang, bunga, dan tenor';
+            },
+            hint: 'Jika tidak habis dibagi tenor, selisih Rp1 dibagikan ke angsuran awal; angsuran terakhir bisa lebih kecil.',
+            showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode === 'item_total',
+          },
+          {
             key: 'installmentPaidMonths',
             label: 'Cicilan yang sudah lunas sebelum dicatat',
             type: 'number',
@@ -1276,6 +1374,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           {
             key: 'subCategory',
             label: 'Kategori 2 (Sub-kategori)',
+            labelOf: (f) => f.pillar === 'Giving' ? 'Jenis Giving' : 'Kategori 2 (Sub-kategori)',
             type: 'select',
             optionsOf: (f) => Object.keys(PILLAR_EXPENSE_TREE[f.pillar] ?? {})
               .map((name) => ({ value: name, label: name })),
@@ -1284,6 +1383,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           {
             key: 'categoryDetail',
             label: 'Kategori 3 / Sub-Field Khusus (Level Lanjutan)',
+            labelOf: (f) => f.pillar === 'Giving'
+              ? f.subCategory === 'Offerings' ? 'Jenis persembahan' : 'Tujuan taburan'
+              : 'Kategori 3 / Sub-Field Khusus (Level Lanjutan)',
             type: 'select',
             optionsOf: (f) => {
               const details = PILLAR_EXPENSE_TREE[f.pillar]?.[f.subCategory] ?? [];
@@ -1373,6 +1475,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           isInstallment: 'no',
           installmentTenor: '',
           installmentPaidMonths: '',
+          installmentPricingMode: 'monthly',
+          installmentItemTotal: '',
+          installmentInterestTotal: '0',
           note: '',
         },
       };
@@ -1460,13 +1565,16 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               type: 'computed',
               computedValue: (f) => {
                 const limit = toNumber(f.creditLimit);
-                const currentBill = create.isEdit ? toNumber(f.balance) : toNumber(f.creditOutstanding);
+                const current = walletOptions.find((wallet) => wallet.value === create.id);
+                const used = create.isEdit && current
+                  ? creditLimitBreakdown({ ...current.wallet, balance: toNumber(f.balance), creditLimit: limit }, installmentOptions).used
+                  : toNumber(f.creditOutstanding);
                 return limit > 0
-                  ? formatIDR(Math.max(0, limit - currentBill))
+                  ? formatIDR(Math.max(0, limit - used))
                   : 'Isi limit total terlebih dahulu';
               },
               hint: create.isEdit
-                ? 'Dihitung dari limit total dikurangi tagihan kartu saat ini.'
+                ? 'Dihitung dari limit total dikurangi saldo kartu dan seluruh sisa cicilan lintas periode.'
                 : 'Dihitung dari limit total dikurangi tagihan awal kartu.',
               showIf: (f) => f.medium === 'credit',
             },
@@ -1666,7 +1774,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       };
       return configs[type];
     },
-    [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions,
+    [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions, installmentOptions,
       noteSuggestions, debtorSuggestions, prefs.defaultWalletId, create.isEdit, activePeriod, numLocale],
   );
 
@@ -1804,10 +1912,13 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     // Anggaran berdiri sendiri dari kategori transaksi dan hanya dapat dipilih
     // oleh transaksi di periode aktif yang sama.
     setTransactionsLoaded(false);
-    Promise.all([repos.budgets.list(), repos.transactions.list(), repos.periods.list()])
-      .then(([budgets, txs, periods]) => {
+    setInstallmentsLoaded(false);
+    Promise.all([repos.budgets.list(), repos.transactions.list(), repos.installments.list(), repos.periods.list()])
+      .then(([budgets, txs, installments, periods]) => {
       setTransactionOptions(txs);
       setTransactionsLoaded(true);
+      setInstallmentOptions(installments);
+      setInstallmentsLoaded(true);
       const activePeriod = periods.find(period => period.status === 'open')
         ?? periods.find(period => period.status == null && !period.closed);
       const budgetSource = activePeriod
@@ -1985,6 +2096,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             if (field.key === 'includeBudget') value = record.budgetId ? 'yes' : 'no';
             if (field.key === 'isInstallment') value = record.installmentTenorMonths ? 'yes' : 'no';
             if (field.key === 'installmentTenor') value = record.installmentTenorMonths;
+            if (field.key === 'installmentPricingMode') value = record.installmentPricingMode;
+            if (field.key === 'installmentItemTotal') value = record.installmentItemTotal;
+            if (field.key === 'installmentInterestTotal') value = record.installmentInterestTotal;
             if (field.key === 'installmentPaidMonths') {
               value = record.installmentInitialPaidMonths ?? record.installmentPaidMonths;
             }
@@ -2092,6 +2206,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     );
     if (missingField) {
       notify(`${missingField.labelOf ? missingField.labelOf(form) : missingField.label} wajib diisi`);
+      return;
+    }
+    if (isTransactionForm && form.txType === 'expense' && form.pillar === 'Giving' && !givingCategoryIsComplete(form)) {
+      notify('Pilih rincian Giving sampai kategori terakhir');
       return;
     }
     if (
@@ -2231,6 +2349,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           usesCreditCard && form.isInstallment === 'yes' ? toNumber(form.installmentTenor) : undefined;
         const installmentPaidMonths =
           usesCreditCard && form.isInstallment === 'yes' ? toNumber(form.installmentPaidMonths) : undefined;
+        const installmentTerms = installmentTenorMonths === undefined ? null : quoteForInstallmentForm(form);
         if (
           installmentTenorMonths !== undefined
           && (!Number.isInteger(installmentTenorMonths)
@@ -2249,7 +2368,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           notify('Cicilan yang sudah lunas harus antara 0 dan satu kurang dari total tenor');
           return;
         }
-        const amount = toNumber(form.amount);
+        if (installmentTenorMonths !== undefined && !installmentTerms) {
+          notify('Periksa nominal cicilan, harga barang, bunga, dan tenor. Harga barang harus lebih besar dari nol.');
+          return;
+        }
+        const amount = installmentTerms?.monthlyAmount ?? toNumber(form.amount);
         if (isCreditPayment) {
           const destinationCard = walletOptions.find((wallet) => wallet.value === form.toWalletId);
           const paymentsThisPeriod = transactionOptions
@@ -2305,6 +2428,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             : undefined,
           installmentTenorMonths,
           installmentPaidMonths,
+          installmentItemTotal: installmentTerms?.itemTotal,
+          installmentInterestTotal: installmentTerms?.interestTotal,
+          installmentPricingMode: installmentTerms
+            ? form.installmentPricingMode === 'item_total' ? 'item_total' as const : 'monthly' as const
+            : undefined,
           creditPaymentInstallments: isCreditPayment ? selectedInstallments : undefined,
           // Receivables tidak memiliki pemanfaatan. Database saat ini menyimpan
           // default internal `self`, tetapi transaksi tersebut dikecualikan dari
@@ -2524,7 +2652,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   };
 
   const currentConfig = formConfig(create.type);
-  const creditPaymentCandidates = transactionOptions
+  const creditPaymentCandidates = installmentOptions
     .filter((transaction) =>
       transaction.type === 'expense'
       && transaction.walletId === form.toWalletId
@@ -2539,18 +2667,16 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       title: transaction.note?.trim() || transaction.merchant?.trim() || transaction.labels.at(-1) || 'Transaksi cicilan',
       date: transaction.date,
       amount: transaction.amount,
+      transaction,
       tenor: transaction.installmentTenorMonths!,
       paid: Math.max(
         0,
         (transaction.installmentPaidMonths ?? 0) - (originalCreditPaymentInstallments[transaction.id] ?? 0),
       ),
     }));
-  const installmentAllocationAmount = (candidate: typeof creditPaymentCandidates[number], count: number) => {
-    const base = Math.floor(candidate.amount / candidate.tenor);
-    const remainder = candidate.amount % candidate.tenor;
-    const extra = Math.max(0, Math.min(remainder, candidate.paid + count) - Math.min(remainder, candidate.paid));
-    return count * base + extra;
-  };
+  const installmentAllocationAmount = (candidate: typeof creditPaymentCandidates[number], count: number) =>
+    installmentPaidAmount(candidate.transaction, candidate.paid + count)
+      - installmentPaidAmount(candidate.transaction, candidate.paid);
   const creditPaymentAllocationTotal = creditPaymentCandidates.reduce(
     (total, candidate) => total + installmentAllocationAmount(candidate, creditPaymentInstallments[candidate.id] ?? 0),
     0,
@@ -2578,19 +2704,26 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     // Semua input nominal di form memakai Rp, sehingga hint mengikuti satuan yang sama.
     const formatted = (value: number) => `${value < 0 ? '−' : ''}${formatIDR(value)}`;
     const enteredAmount = toNumber(form[field.key]);
-    if (field.key === 'amount' && (create.type === 'transaksi' || create.type === 'transfer')) {
+    if ((field.key === 'amount' || field.key === 'installmentItemTotal')
+      && (create.type === 'transaksi' || create.type === 'transfer')) {
       if (!walletsLoaded) return { text: 'Memuat saldo dompet…' };
       const selected = walletOptions.find((option) => option.value === form.walletId);
       if (!selected) return { text: 'Pilih dompet pada bagian Sumber dana untuk melihat saldonya.' };
       if (selected.kind === 'credit') {
-        if (!transactionsLoaded) return { text: `Memuat sisa limit ${selected.label}…` };
-        const periodTransactions = transactionOptions.filter(transactionIsInActivePeriod);
-        const used = creditObligationBreakdown([selected.wallet], periodTransactions).total;
-        const available = Math.max(0, (selected.wallet.creditLimit ?? 0) - used);
+        if (!installmentsLoaded) return { text: `Memuat sisa limit ${selected.label}…` };
+        const { available, installmentRemaining } = creditLimitBreakdown(selected.wallet, installmentOptions);
+        const quote = form.isInstallment === 'yes' ? quoteForInstallmentForm(form) : null;
+        const paid = quote ? toNumber(form.installmentPaidMonths) : 0;
+        const alreadyPaid = quote
+          ? Math.floor(quote.totalPayable / toNumber(form.installmentTenor)) * paid
+            + Math.min(quote.totalPayable % toNumber(form.installmentTenor), paid)
+          : 0;
+        const newCharge = quote ? quote.totalPayable - alreadyPaid : enteredAmount;
         return {
-          text: `Sisa limit ${selected.label}: ${formatted(available)}`,
-          warning: !create.isEdit && form.txType === 'expense' && enteredAmount > available
-            ? 'Nominal melebihi sisa limit kartu.' : undefined,
+          text: `Sisa limit ${selected.label}: ${formatted(available)}`
+            + (installmentRemaining > 0 ? ` · Termasuk sisa cicilan ${formatted(installmentRemaining)}` : ''),
+          warning: !create.isEdit && form.txType === 'expense' && newCharge > available
+            ? 'Total kewajiban baru melebihi sisa limit kartu.' : undefined,
         };
       }
       if (!savingsLoaded) {
@@ -2606,6 +2739,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         warning: !create.isEdit && form.txType !== 'income' && enteredAmount > available
           ? 'Nominal melebihi saldo tersedia.' : undefined,
       };
+    }
+    if (field.key === 'installmentInterestTotal') {
+      const quote = quoteForInstallmentForm(form);
+      return { text: quote
+        ? `Total bunga selama tenor · ${((quote.interestTotal / quote.itemTotal) * 100).toLocaleString('id-ID', { maximumFractionDigits: 2 })}% dari harga barang`
+        : 'Isi total bunga selama tenor, bukan bunga per bulan.' };
     }
     if (field.key === 'amount' && (create.type === 'ambil' || create.type === 'sisihkan')) {
       if (!savingsLoaded) return { text: 'Memuat saldo tabungan…' };
@@ -2648,6 +2787,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const formIsValid = visibleFormSections
     .flatMap((section) => section.fields)
     .every((field) => !fieldIsRequired(field, form) || Boolean(form[field.key]?.trim()))
+    && !(isTransactionForm && form.txType === 'expense' && form.isInstallment === 'yes'
+      && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit')
+      && !quoteForInstallmentForm(form))
+    && !(isTransactionForm && form.txType === 'expense' && form.pillar === 'Giving' && !givingCategoryIsComplete(form))
     && !(selectedCreditCard && creditPaymentExceedsPreviousBill);
   const hasTransactionDetails = isTransactionForm && currentConfig.fields.some((field) =>
     field.advanced && (!field.showIf || field.showIf(form)),
@@ -2793,7 +2936,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               Kalau ia jadi anak langsung .workspace (kolom flex setinggi layar), ia otomatis
               terpaku di atas — dan itulah yang dulu membuatnya terasa sticky. Kini hanya
               .nav yang sengaja dipaku, lewat margin-top:auto. */}
-          <div className="viewport">
+          <div className="viewport" ref={viewportRef}>
             <header className={`topbar${tab === 'budget' ? ' budget-topbar' : ''}`}>
               {showBack ? (
                 <button className="header-back" onClick={goBack} aria-label="Kembali">
@@ -3193,6 +3336,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                       </span>
                     </label>
                   ) : field.type === 'segmented' ? (
+                    <>
                     <div
                       className={`form-segmented${field.options?.length === 2 ? ' two' : ''}${field.key === 'txType' ? ' transaction-types' : ''}`}
                       role="radiogroup"
@@ -3212,7 +3356,50 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                         </button>
                       ))}
                     </div>
-                  ) : field.type === 'select' ? (() => {
+                    {field.hint && <small className="form-field-hint">{field.hint}</small>}
+                    </>
+                  ) : field.type === 'select' && form.pillar === 'Giving'
+                    && (field.key === 'subCategory' || field.key === 'categoryDetail') ? (() => {
+                    const options = field.optionsOf?.(form) ?? [];
+                    const isDetail = field.key === 'categoryDetail';
+                    const branch = GIVING_LABELS_ID[form.subCategory] ?? form.subCategory;
+                    return (
+                      <div className="giving-choice-step">
+                        <div className="giving-choice-path" aria-hidden="true">
+                          <span>Giving</span>
+                          {isDetail && <><span className="giving-choice-separator">›</span><span>{branch}</span></>}
+                        </div>
+                        <div className="giving-choice-grid" role="radiogroup" aria-labelledby={labelId}>
+                          {options.map((option) => {
+                            const selected = form[field.key] === option.value;
+                            return (
+                              <button
+                                type="button"
+                                role="radio"
+                                aria-checked={selected}
+                                disabled={fieldDisabled}
+                                className={`giving-choice${selected ? ' selected' : ''}`}
+                                key={option.value}
+                                onClick={() => setForm(applyFieldChange(form, field.key, option.value))}
+                              >
+                                <span className="giving-choice-text">
+                                  <strong>{GIVING_LABELS_ID[option.value] ?? option.label}</strong>
+                                  <small>{option.value}</small>
+                                </span>
+                                <span className="giving-choice-indicator" aria-hidden="true">{selected && <Check />}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {isDetail && givingCategoryIsComplete(form) && (
+                          <p className="giving-choice-result" role="status">
+                            Kategori transaksi: Giving › {branch} › {GIVING_LABELS_ID[form.categoryDetail] ?? form.categoryDetail}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()
+                  : field.type === 'select' ? (() => {
                     const options = field.optionsOf ? field.optionsOf(form) : field.options ?? [];
                     const selected = options.find((option) => option.value === (form[field.key] || ''));
                     const expanded = openSuggest === field.key;

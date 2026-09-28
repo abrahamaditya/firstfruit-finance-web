@@ -120,6 +120,16 @@ export const PILLAR_EXPENSE_TREE: CategoryTree = {
   Receivables: {},
 };
 
+export const GIVING_LABELS_ID: Record<string, string> = {
+  Offerings: 'Persembahan',
+  Sowing: 'Taburan',
+  'First Fruits': 'Buah sulung',
+  Tithe: 'Persepuluhan',
+  Offering: 'Persembahan',
+  Family: 'Keluarga',
+  Social: 'Sosial',
+};
+
 export const CATEGORY_CUSTOM = '__custom__';
 
 const toOptions = (labels: string[]): CategoryOption[] => labels.map((label) => ({ value: label, label }));

@@ -31,6 +31,9 @@ export interface Transaction {
   installmentTenorMonths?: number; // transaksi kartu kredit dicicil selama N bulan
   installmentPaidMonths?: number;  // jumlah angsuran lunas saat ini (termasuk pembayaran yang dialokasikan)
   installmentInitialPaidMonths?: number; // baseline sebelum transaksi dicatat di aplikasi
+  installmentItemTotal?: number; // harga pokok barang; transaksi lama bisa belum memiliki rincian ini
+  installmentInterestTotal?: number; // nominal seluruh bunga selama tenor
+  installmentPricingMode?: 'monthly' | 'item_total';
   creditPaymentInstallments?: Array<{
     installmentTransactionId: string;
     installmentsPaid: number;
