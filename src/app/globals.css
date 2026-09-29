@@ -652,6 +652,11 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .alert .am{flex:1}.alert .at{font-weight:700;font-size:13.5px}.alert .ad{font-size:12px;color:var(--ink-soft);margin-top:2px}
 .alert .av{font-weight:700;font-size:12.5px}
 .dot-end{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--neg);margin-right:5px;vertical-align:middle}
+@media(max-width:620px){
+  /* Biarkan indikator dan teks tanggal mengalir sebagai satu kalimat di kartu sempit. */
+  .row.sub .t2{display:block;line-height:1.45}
+  .row.sub .dot-end{margin-right:7px;vertical-align:1px}
+}
 
 .sandbox-tag{display:inline-flex;gap:7px;align-items:center;font-size:11.5px;font-weight:600;color:var(--ink-soft);background:var(--surface);border-radius:99px;padding:8px 14px;margin:4px 0 2px}
 .sandbox-tag svg{width:14px;height:14px;stroke:var(--mint);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
