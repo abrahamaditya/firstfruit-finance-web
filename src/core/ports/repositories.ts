@@ -47,6 +47,11 @@ export interface FinanceCommands {
   settleReceivable(receivableId: string, options?: SettleReceivableOptions): Promise<void>;
   markReminderDone(reminderId: string, done: boolean): Promise<void>;
   archiveWallet(walletId: string, destinationWalletId?: string): Promise<void>;
+  /**
+   * Menambahkan angsuran periode tertutup yang belum pernah dibawa ke tagihan lalu kartu.
+   * Satu penyesuaian per periode, bercatatan `installmentCarryNote`, supaya tidak terulang.
+   */
+  billInstallmentCharges(walletId: string, charges: Array<{ periodAlias: string; amount: number }>): Promise<void>;
   finalizeSplitBill(title: string, participants: SplitPerson[], receipts: Receipt[]): Promise<string>;
 }
 

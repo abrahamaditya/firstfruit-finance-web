@@ -6,7 +6,7 @@ import { usePeriodTransactions, useSavings, useWallets } from '../application/ho
 import { Up, Down, TransferCard, Plus, Search } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
 import { GIVING_LABELS_ID, categoryPath, categoryTone } from '../core/domain/categories';
-import { isActualIncome } from '../core/domain/calculations';
+import { isActualIncome, netWorthDirection } from '../core/domain/calculations';
 
 export default function TransactionsScreen() {
   const ui = useUI();
@@ -48,8 +48,17 @@ export default function TransactionsScreen() {
     });
     return `${diff === 0 ? tr('tx.today') + ' · ' : diff === 1 ? tr('tx.yesterday') + ' · ' : ''}${formatted}`;
   };
-  const formatAmount = (type: string, amount: number) =>
-    `${type === 'income' ? '+' : type === 'expense' ? '-' : ''}${money.fmt(amount)}`;
+  // Penyesuaian kartu kredit dibalik: saldo kartu naik berarti utang naik (keluar).
+  const directionOf = (transaction: typeof data[number]) =>
+    netWorthDirection(transaction, walletById.get(transaction.walletId)?.kind);
+  const toneOf = (transaction: typeof data[number]) => {
+    const direction = directionOf(transaction);
+    return direction > 0 ? 'in' : direction < 0 ? 'out' : '';
+  };
+  const formatAmount = (transaction: typeof data[number]) => {
+    const direction = directionOf(transaction);
+    return `${direction > 0 ? '+' : direction < 0 ? '−' : ''}${money.fmt(transaction.amount)}`;
+  };
   const [filter, setFilter] = useState<'all' | 'expense' | 'income' | 'actualIncome' | 'transfer'>('all');
   const [wallet, setWallet] = useState('all');
   const [selectedCategoryTrail, setSelectedCategoryTrail] = useState<string[]>([]);
@@ -250,14 +259,10 @@ export default function TransactionsScreen() {
             const destinationWallet = transaction.toWalletId
               ? walletById.get(transaction.toWalletId)
               : undefined;
-            const installmentBillNumber = transaction.installmentTenorMonths
-              ? Math.min(
-                transaction.installmentTenorMonths,
-                Math.max(1, (transaction.installmentPaidMonths ?? 0) + 1),
-              )
-              : null;
-            const installmentCompleted = transaction.installmentTenorMonths != null
-              && (transaction.installmentPaidMonths ?? 0) >= transaction.installmentTenorMonths;
+            const installmentPaid = Math.min(
+              transaction.installmentTenorMonths ?? 0,
+              transaction.installmentPaidMonths ?? 0,
+            );
             return (
               <div
                 className={`row transaction-row${transaction.type === 'transfer' ? ' transfer-row' : ''}`}
@@ -270,8 +275,8 @@ export default function TransactionsScreen() {
                   )
                 }
               >
-                <div className={`ic ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                  {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <TransferCard /> : <Up />}
+                <div className={`ic ${toneOf(transaction)}`}>
+                  {transaction.type === 'transfer' ? <TransferCard /> : directionOf(transaction) > 0 ? <Down /> : <Up />}
                 </div>
                 <div className="mid">
                   <div className="t1">
@@ -284,7 +289,9 @@ export default function TransactionsScreen() {
                     ) : transactionTitle(transaction)}
                   </div>
                   <div className="t2">
-                    {transaction.type === 'income' && (
+                    {transaction.adjustment ? (
+                      <span className="chip">{tr('tx.adjustmentChip')}</span>
+                    ) : transaction.type === 'income' && (
                       <span className="chip" data-cat="income">
                         {isActualIncome(transaction) ? tr('reports.actualIncome') : tr('tx.receivableIncome')}
                       </span>
@@ -309,8 +316,7 @@ export default function TransactionsScreen() {
                     )}
                     {transaction.installmentTenorMonths && (
                       <span className="chip">
-                        Tagihan cicilan {installmentBillNumber}/{transaction.installmentTenorMonths}
-                        {installmentCompleted && ' · Lunas'}
+                        {tr('tx.installmentChip', { paid: installmentPaid, tenor: transaction.installmentTenorMonths })}
                       </span>
                     )}
                     {transaction.nature === 'unexpected' && <span className="chip">{tr('tx.unexpected')}</span>}
@@ -322,13 +328,13 @@ export default function TransactionsScreen() {
                       {transaction.type === 'transfer' && destinationWallet
                         ? <>{walletReference(sourceWallet)}<i aria-hidden="true">→</i>{walletReference(destinationWallet)}</>
                         : <>
-                          <small>{transaction.type === 'income' ? 'Ke' : 'Dari'}</small>
+                          <small>{tr(transaction.type === 'income' ? 'tx.to' : 'tx.from')}</small>
                           {walletReference(sourceWallet)}
                         </>}
                     </span>
                   )}
-                  <div className={`val ${transaction.type === 'income' ? 'in' : transaction.type === 'transfer' ? '' : 'out'}`}>
-                    {formatAmount(transaction.type, transaction.amount)}
+                  <div className={`val ${toneOf(transaction)}`}>
+                    {formatAmount(transaction)}
                   </div>
                 </div>
               </div>

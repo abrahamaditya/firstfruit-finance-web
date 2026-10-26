@@ -1,13 +1,13 @@
 'use client';
 import React from 'react';
 import { useUI, useMoney, useT, HOME_SHORTCUTS } from '../components/AppShell';
-import { useActivePeriodTransactions, useDashboard, useSubscriptions, useReminders, useSavings, useInstallments } from '../application/hooks';
+import { useActivePeriodTransactions, useDashboard, useSubscriptions, useReminders, useSavings, useInstallments, useTransactions } from '../application/hooks';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay } from '../core/domain/calendar';
 import { Up, Down, TransferCard, Plus, Eye, Gauge, Calendar, ChevronR } from '../components/ui/icons';
 import { walletBrandLogo, walletProductInitial } from '../core/wallet-branding';
-import { isActualIncome } from '../core/domain/calculations';
+import { actualExpenseAmount, isActualIncome, netWorthDirection } from '../core/domain/calculations';
 import { categoryTone } from '../core/domain/categories';
-import { creditLimitBreakdown } from '../core/domain/installment-pricing';
+import { installmentSchedule } from '../core/domain/installment-schedule';
 
 const randomScramble = (value: string, lockedDigits = 0) => {
   let digitIndex = 0;
@@ -228,6 +228,7 @@ export default function HomeScreen() {
   const tr = useT();
   const d = useDashboard();
   const { data: txs } = useActivePeriodTransactions();
+  const { data: allTxs } = useTransactions();
   const { data: installments } = useInstallments();
   const { all: savings, reservedIn } = useSavings();
   const { subs } = useSubscriptions();
@@ -248,21 +249,26 @@ export default function HomeScreen() {
   // formatIDR memakai Math.abs, jadi tanda harus dipasang sendiri — kalau nilai negatif
   // diteruskan apa adanya, angka >= 1 juta akan tampil dobel minus dan yang di bawahnya hilang tanda.
   const signed = (n: number) => (n < 0 ? '−' : n > 0 ? '+' : '') + money.fmtCompact(Math.abs(n));
-  const fmtTx = (t: { type: string; amount: number }) =>
-    (t.type === 'income' ? '+' : t.type === 'expense' ? '−' : '') + money.fmt(t.amount);
+  const walletKind = (id?: string) => d.wallets.find((wallet) => wallet.id === id)?.kind;
+  const txDirection = (t: typeof txs[number]) => netWorthDirection(t, walletKind(t.walletId));
+  const fmtTx = (t: typeof txs[number]) => {
+    const direction = txDirection(t);
+    return (direction > 0 ? '+' : direction < 0 ? '−' : '') + money.fmt(t.amount);
+  };
 
-  // Perubahan bersih hari ini. Transfer dilewati: memindahkan uang antar dompet tidak
-  // mengubah kekayaan, jadi tidak boleh muncul sebagai naik/turun.
+  // Hari ini dan 7 hari terakhir memakai ukuran riil yang sama dengan Laporan: transfer,
+  // penyesuaian, pelunasan piutang, dan porsi yang ditagihkan balik tidak dihitung.
+  // Rentang 7 hari boleh melewati awal periode, jadi sumbernya seluruh transaksi.
   const midnight = new Date();
   midnight.setHours(0, 0, 0, 0);
-  const todayNet = txs
-    .filter(t => !t.adjustment && t.type !== 'transfer' && new Date(t.date) >= midnight)
-    .reduce((sum, t) => sum + (isActualIncome(t) ? t.amount : t.type === 'expense' ? -t.amount : 0), 0);
+  const todayNet = allTxs
+    .filter(t => new Date(t.date) >= midnight)
+    .reduce((sum, t) => sum + (isActualIncome(t) ? t.amount : -actualExpenseAmount(t)), 0);
   const sevenDaysAgo = new Date(midnight);
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
-  const sevenDaySpending = txs
-    .filter(t => !t.adjustment && t.type === 'expense' && new Date(t.date) >= sevenDaysAgo)
-    .reduce((sum, t) => sum + t.amount, 0);
+  const sevenDaySpending = allTxs
+    .filter(t => new Date(t.date) >= sevenDaysAgo)
+    .reduce((sum, t) => sum + actualExpenseAmount(t), 0);
   const daysLeft = Math.max(1, d.progress?.daysLeft ?? 1);
   const safePerDay = Math.max(0, Math.floor(d.safeToSpend / daysLeft));
 
@@ -292,11 +298,21 @@ export default function HomeScreen() {
     billingDatesInRange(sub, calDays[0], calDays[calDays.length - 1]).forEach(date => bump(dayKey(date))),
   );
   reminders.filter(item => !item.done).forEach(item => bump(dayKey(item.date)));
+  const unpaidInstallments = installments.flatMap(installmentSchedule).filter(due => !due.paid);
+  unpaidInstallments
+    .filter(due => due.dueDate >= dayKey(calDays[0]) && due.dueDate <= dayKey(calDays[calDays.length - 1]))
+    .forEach(due => bump(due.dueDate));
 
   // Empat jadwal terdekat ke depan. Rentangnya dibatasi 60 hari supaya langganan tahunan
   // tidak memenuhi daftar dengan tanggal yang masih jauh.
   const horizon = addDays(today, 60);
   const upcoming = [
+    ...unpaidInstallments
+      .filter(due => due.dueDate >= todayKey && due.dueDate <= dayKey(horizon))
+      .map(due => ({
+        id: due.id, rawId: due.transactionId, date: new Date(`${due.dueDate}T12:00:00`),
+        title: `${due.title} ${due.number}/${due.tenor}`, amount: due.amount, kind: 'installment' as const,
+      })),
     ...subs.flatMap(sub =>
       billingDatesInRange(sub, today, horizon).map(date => ({
         id: `${sub.id}-${dayKey(date)}`, rawId: sub.id, date, title: sub.name,
@@ -313,8 +329,14 @@ export default function HomeScreen() {
     .sort((a, b) => a.date.getTime() - b.date.getTime())
     .slice(0, 4);
 
-  const txIcon = (type: string) => (type === 'income' ? <Down /> : type === 'transfer' ? <TransferCard /> : <Up />);
-  const txDir = (type: string) => (type === 'income' ? 'in' : type === 'transfer' ? '' : 'out');
+  const txIcon = (t: typeof txs[number]) => {
+    const direction = txDirection(t);
+    return direction > 0 ? <Down /> : direction < 0 ? <Up /> : <TransferCard />;
+  };
+  const txDir = (t: typeof txs[number]) => {
+    const direction = txDirection(t);
+    return direction > 0 ? 'in' : direction < 0 ? 'out' : '';
+  };
   const walletName = (id?: string) => d.wallets.find((wallet) => wallet.id === id)?.name;
   const savingName = (id?: string) => id ? savings.find((saving) => saving.id === id)?.name : undefined;
   // Urutan saldo di Beranda mengikuti carousel Dompet. Dompet yang belum pernah masuk
@@ -340,12 +362,14 @@ export default function HomeScreen() {
       {walletBalances.map((wallet) => {
         const logo = walletBrandLogo(wallet);
         const displayBalance = wallet.kind === 'credit'
-          ? creditLimitBreakdown(wallet, installments).available
+          ? d.cards.find((card) => card.wallet.id === wallet.id)?.available ?? 0
           : wallet.balance - reservedIn(wallet.id);
         const amount = hidden
           ? '••••'
           : money.fmt(displayBalance);
-        const walletLabel = wallet.kind === 'credit' ? `Sisa limit · ${wallet.name}` : wallet.name;
+        const walletLabel = wallet.kind === 'credit'
+          ? tr('home.cardAvailable', { name: wallet.name })
+          : wallet.name;
         return (
           <span
             className="home-wallet-item"
@@ -375,6 +399,12 @@ export default function HomeScreen() {
   };
   const moneyOrHidden = (value: number, compact = false) =>
     hidden ? '••••••' : compact ? money.fmtCompactSigned(value) : money.fmtSigned(value);
+  // Hanya komponen yang bernilai yang disebut, supaya rinciannya tetap satu baris pendek.
+  const cardBillParts = (card: typeof d.card) => [
+    card.previousDue > 0 && tr('home.cardBillPrevious', { amount: money.fmtCompact(card.previousDue) }),
+    card.spending > 0 && tr('home.cardBillSpending', { amount: money.fmtCompact(card.spending) }),
+    card.installmentDue > 0 && tr('home.cardBillInstallments', { amount: money.fmtCompact(card.installmentDue) }),
+  ].filter(Boolean).join(' · ');
   const safeAmount = moneyOrHidden(d.safeToSpend);
   const loadingSafeAmount = money.fmtSigned(d.safeToSpend || 8_888_888);
   const safeAmountGlitch = useGlitchAmount(safeAmount, loadingSafeAmount, d.loading, !hidden);
@@ -454,29 +484,17 @@ export default function HomeScreen() {
           <div className="brk-cells home-cashflow-breakdown">
             <div><span>{tr('home.assets')}</span><b>{moneyOrHidden(d.assets)}</b></div>
             <div>
-              <span>{tr(d.installmentCoveredByCredit > 0 ? 'home.creditBillsOutsideInstallments' : 'home.creditBills')}</span>
-              <b>{hidden ? '••••' : `${d.cashflowCreditLiabilities > 0 ? '−' : ''}${money.fmt(d.cashflowCreditLiabilities)}`}</b>
-              <small>{hidden ? '••••' : d.installmentCoveredByCredit > 0
-                ? tr('home.creditBillInstallmentOverlap', {
-                  total: money.fmtCompact(d.creditLiabilities),
-                  covered: money.fmtCompact(d.installmentCoveredByCredit),
-                })
-                : tr('home.creditBillBreakdown', {
-                  previous: money.fmtCompact(d.previousPeriodCreditDue),
-                  current: money.fmtCompact(d.currentPeriodCreditDue),
-                })}</small>
+              <span>{tr('home.cardBill')}</span>
+              <b>{hidden ? '••••' : `${d.card.bill > 0 ? '−' : ''}${money.fmt(d.card.bill)}`}</b>
+              {d.card.bill > 0 && <small>{hidden ? '••••' : cardBillParts(d.card)}</small>}
             </div>
             <div>
-              <span>{tr('home.inSavings')}</span>
+              <span>{tr('home.savings')}</span>
               <b>{hidden ? '••••' : `${d.reserved > 0 ? '−' : ''}${money.fmt(d.reserved)}`}</b>
             </div>
             <div>
-              <span>{tr('home.allocated')}</span>
-              <b>{hidden ? '••••' : `${d.allocated > 0 ? '−' : ''}${money.fmt(d.allocated)}`}</b>
-              {d.installmentBudgetRemaining > 0 && <small>{hidden ? '••••' : tr('home.installmentBudgetBreakdown', {
-                manual: money.fmtCompact(d.manualBudgetRemaining),
-                installment: money.fmtCompact(d.installmentBudgetRemaining),
-              })}</small>}
+              <span>{tr('home.budgetLeft')}</span>
+              <b>{hidden ? '••••' : `${d.budgetRemaining > 0 ? '−' : ''}${money.fmt(d.budgetRemaining)}`}</b>
             </div>
           </div>
           {d.progress && (
@@ -526,11 +544,13 @@ export default function HomeScreen() {
           <button className="addg" onClick={() => ui.go('tx')}>{tr('common.seeAll')}</button></div>
         {recent.map(t => (
           <div className="row" key={t.id} onClick={() => ui.openItem(transactionTitle(t), t.type === 'transfer' ? 'transfer' : 'transaksi', t.id)}>
-            <div className={'ic ' + txDir(t.type)}>{txIcon(t.type)}</div>
+            <div className={'ic ' + txDir(t)}>{txIcon(t)}</div>
             <div className="mid">
               <div className="t1">{transactionTitle(t)}</div>
               <div className="t2">
-                {t.type === 'income' && (
+                {t.adjustment ? (
+                  <span className="chip">{tr('tx.adjustmentChip')}</span>
+                ) : t.type === 'income' && (
                   <span className="chip" data-cat="income">
                     {isActualIncome(t) ? tr('reports.actualIncome') : tr('tx.receivableIncome')}
                   </span>
@@ -545,7 +565,7 @@ export default function HomeScreen() {
                 {dateLabel(t.date)}
               </div>
             </div>
-            <div className="r"><div className={'val ' + txDir(t.type)}>{fmtTx(t)}</div></div>
+            <div className="r"><div className={'val ' + txDir(t)}>{fmtTx(t)}</div></div>
           </div>
         ))}
         {recent.length === 0 && (
@@ -597,7 +617,9 @@ export default function HomeScreen() {
               <button
                 className="agenda-item"
                 key={item.id}
-                onClick={() => (item.kind === 'todo' ? ui.openItem(item.title, 'reminder', item.rawId) : ui.go('subs'))}
+                onClick={() => (item.kind === 'todo'
+                  ? ui.openItem(item.title, 'reminder', item.rawId)
+                  : ui.go(item.kind === 'installment' ? 'installments' : 'subs'))}
               >
                 <span className="agenda-date">
                   <b>{item.date.getDate()}</b>
@@ -605,7 +627,7 @@ export default function HomeScreen() {
                 </span>
                 <span className="agenda-copy">
                   <b>{item.title}</b>
-                  <span>{tr(item.kind === 'bill' ? 'home.agendaBill' : 'home.agendaTodo')}</span>
+                  <span>{tr(item.kind === 'bill' ? 'home.agendaBill' : item.kind === 'installment' ? 'home.agendaInstallment' : 'home.agendaTodo')}</span>
                 </span>
                 {item.amount ? <span className="agenda-amt">{money.fmtCompact(item.amount)}</span> : null}
               </button>

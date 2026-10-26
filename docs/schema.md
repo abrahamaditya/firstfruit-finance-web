@@ -61,9 +61,9 @@ tersendiri. Aplikasi tidak menulis tabel ledger itu satu per satu dari browser.
 | `creditLimit?` | integer IDR | `credit_limit_minor`; hanya relevan untuk kartu kredit. |
 | `previousPeriodBill?` | integer IDR | `previous_period_bill_minor`, baseline tagihan periode sebelumnya. |
 
-`balance` kartu **bukan** satu-satunya sumber “sisa limit” di UI. Perhitungan
-`creditLimitBreakdown` menggabungkannya dengan semua cicilan belum lunas lintas periode
-dan rekonsiliasi angsuran yang sudah masuk ledger. `availableBalance` dompet debit
+UI tidak membaca tagihan atau sisa limit kartu dari `balance`. `creditCardPosition`
+memakai `previousPeriodBill`, transaksi periode berjalan, dan jadwal cicilan; `balance`
+hanya cadangan untuk kartu lama tanpa baseline. `availableBalance` dompet debit
 dikurangi tabungan aktif yang menempati dompet itu.
 
 ## Transaksi (`Transaction`)
@@ -131,13 +131,10 @@ dan `pricing_mode` bernilai `NULL`; itu menandai rincian yang memang belum diket
 | `BudgetPeriod.closed` | Proyeksi kompatibilitas dari status; gunakan `status` untuk membedakan draft dari closed. |
 
 Periode aktif dipilih dari status `open`. Anggaran lama tetap terikat ke `periodId`-nya
-ketika periode baru dibuat; menyalin struktur tidak menyalin realisasi. **Anggaran
-cicilan otomatis** pada layar Anggaran diturunkan dari jadwal cicilan (`installmentDuesForPeriod`),
-bukan baris `Budget` baru. Layar Anggaran menambahkannya ke total periode yang dilihat;
-bagian Laporan “Realisasi anggaran” dan proyeksi saat ini memakai baris `Budget` manual
-periode aktif saja. Arus kas bebas menggunakan sisa anggaran manual ditambah cicilan
-periode aktif yang belum lunas, dan merekonsiliasi bagian yang sudah ada dalam tagihan
-kartu. Perbedaan cakupan ini penting saat membandingkan kedua layar.
+ketika periode baru dibuat; menyalin struktur tidak menyalin realisasi. Daftar cicilan
+jatuh tempo di layar Anggaran diturunkan dari jadwal cicilan (`installmentDuesForPeriod`),
+bukan baris `Budget`, dan tidak ikut total anggaran: angsurannya sudah termasuk tagihan
+kartu.
 
 ## Langganan (`Subscription`)
 
@@ -172,9 +169,10 @@ yang disimpan langsung dalam `Transaction`.
 
 ## Read model laporan yang tidak disimpan sebagai kolom
 
-- `creditLimitBreakdown`: limit terpakai = saldo kartu setelah bagian cicilan yang sudah
-  tercatat direkonsiliasi + seluruh sisa cicilan, dijepit minimal nol. Sisa limit juga
-  dijepit minimal nol. **Tidak** dibatasi oleh `BudgetPeriod` yang sedang dibuka.
+- `creditCardPosition`: tagihan kartu = sisa tagihan lalu + belanja di luar cicilan +
+  semua angsuran yang jatuh tempo di periode acuan; utang kartu = tagihan + angsuran yang
+  jatuh tempo setelahnya; sisa limit = `max(0, limit − utang)`. Alokasi pembayaran ke
+  cicilan tidak memengaruhi angka ini.
 - `forecastBudgetRealization`: estimasi realisasi anggaran manual periode aktif dengan
   pola hingga tiga periode tertutup per kategori; alokasi menjadi fallback bila riwayat
   tidak ada. Hasilnya bukan record transaksi atau field pada tabel `budgets`.

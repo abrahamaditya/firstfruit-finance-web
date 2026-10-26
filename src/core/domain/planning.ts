@@ -6,17 +6,17 @@ import { isActualIncome } from './calculations';
 // supaya gampang diuji dan dipakai ulang oleh layar mana pun.
 
 export interface PlanningContext {
-  available: number;          // saldo aset setelah tabungan terkunci dan tagihan kredit disisihkan
-  financialCondition: number; // available dikurangi sisa anggaran yang belum terealisasi
-  cashBalance: number;        // saldo rekening, e-wallet, dan tunai sebelum tabungan dikunci
-  reserved: number;           // dana yang disisihkan di tabungan
-  budgetRemaining: number;    // alokasi anggaran yang belum terealisasi
-  cashflowCreditBill: number;  // tagihan kartu di luar angsuran yang sudah masuk anggaran
+  cashBalance: number;        // saldo aset: rekening, e-wallet, tunai
+  reserved: number;           // dana di tabungan
+  cardBill: number;           // tagihan kartu periode berjalan, termasuk angsuran yang jatuh tempo
+  budgetRemaining: number;    // sisa anggaran yang belum terpakai
+  available: number;          // saldo aset − tabungan − tagihan kartu
+  freeCash: number;           // arus kas bebas = available − sisa anggaran
   allocatedTotal: number;     // total alokasi anggaran periode berjalan
   spentTotal: number;         // realisasi anggaran
-  monthlyIncome: number;      // estimasi pemasukan rutin per bulan
-  nextMonthBills: number;     // total tagihan berjalan dari transaksi kartu kredit
-  expectedReceivables: number;// piutang aktif yang mungkin kembali
+  monthlyIncome: number;      // estimasi pemasukan riil per bulan
+  installmentMonthly: number; // angsuran per bulan dari semua cicilan aktif
+  expectedReceivables: number;// sisa piutang yang belum dibayar
   daysLeft: number;           // sisa hari periode berjalan
   totalDays: number;
 }
@@ -42,9 +42,12 @@ export function estimateMonthlyIncome(transactions: Transaction[], today: Date =
 export const remainingPlanned = (budgets: Budget[]) =>
   budgets.reduce((sum, budget) => sum + Math.max(0, budget.allocated - budget.spent), 0);
 
-/** Kapasitas menabung realistis per bulan: pemasukan − anggaran − tagihan bulan depan. */
+/**
+ * Kapasitas menabung per bulan: pemasukan riil − alokasi anggaran − angsuran cicilan.
+ * Belanja kartu sudah tercakup di anggaran, jadi tagihan kartu tidak dikurangkan lagi.
+ */
 export function monthlyCapacity(context: PlanningContext): number {
-  return Math.max(0, Math.round(context.monthlyIncome - context.allocatedTotal - context.nextMonthBills));
+  return Math.max(0, Math.round(context.monthlyIncome - context.allocatedTotal - context.installmentMonthly));
 }
 
 // ===== Metode 1: target dana / beli barang =====
@@ -86,29 +89,14 @@ export function requiredPerMonth(target: number, alreadySaved: number, months: n
 // ===== Metode 2: sanggup beli bulan depan? =====
 export interface AffordabilityResult {
   price: number;
-  inflow: number;             // kondisi keuangan + piutang yang opsional diperhitungkan
-  outflow: number;            // harga barang
-  surplus: number;            // dana yang tersedia sebelum beli
+  available: number;          // arus kas bebas + piutang bila dipilih
   leftover: number;           // sisa setelah beli
   affordable: boolean;
-  fromCash: number;           // kompatibilitas tampilan lama; keputusan memakai kondisi keuangan
-  cashBacked: boolean;
 }
 export function affordability(price: number, context: PlanningContext, includeReceivables: boolean): AffordabilityResult {
-  const inflow = context.financialCondition + (includeReceivables ? context.expectedReceivables : 0);
-  const outflow = price;
-  const surplus = inflow;
-  const leftover = surplus - price;
-  return {
-    price,
-    inflow,
-    outflow,
-    surplus,
-    leftover,
-    affordable: leftover >= 0,
-    fromCash: 0,
-    cashBacked: false,
-  };
+  const available = context.freeCash + (includeReceivables ? context.expectedReceivables : 0);
+  const leftover = available - price;
+  return { price, available, leftover, affordable: leftover >= 0 };
 }
 
 // ===== Metode 3: dampak belanja dadakan ke satu anggaran =====

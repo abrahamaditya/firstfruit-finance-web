@@ -1,4 +1,4 @@
-import { Subscription, BillingCycle } from './types';
+import type { Subscription, BillingCycle } from './types';
 
 // ===== Utilitas kalender =====
 // Semua perbandingan tanggal memakai kunci lokal (YYYY-MM-DD) supaya tidak

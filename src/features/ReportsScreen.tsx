@@ -11,15 +11,16 @@ import {
   isActualIncome,
   isIncome,
 } from '../core/domain/calculations';
-import { creditLimitBreakdown } from '../core/domain/installment-pricing';
 import { categoryPath } from '../core/domain/categories';
+import { isInstallmentTransaction, runningInstallmentCount } from '../core/domain/credit-card';
+import { installmentSchedule } from '../core/domain/installment-schedule';
 import {
   categoryTree, groupBy, isHabitualExpense, longestNoSpendStreak, noSpendDays,
   runwayDays, transactionPath, weekdayPattern,
 } from '../core/domain/report-insights';
 import { forecastBudgetRealization, periodPatterns } from '../core/domain/period-patterns';
 import PeriodPatternsScreen from './PeriodPatternsScreen';
-import type { Transaction, TransactionBenefitScope } from '../core/domain/types';
+import type { Transaction, TransactionBenefitScope, WalletKind } from '../core/domain/types';
 
 type Range = 'daily' | 'activePeriod' | '3months' | '6months';
 type Flow = 'expense' | 'actualExpense' | 'income' | 'actualIncome';
@@ -31,7 +32,18 @@ interface TrendBucket {
   label: string;
 }
 
-const cashDelta = (transaction: Pick<Transaction, 'type' | 'amount'>) => {
+/**
+ * Dampak transaksi pada likuiditas bersih (saldo aset − utang kartu).
+ * - Pembelian cicilan langsung menambah utang sebesar seluruh angsuran yang tersisa,
+ *   jadi deltanya seluruh jadwal, bukan hanya angsuran pertama.
+ * - Penyesuaian kartu kredit dilewati: itu koreksi pembukuan tagihan (edit baseline,
+ *   rekonsiliasi, angsuran yang ditagihkan), bukan uang yang bergerak.
+ */
+const cashDelta = (transaction: Transaction, walletKind?: WalletKind) => {
+  if (transaction.adjustment && walletKind === 'credit') return 0;
+  if (isInstallmentTransaction(transaction)) {
+    return -installmentSchedule(transaction).reduce((sum, due) => sum + due.amount, 0);
+  }
   if (transaction.type === 'income') return transaction.amount;
   if (transaction.type === 'expense') return -transaction.amount;
   return 0;
@@ -237,7 +249,7 @@ export default function ReportsScreen() {
 
   // ===== Kesehatan arus kas =====
   const savingsRate = actualIncome > 0 ? Math.round((netCashflow / actualIncome) * 100) : null;
-  const runway = runwayDays(dashboard.liquidity, dailyAverage);
+  const runway = runwayDays(dashboard.netLiquidity, dailyAverage);
   const freeDays = noSpendDays(expenses, rangeStart, rangeEnd);
   const freeStreak = longestNoSpendStreak(expenses, rangeStart, rangeEnd);
 
@@ -311,34 +323,25 @@ export default function ReportsScreen() {
   const shownSectorTotal = sectors.slice(0, 8).reduce((sum, sector) => sum + sector.total, 0);
   const otherSectorTotal = Math.max(0, flowTotal - shownSectorTotal);
 
-  // Tetap dipakai untuk insight “hari terboros”, tanpa menampilkan tabel laporan harian.
-  // ===== Sebaran nominal =====
+  // ===== Kartu kredit =====
+  // Posisi tagihan/utang/limit selalu keadaan sekarang (useDashboard); belanja dan
+  // pembayaran mengikuti rentang laporan yang dipilih.
   const creditWallets = dashboard.wallets.filter(wallet => wallet.kind === 'credit');
-  const creditWalletNames = creditWallets.map(wallet => wallet.name).join(', ');
   const creditWalletIds = new Set(creditWallets.map(wallet => wallet.id));
-  // Khusus insight periode ini, tagihan bulan depan dibentuk dari seluruh transaksi
-  // yang terjadi pada kartu kredit di rentang laporan—bukan dari persentase pengeluaran.
   const creditExpenses = expenses.filter(transaction => creditWalletIds.has(transaction.walletId));
-  const creditBillFromPeriod = creditExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const creditSpending = creditExpenses.reduce((sum, transaction) => sum + transaction.amount, 0);
   const creditPayments = transfers.filter(transaction =>
     !!transaction.toWalletId && creditWalletIds.has(transaction.toWalletId),
   );
   const creditPaymentsTotal = creditPayments.reduce((sum, transaction) => sum + transaction.amount, 0);
-  const creditBillNextMonth = dashboard.creditLiabilities;
-  // Untuk periode aktif, angka tagihan sebelumnya harus berasal dari baseline yang
-  // dikonfirmasi pengguna, bukan dibalik dari saldo liabilitas internal yang mungkin
-  // masih menyimpan nilai sebelum baseline terakhir diedit.
-  const creditBillPreviousPeriod = creditWallets.reduce(
-    (sum, wallet) => sum + (wallet.previousPeriodBill ?? Math.max(0, wallet.balance)),
-    0,
+  const activeInstallmentCount = runningInstallmentCount(
+    allInstallments, dayKey(dashboard.cardPeriod?.end ?? new Date()),
   );
-  const totalCreditLimit = creditWallets.reduce((sum, wallet) => sum + (wallet.creditLimit ?? 0), 0);
-  const creditLimitRemaining = creditWallets.reduce(
-    (sum, wallet) => sum + creditLimitBreakdown(wallet, allInstallments).available,
-    0,
-  );
-  const installments = creditExpenses.filter(transaction => transaction.installmentTenorMonths);
-  const installmentSpending = installments.reduce((sum, transaction) => sum + transaction.amount, 0);
+  const cardBillParts = [
+    dashboard.card.previousDue > 0 && t('home.cardBillPrevious', { amount: money.fmtCompact(dashboard.card.previousDue) }),
+    dashboard.card.spending > 0 && t('home.cardBillSpending', { amount: money.fmtCompact(dashboard.card.spending) }),
+    dashboard.card.installmentDue > 0 && t('home.cardBillInstallments', { amount: money.fmtCompact(dashboard.card.installmentDue) }),
+  ].filter(Boolean).join(' · ');
 
   const walletNames = new Map(dashboard.wallets.map(wallet => [wallet.id, wallet.name]));
   const budgetNames = new Map(budgets.map(budget => [budget.id, budget.category]));
@@ -354,22 +357,24 @@ export default function ReportsScreen() {
     ? forecastBudgetRealization(dashboard.period, today, activeBudgets, periods, budgets, allTransactions)
     : null;
 
-  // Saldo historis direkonstruksi dari likuiditas saat ini dengan membalik delta kas.
-  // Expense kartu kredit tetap -amount; pembayaran kartunya transfer, sehingga delta 0.
+  // Saldo historis direkonstruksi dari likuiditas bersih saat ini dengan membalik delta kas.
+  // Belanja kartu tetap −amount; pembayaran kartu adalah transfer sehingga deltanya 0.
+  const walletKinds = new Map(dashboard.wallets.map(wallet => [wallet.id, wallet.kind]));
+  const deltaOf = (transaction: Transaction) => cashDelta(transaction, walletKinds.get(transaction.walletId));
   const trendTransactions = allTransactions.filter(inSelectedRange);
   const futureCashDelta = allTransactions
     .filter(transaction => new Date(transaction.date) >= rangeEndExclusive)
-    .reduce((sum, transaction) => sum + cashDelta(transaction), 0);
-  const endBalance = dashboard.liquidity - futureCashDelta;
+    .reduce((sum, transaction) => sum + deltaOf(transaction), 0);
+  const endBalance = dashboard.netLiquidity - futureCashDelta;
   const openingBalance = endBalance
-    - trendTransactions.reduce((sum, transaction) => sum + cashDelta(transaction), 0);
+    - trendTransactions.reduce((sum, transaction) => sum + deltaOf(transaction), 0);
   const trendBuckets = trendBucketsFor(range, rangeStart, rangeEnd, locale);
   const monthlyTrend = range === '3months' || range === '6months';
   const bucketDeltas = new Map(trendBuckets.map(bucket => [bucket.key, 0]));
   trendTransactions.forEach((transaction) => {
     const key = monthlyTrend ? monthKey(transaction.date) : dayKey(transaction.date);
     if (!bucketDeltas.has(key)) return;
-    bucketDeltas.set(key, (bucketDeltas.get(key) ?? 0) + cashDelta(transaction));
+    bucketDeltas.set(key, (bucketDeltas.get(key) ?? 0) + deltaOf(transaction));
   });
   let runningBalance = openingBalance;
   const trendBalances = [
@@ -498,7 +503,7 @@ export default function ReportsScreen() {
           transaction.installmentTenorMonths ? String(transaction.installmentTenorMonths) : '',
           transaction.installmentTenorMonths ? String(transaction.installmentPaidMonths ?? 0) : '',
           String(transaction.amount),
-          String(cashDelta(transaction)),
+          String(deltaOf(transaction)),
           String(realCashflowDelta(transaction)),
         ];
       }),
@@ -550,7 +555,7 @@ export default function ReportsScreen() {
       <section className={`report-executive${dashboard.safeToSpend < 0 ? ' deficit' : ''}`}>
         <div className="report-executive-main">
           <div>
-            <span>{t('reports.freeCashflow')}</span>
+            <span>{t('home.safeToSpend')}</span>
             <b>{money.fmtCompactSigned(dashboard.safeToSpend)}</b>
             <small>{t('reports.currentFinancialPosition')}</small>
           </div>
@@ -559,28 +564,19 @@ export default function ReportsScreen() {
           </span>
         </div>
         <div className="report-executive-formula">
-          <div><span>{t('reports.assetBalance')}</span><b>{money.fmtCompactSigned(dashboard.assets)}</b></div>
-          <i>−</i>
-          <div><span>{t(dashboard.cashflowPreviousCreditDue < dashboard.previousPeriodCreditDue ? 'reports.previousCreditDueOutsideInstallments' : 'reports.previousCreditDue')}</span><b className="negative">−{money.fmtCompact(dashboard.cashflowPreviousCreditDue)}</b></div>
+          <div><span>{t('home.assets')}</span><b>{money.fmtCompactSigned(dashboard.assets)}</b></div>
           <i>−</i>
           <div>
-            <span>{t(dashboard.cashflowCurrentCreditDue < dashboard.currentPeriodCreditDue ? 'reports.currentCreditDueOutsideInstallments' : 'reports.currentCreditDue')}</span>
-            <b className="negative">−{money.fmtCompact(dashboard.cashflowCurrentCreditDue)}</b>
-            <small>{t('reports.currentCreditSpendingRecorded', {
-              amount: money.fmtCompact(dashboard.currentPeriodCreditSpending),
-            })}</small>
+            <span>{t('home.cardBill')}</span>
+            <b className="negative">−{money.fmtCompact(dashboard.card.bill)}</b>
+            {cardBillParts && <small>{cardBillParts}</small>}
           </div>
           <i>−</i>
-          <div><span>{t('planning.lockedSavings')}</span><b className="negative">−{money.fmtCompact(dashboard.reserved)}</b></div>
+          <div><span>{t('home.savings')}</span><b className="negative">−{money.fmtCompact(dashboard.reserved)}</b></div>
           <i>−</i>
-          <div><span>{t('planning.remainingBudget')}</span><b className="negative">−{money.fmtCompact(dashboard.allocated)}</b>
-            {dashboard.installmentBudgetRemaining > 0 && <small>{t('home.installmentBudgetBreakdown', {
-              manual: money.fmtCompact(dashboard.manualBudgetRemaining),
-              installment: money.fmtCompact(dashboard.installmentBudgetRemaining),
-            })}</small>}
-          </div>
+          <div><span>{t('home.budgetLeft')}</span><b className="negative">−{money.fmtCompact(dashboard.budgetRemaining)}</b></div>
           <i>=</i>
-          <div><span>{t('reports.freeCashflow')}</span><b className={dashboard.safeToSpend >= 0 ? 'positive' : 'negative'}>{money.fmtCompactSigned(dashboard.safeToSpend)}</b></div>
+          <div><span>{t('home.safeToSpend')}</span><b className={dashboard.safeToSpend >= 0 ? 'positive' : 'negative'}>{money.fmtCompactSigned(dashboard.safeToSpend)}</b></div>
         </div>
       </section>
 
@@ -725,7 +721,7 @@ export default function ReportsScreen() {
               [t('reports.actualExpense'), actualExpense, previousActualExpense, false, false],
               // Arus kas bersih boleh negatif, jadi tandanya harus ikut tercetak —
               // dua sisanya selalu ≥ 0 dan tidak perlu diberi tanda plus.
-              [t('reports.netCashflow'), netCashflow, previousNet, true, true],
+              [t('reports.realNet'), netCashflow, previousNet, true, true],
             ] as Array<[string, number, number, boolean, boolean]>)
               .map(([label, current, previous, higherIsBetter, signed]) => {
                 const change = deltaPercent(current, previous);
@@ -1144,7 +1140,7 @@ export default function ReportsScreen() {
         </div>
       </div>
 
-      {/* ===== Informasi kredit ===== */}
+      {/* ===== Kartu kredit ===== */}
       <div className="sec"><span className="t">{t('reports.creditInsights')}</span></div>
       <div className="transaction-insight-card">
         {creditWallets.length === 0 ? (
@@ -1152,47 +1148,36 @@ export default function ReportsScreen() {
         ) : (
           <>
             <div className="transaction-insight-feature">
-              <span>{t('reports.creditPreviousBill')}</span>
+              <span>{t('home.cardBill')}</span>
               <div>
-                <b>{t('reports.creditBillsFromCards', { wallets: creditWalletNames })}</b>
-                <strong>{money.fmt(creditBillPreviousPeriod)}</strong>
+                <b>{cardBillParts || t('wallets.cardBillEmpty')}</b>
+                <strong>{money.fmt(dashboard.card.bill)}</strong>
               </div>
             </div>
-            <div className={`transaction-insight-grid wide credit-insight-grid credit-insight-count-${4 + (creditPayments.length > 0 ? 1 : 0) + (installments.length > 0 ? 1 : 0)}`}>
+            <div className="transaction-insight-grid wide credit-insight-grid credit-insight-count-4">
               <div>
-                <span>{t('reports.creditTransactionsPeriod')}</span>
-                <b>{creditExpenses.length} {t('reports.txCount')}</b>
-                <small>{t('reports.creditTransactionValue', { amount: money.fmtCompact(creditBillFromPeriod) })}</small>
+                <span>{t('reports.creditSpending')}</span>
+                <b>{money.fmtCompact(creditSpending)}</b>
+                <small>{creditExpenses.length} {t('reports.txCount')} · {selectedRangeLabel}</small>
               </div>
               <div>
-                <span>{t('reports.creditBillFromPeriod')}</span>
-                <b>{money.fmtCompact(creditBillFromPeriod)}</b>
-                <small>{t('reports.creditBillThisMonthNote')}</small>
-              </div>
-              {creditPayments.length > 0 && (
-                <div>
-                  <span>{t('reports.creditPaymentPeriod')}</span>
-                  <b>{creditPayments.length} {t('reports.txCount')}</b>
-                  <small>{t('reports.creditPaymentSettlementValue', { amount: money.fmtCompact(creditPaymentsTotal) })}</small>
-                </div>
-              )}
-              <div>
-                <span>{t('reports.creditLimitRemaining')}</span>
-                <b>{money.fmtCompact(creditLimitRemaining)}</b>
-                <small>{t('reports.creditLimitTotal', { amount: money.fmtCompact(totalCreditLimit) })}</small>
+                <span>{t('reports.creditPayments')}</span>
+                <b>{money.fmtCompact(creditPaymentsTotal)}</b>
+                <small>{creditPayments.length} {t('reports.txCount')} · {selectedRangeLabel}</small>
               </div>
               <div>
-                <span>{t('reports.creditCardsActive')}</span>
-                <b>{creditWallets.length} {t('reports.creditCardUnit')}</b>
-                <small>{t('reports.creditLimitTotal', { amount: money.fmtCompact(totalCreditLimit) })}</small>
+                <span>{t('reports.creditUnbilled')}</span>
+                <b>{money.fmtCompact(dashboard.card.installmentUnbilled)}</b>
+                <small>{t('installments.activeCount', { n: activeInstallmentCount })}</small>
               </div>
-              {installments.length > 0 && (
-                <div>
-                  <span>{t('reports.creditInstallmentsPeriod')}</span>
-                  <b>{installments.length} {t('reports.txCount')}</b>
-                  <small>{t('reports.creditTransactionValue', { amount: money.fmtCompact(installmentSpending) })}</small>
-                </div>
-              )}
+              <div>
+                <span>{t('wallets.cardAvailable')}</span>
+                <b>{money.fmtCompact(dashboard.card.available)}</b>
+                <small>{t('wallets.cardDebtOfLimit', {
+                  debt: money.fmtCompact(dashboard.card.debt),
+                  limit: money.fmtCompact(dashboard.card.limit),
+                })}</small>
+              </div>
             </div>
           </>
         )}

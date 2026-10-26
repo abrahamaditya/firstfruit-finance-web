@@ -2,11 +2,12 @@
 
 import React, { useMemo, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { useActivePeriodTransactions, useReminders, useSubscriptions, useWallets } from '../application/hooks';
+import { useInstallments, useReminders, useSubscriptions, useTransactions, useWallets } from '../application/hooks';
 import { useRepositories } from '../infrastructure/RepositoryProvider';
 import { addDays, billingDatesInRange, dayKey, monthGrid, startOfDay, weekGrid } from '../core/domain/calendar';
 import { Check, ChevronR, Clock, Plus, Recur, Up, Down, TransferCard } from '../components/ui/icons';
-import { isActualIncome, isIncome } from '../core/domain/calculations';
+import { isActualIncome, isIncome, netWorthDirection } from '../core/domain/calculations';
+import { installmentSchedule } from '../core/domain/installment-schedule';
 
 type View = 'month' | 'week';
 
@@ -16,11 +17,19 @@ export default function CalendarScreen() {
   const t = useT();
   const repos = useRepositories();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const { data: transactions } = useActivePeriodTransactions();
+  // Kalender bisa digeser ke bulan mana pun, jadi sumbernya seluruh transaksi.
+  const { data: transactions } = useTransactions();
+  const { data: installments } = useInstallments();
   const { wallets } = useWallets();
   const { subs } = useSubscriptions();
   const { reminders } = useReminders();
   const walletName = (id?: string) => wallets.find((wallet) => wallet.id === id)?.name;
+  const directionOf = (transaction: typeof transactions[number]) =>
+    netWorthDirection(transaction, wallets.find((wallet) => wallet.id === transaction.walletId)?.kind);
+  const toneOf = (transaction: typeof transactions[number]) => {
+    const direction = directionOf(transaction);
+    return direction > 0 ? 'in' : direction < 0 ? 'out' : '';
+  };
   const transactionTitle = (transaction: typeof transactions[number]) => {
     if (transaction.type === 'transfer') {
       return `${walletName(transaction.walletId) ?? 'Dompet asal'} → ${walletName(transaction.toWalletId) ?? 'Dompet tujuan'}`;
@@ -39,7 +48,11 @@ export default function CalendarScreen() {
 
   // Semua yang bisa muncul di kalender dikumpulkan ke satu peta per tanggal.
   const byDay = useMemo(() => {
-    const map = new Map<string, { tx: typeof transactions; bills: Array<{ id: string; name: string; amount: number }>; todos: typeof reminders }>();
+    const map = new Map<string, {
+      tx: typeof transactions;
+      bills: Array<{ id: string; name: string; amount: number; kind: 'subscription' | 'installment' }>;
+      todos: typeof reminders;
+    }>();
     const bucket = (key: string) => {
       let entry = map.get(key);
       if (!entry) { entry = { tx: [], bills: [], todos: [] }; map.set(key, entry); }
@@ -48,12 +61,21 @@ export default function CalendarScreen() {
     transactions.forEach((item) => bucket(dayKey(item.date)).tx.push(item));
     subs.forEach((sub) =>
       billingDatesInRange(sub, rangeStart, rangeEnd).forEach((date) =>
-        bucket(dayKey(date)).bills.push({ id: `${sub.id}-${dayKey(date)}`, name: sub.name, amount: sub.amount }),
+        bucket(dayKey(date)).bills.push({
+          id: `${sub.id}-${dayKey(date)}`, name: sub.name, amount: sub.amount, kind: 'subscription',
+        }),
       ),
     );
+    const from = dayKey(rangeStart);
+    const to = dayKey(rangeEnd);
+    installments.flatMap(installmentSchedule)
+      .filter((due) => !due.paid && due.dueDate >= from && due.dueDate <= to)
+      .forEach((due) => bucket(due.dueDate).bills.push({
+        id: due.id, name: `${due.title} ${due.number}/${due.tenor}`, amount: due.amount, kind: 'installment',
+      }));
     reminders.forEach((reminder) => bucket(dayKey(reminder.date)).todos.push(reminder));
     return map;
-  }, [transactions, subs, reminders, rangeStart, rangeEnd]);
+  }, [transactions, installments, subs, reminders, rangeStart, rangeEnd]);
 
   const todayKey = dayKey(new Date());
   const selectedEntry = byDay.get(selected) ?? { tx: [], bills: [], todos: [] };
@@ -92,12 +114,12 @@ export default function CalendarScreen() {
     <>
       <div className="cal-toolbar">
         <div className="cal-nav">
-          <button onClick={() => shift(-1)} aria-label="Sebelumnya"><ChevronR className="flip" /></button>
+          <button onClick={() => shift(-1)} aria-label={t('cal.previous')}><ChevronR className="flip" /></button>
           <div className="cal-title">
             <b>{monthLabel}</b>
             {view === 'week' && <small>{weekLabel}</small>}
           </div>
-          <button onClick={() => shift(1)} aria-label="Berikutnya"><ChevronR /></button>
+          <button onClick={() => shift(1)} aria-label={t('cal.next')}><ChevronR /></button>
         </div>
         <div className="mseg">
           <button className={view === 'month' ? 'on' : ''} onClick={() => setView('month')}>{t('cal.month')}</button>
@@ -142,9 +164,9 @@ export default function CalendarScreen() {
               </span>
               {showTx && view === 'week' && (totals.income > 0 || totals.expense > 0) && (
                 <span className="cal-amt">
-                  {totals.expense > 0 && <em className="out">-{money.fmtCompact(totals.expense)}</em>}
+                  {totals.expense > 0 && <em className="out">−{money.fmtCompact(totals.expense)}</em>}
                   {totals.income > 0 && <em className="in" title={t('reports.income')}>+{money.fmtCompact(totals.income)}</em>}
-                  {totals.actualIncome > 0 && <em className="real-in" title={t('reports.actualIncome')}>Riil +{money.fmtCompact(totals.actualIncome)}</em>}
+                  {totals.actualIncome > 0 && <em className="real-in" title={t('reports.actualIncome')}>{t('cal.realShort')} +{money.fmtCompact(totals.actualIncome)}</em>}
                 </span>
               )}
             </button>
@@ -179,10 +201,10 @@ export default function CalendarScreen() {
       ))}
 
       {selectedEntry.bills.map((bill) => (
-        <div className="row" key={bill.id}>
+        <div className="row" key={bill.id} onClick={() => ui.go(bill.kind === 'installment' ? 'installments' : 'subs')}>
           <div className="ic"><Recur /></div>
-          <div className="mid"><div className="t1">{bill.name}</div><div className="t2"><span className="chip">{t('cal.billingDue')}</span></div></div>
-          <div className="r"><div className="val out">-{money.fmt(bill.amount)}</div></div>
+          <div className="mid"><div className="t1">{bill.name}</div><div className="t2"><span className="chip">{t(bill.kind === 'installment' ? 'cal.installmentDue' : 'cal.billingDue')}</span></div></div>
+          <div className="r"><div className="val out">−{money.fmt(bill.amount)}</div></div>
         </div>
       ))}
 
@@ -192,13 +214,15 @@ export default function CalendarScreen() {
           key={item.id}
           onClick={() => ui.openItem(transactionTitle(item), item.type === 'transfer' ? 'transfer' : 'transaksi', item.id)}
         >
-          <div className={`ic ${item.type === 'income' ? 'in' : item.type === 'transfer' ? '' : 'out'}`}>
-            {item.type === 'income' ? <Down /> : item.type === 'transfer' ? <TransferCard /> : <Up />}
+          <div className={`ic ${toneOf(item)}`}>
+            {item.type === 'transfer' ? <TransferCard /> : directionOf(item) > 0 ? <Down /> : <Up />}
           </div>
           <div className="mid">
             <div className="t1">{transactionTitle(item)}</div>
             <div className="t2">
-              {item.type === 'income' && (
+              {item.adjustment ? (
+                <span className="chip">{t('tx.adjustmentChip')}</span>
+              ) : item.type === 'income' && (
                 <span className="chip" data-cat="income">
                   {isActualIncome(item) ? t('reports.actualIncome') : t('tx.receivableIncome')}
                 </span>
@@ -208,8 +232,8 @@ export default function CalendarScreen() {
             </div>
           </div>
           <div className={`r`}>
-            <div className={`val ${item.type === 'income' ? 'in' : item.type === 'transfer' ? '' : 'out'}`}>
-              {item.type === 'income' ? '+' : item.type === 'expense' ? '-' : ''}{money.fmt(item.amount)}
+            <div className={`val ${toneOf(item)}`}>
+              {directionOf(item) > 0 ? '+' : directionOf(item) < 0 ? '−' : ''}{money.fmt(item.amount)}
             </div>
           </div>
         </div>

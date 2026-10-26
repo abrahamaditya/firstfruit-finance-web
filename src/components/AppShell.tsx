@@ -20,8 +20,9 @@ import {
 } from '../infrastructure/supabase/AuthProvider';
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
-import { creditObligationBreakdown, periodProgress } from '../core/domain/calculations';
-import { creditLimitBreakdown, installmentPaidAmount, installmentQuote } from '../core/domain/installment-pricing';
+import { periodProgress, transactionInPeriod } from '../core/domain/calculations';
+import { installmentPaidAmount, installmentQuote } from '../core/domain/installment-pricing';
+import { creditCardPeriod, creditCardPosition } from '../core/domain/credit-card';
 import { BudgetPeriod, CardNetwork, Transaction, Wallet, WalletKind, WalletMedium } from '../core/domain/types';
 import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
@@ -628,12 +629,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     : undefined;
   const viewPeriod = periods.find((period) => period.id === periodId) ?? activePeriod;
   const isArchivePeriod = viewPeriod?.status === 'closed';
-  const transactionIsInActivePeriod = (transaction: Transaction) => {
-    if (!activePeriod) return false;
-    if (transaction.periodId) return transaction.periodId === activePeriod.id;
-    const occurredAt = new Date(transaction.date);
-    return occurredAt >= new Date(activePeriod.start) && occurredAt <= new Date(activePeriod.end);
-  };
+  const transactionIsInActivePeriod = (transaction: Transaction) =>
+    Boolean(activePeriod) && transactionInPeriod(transaction, activePeriod!);
   const [create, setCreate] = useState<CreateDescriptor>({ type: 'wallet', isEdit: false });
   const [form, setForm] = useState<Record<string, string>>({});
   const [creditPaymentInstallments, setCreditPaymentInstallments] = useState<Record<string, number>>({});
@@ -644,6 +641,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   const [installmentOptions, setInstallmentOptions] = useState<Transaction[]>([]);
   const [installmentsLoaded, setInstallmentsLoaded] = useState(false);
   const [formDraftReady, setFormDraftReady] = useState(false);
+  // Sisa limit di form memakai rumus dan periode acuan yang sama dengan Beranda dan Dompet.
+  const cardPeriod = creditCardPeriod(periods, activePeriod);
+  const cardPositionFor = (wallet: Wallet) => creditCardPosition(
+    wallet,
+    cardPeriod ? transactionOptions.filter((transaction) => transactionInPeriod(transaction, cardPeriod)) : [],
+    installmentOptions,
+    cardPeriod,
+  );
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([]);
   const [walletsLoaded, setWalletsLoaded] = useState(false);
   const [debitWalletOptions, setDebitWalletOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -1178,7 +1183,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         isExpense(form)
         && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit');
       const isBudgetable = (form: Record<string, string>) =>
-        isExpense(form)
+        (isExpense(form) && !(usesCreditCard(form) && form.isInstallment === 'yes'))
         || (isTransfer(form) && Boolean(form.toWalletId) && !isCreditPayment(form));
       const defaultWalletId = prefs.defaultWalletId || '';
       const today = new Date().toISOString().slice(0, 10);
@@ -1192,7 +1197,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       // Satu definisi dipakai dua kali: 'transaksi' dan alias 'transfer'.
       const transaksiConfig: FormConfig = {
         title: 'transaksi',
-        description: 'Isi data utama dari atas ke bawah. Field lanjutan hanya muncul tepat di bawah pilihan yang memerlukannya.',
+        description: 'Isi dari atas ke bawah; kolom tambahan muncul sesuai pilihan.',
         fields: [
           {
             key: 'txType',
@@ -1230,14 +1235,14 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             label: 'Tag transaksi',
             type: 'computed',
             computedValue: () => CREDIT_CARD_PAYMENT_TAG,
-            hint: 'Ditambahkan otomatis karena dompet tujuan adalah kartu kredit dan tidak dapat diubah.',
+            hint: 'Otomatis untuk pembayaran kartu kredit.',
             showIf: isCreditPayment,
           },
           {
             key: 'creditPaymentInstallments',
             label: 'Alokasikan pembayaran ke cicilan',
             type: 'installmentAllocation',
-            hint: 'Centang cicilan yang benar-benar dibayar. Pembayaran yang tidak dialokasikan tetap mengurangi tagihan kartu, tetapi tidak menambah cicilan mana pun.',
+            hint: 'Centang cicilan yang ikut dibayar. Sisa pembayaran tetap mengurangi tagihan kartu.',
             showIf: isCreditPayment,
           },
           {
@@ -1284,7 +1289,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               { value: 'monthly', label: 'Cicilan/bulan' },
               { value: 'item_total', label: 'Harga barang' },
             ],
-            hint: 'Pilih salah satu; aplikasi menghitung angka lainnya. Bunga diisi sebagai total selama tenor.',
+            hint: 'Isi salah satu, sisanya dihitung. Bunga = total selama tenor.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
@@ -1310,7 +1315,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               const quote = quoteForInstallmentForm(f);
               return quote ? formatIDR(quote.itemTotal) : 'Isi cicilan, tenor, dan bunga yang valid';
             },
-            hint: 'Dihitung dari cicilan per bulan × tenor − total bunga.',
+            hint: 'Cicilan/bulan × tenor − total bunga.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode !== 'item_total',
           },
           {
@@ -1321,7 +1326,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               const quote = quoteForInstallmentForm(f);
               return quote ? formatIDR(quote.totalPayable) : 'Isi rincian cicilan terlebih dahulu';
             },
-            hint: 'Harga barang + seluruh bunga; nilai inilah yang dihitung untuk pemakaian limit.',
+            hint: 'Harga barang + total bunga. Seluruhnya memakai limit kartu.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
@@ -1332,15 +1337,16 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               const quote = quoteForInstallmentForm(f);
               return quote ? formatIDR(quote.monthlyAmount) : 'Isi harga barang, bunga, dan tenor';
             },
-            hint: 'Jika tidak habis dibagi tenor, selisih Rp1 dibagikan ke angsuran awal; angsuran terakhir bisa lebih kecil.',
+            hint: 'Sisa pembulatan Rp1 masuk ke angsuran awal.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode === 'item_total',
           },
           {
             key: 'installmentPaidMonths',
-            label: 'Cicilan yang sudah lunas sebelum dicatat',
+            label: 'Angsuran yang sudah lunas',
             type: 'number',
             optional: true,
             placeholder: '0',
+            hint: 'Untuk cicilan yang sudah berjalan. Angsuran berikutnya jatuh tempo pada tanggal transaksi ini.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
@@ -1353,7 +1359,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 ? `${Math.max(0, tenor - toNumber(f.installmentPaidMonths))} kali cicilan tersisa`
                 : 'Isi tenor cicilan terlebih dahulu';
             },
-            hint: 'Pembayaran setelah transaksi dicatat dilakukan lewat transfer ke kartu, lalu alokasikan ke cicilan ini.',
+            hint: 'Angsuran berikutnya masuk tagihan kartu tiap bulan. Bayar lewat transfer ke kartu, lalu alokasikan ke cicilan ini.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes',
           },
           {
@@ -1485,7 +1491,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const configs: Record<CreateType, FormConfig> = {
         wallet: {
           title: 'dompet',
-          description: 'Untuk kartu kredit, masukkan limit total dan tagihan awal. Sisa limit dihitung otomatis.',
+          description: 'Kartu kredit: isi limit dan tagihan yang belum dibayar; sisa limit dihitung otomatis.',
           fields: [
             {
               key: 'medium',
@@ -1555,7 +1561,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               optional: true,
               placeholder: '0',
               hint: create.isEdit
-                ? 'Terisi otomatis saat periode baru dibuka dari kewajiban kartu akhir periode sebelumnya. Nilainya tetap dapat disesuaikan.'
+                ? 'Terisi otomatis saat periode dibuka: tagihan akhir periode lalu + angsuran cicilan. Samakan dengan lembar tagihan bank bila berbeda.'
                 : 'Menjadi baseline tagihan pada periode berjalan pertama.',
               showIf: (f) => f.medium === 'credit',
             },
@@ -1567,15 +1573,19 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
                 const limit = toNumber(f.creditLimit);
                 const current = walletOptions.find((wallet) => wallet.value === create.id);
                 const used = create.isEdit && current
-                  ? creditLimitBreakdown({ ...current.wallet, balance: toNumber(f.balance), creditLimit: limit }, installmentOptions).used
+                  ? cardPositionFor({
+                    ...current.wallet,
+                    creditLimit: limit,
+                    previousPeriodBill: toNumber(f.creditOutstanding),
+                  }).debt
                   : toNumber(f.creditOutstanding);
                 return limit > 0
                   ? formatIDR(Math.max(0, limit - used))
                   : 'Isi limit total terlebih dahulu';
               },
               hint: create.isEdit
-                ? 'Dihitung dari limit total dikurangi saldo kartu dan seluruh sisa cicilan lintas periode.'
-                : 'Dihitung dari limit total dikurangi tagihan awal kartu.',
+                ? 'Limit − (tagihan + cicilan yang belum ditagih).'
+                : 'Limit − tagihan awal.',
               showIf: (f) => f.medium === 'credit',
             },
           ],
@@ -1597,12 +1607,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         transfer: { ...transaksiConfig, defaults: { ...transaksiConfig.defaults, txType: 'transfer', note: '' } },
         subscription: {
           title: 'langganan',
-          description: 'Catat jadwal dan biaya langganan untuk mendapat pengingat. Pembayaran dicatat terpisah di Transaksi.',
+          description: 'Jadwal tagihan untuk pengingat. Pembayarannya tetap dicatat di Transaksi.',
           fields: [
             { key: 'name', label: 'Nama layanan', placeholder: 'Contoh: Netflix' },
             {
               key: 'amount', label: 'Nominal per tagihan', type: 'number',
-              hint: 'Perkiraan biaya per tagihan; tidak mengurangi saldo dompet.',
+              hint: 'Per tagihan; tidak mengurangi saldo.',
             },
             {
               key: 'cycle',
@@ -1668,7 +1678,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         },
         budget: {
           title: 'anggaran',
-          description: 'Buat anggaran bebas untuk periode berjalan. Transaksi ditautkan secara manual.',
+          description: 'Batas belanja periode berjalan. Tautkan transaksi lewat kolom Anggaran di form transaksi.',
           fields: [
             { key: 'name', label: 'Nama anggaran', placeholder: 'Contoh: Makan bulan ini' },
             { key: 'allocated', label: 'Alokasi', type: 'number', hint: 'Batas anggaran; dana tidak dipindahkan dari dompet.' },
@@ -1677,7 +1687,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         },
         periode: {
           title: 'periode',
-          description: 'Atur rentang waktu yang dipakai untuk anggaran dan laporan.',
+          description: 'Rentang tanggal untuk anggaran dan laporan.',
           fields: [
             { key: 'alias', label: 'Nama periode', placeholder: 'Periode Juli' },
             { key: 'start', label: 'Tanggal mulai', type: 'date' },
@@ -1729,7 +1739,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         },
         tabungan: {
           title: 'tabungan',
-          description: 'Buat dana yang disisihkan untuk diri sendiri atau orang lain. Saldo awal selalu Rp0 dan dananya ditambahkan melalui transaksi Transfer.',
+          description: 'Dana yang disisihkan di dalam dompet. Mulai dari Rp0; isi lewat Transfer.',
           fields: [
             { key: 'emoji', label: 'Ikon (emoji)', placeholder: '🎓' },
             { key: 'name', label: 'Nama tabungan', placeholder: 'Masukkan nama tabungan' },
@@ -1762,7 +1772,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         },
         reminder: {
           title: 'pengingat',
-          description: 'Catat to-do atau pengingat pada tanggal tertentu. Muncul di kalender bersama jatuh tempo langganan.',
+          description: 'Muncul di Kalender dan agenda Beranda pada tanggalnya.',
           fields: [
             { key: 'title', label: 'Judul pengingat', placeholder: 'Contoh: Bayar SPP Jeje' },
             { key: 'date', label: 'Tanggal', type: 'date' },
@@ -1774,8 +1784,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       };
       return configs[type];
     },
+    // cardPositionFor bergantung pada transactionOptions, installmentOptions, dan activePeriod.
     [walletOptions, debitWalletOptions, savingOptions, budgetOptions, receivableOptions, installmentOptions,
-      noteSuggestions, debtorSuggestions, prefs.defaultWalletId, create.isEdit, activePeriod, numLocale],
+      transactionOptions, noteSuggestions, debtorSuggestions, prefs.defaultWalletId, create.isEdit, activePeriod,
+      numLocale],
   );
 
   // Notifikasi dan status bacanya tersimpan per akun di PostgreSQL.
@@ -2365,11 +2377,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             || installmentPaidMonths < 0
             || installmentPaidMonths >= (installmentTenorMonths ?? 0))
         ) {
-          notify('Cicilan yang sudah lunas harus antara 0 dan satu kurang dari total tenor');
+          notify('Angsuran yang sudah lunas harus 0 sampai tenor − 1');
           return;
         }
         if (installmentTenorMonths !== undefined && !installmentTerms) {
-          notify('Periksa nominal cicilan, harga barang, bunga, dan tenor. Harga barang harus lebih besar dari nol.');
+          notify('Periksa cicilan, harga barang, bunga, dan tenor. Harga barang harus di atas Rp0.');
           return;
         }
         const amount = installmentTerms?.monthlyAmount ?? toNumber(form.amount);
@@ -2398,7 +2410,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               : [];
           });
         if (isCreditPayment && creditPaymentAllocationTotal > amount) {
-          notify('Total cicilan yang dipilih tidak boleh melebihi nominal pembayaran kartu');
+          notify('Total cicilan yang dicentang melebihi nominal pembayaran');
           return;
         }
         const isPiutang = type === 'expense' && form.pillar === 'Receivables';
@@ -2423,7 +2435,8 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             ? form.savingId
             : undefined,
           labels: isCreditPayment ? [CREDIT_CARD_PAYMENT_TAG] : isTransfer ? [] : [category],
-          budgetId: (type === 'expense' || (isTransfer && !isCreditPayment)) && form.includeBudget === 'yes'
+          budgetId: ((type === 'expense' && installmentTenorMonths === undefined) || (isTransfer && !isCreditPayment))
+            && form.includeBudget === 'yes'
             ? form.budgetId
             : undefined,
           installmentTenorMonths,
@@ -2708,10 +2721,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       && (create.type === 'transaksi' || create.type === 'transfer')) {
       if (!walletsLoaded) return { text: 'Memuat saldo dompet…' };
       const selected = walletOptions.find((option) => option.value === form.walletId);
-      if (!selected) return { text: 'Pilih dompet pada bagian Sumber dana untuk melihat saldonya.' };
+      if (!selected) return { text: 'Pilih dompet untuk melihat saldonya.' };
       if (selected.kind === 'credit') {
         if (!installmentsLoaded) return { text: `Memuat sisa limit ${selected.label}…` };
-        const { available, installmentRemaining } = creditLimitBreakdown(selected.wallet, installmentOptions);
+        const { available, installmentUnbilled } = cardPositionFor(selected.wallet);
         const quote = form.isInstallment === 'yes' ? quoteForInstallmentForm(form) : null;
         const paid = quote ? toNumber(form.installmentPaidMonths) : 0;
         const alreadyPaid = quote
@@ -2721,9 +2734,9 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         const newCharge = quote ? quote.totalPayable - alreadyPaid : enteredAmount;
         return {
           text: `Sisa limit ${selected.label}: ${formatted(available)}`
-            + (installmentRemaining > 0 ? ` · Termasuk sisa cicilan ${formatted(installmentRemaining)}` : ''),
+            + (installmentUnbilled > 0 ? ` · cicilan belum ditagih ${formatted(installmentUnbilled)}` : ''),
           warning: !create.isEdit && form.txType === 'expense' && newCharge > available
-            ? 'Total kewajiban baru melebihi sisa limit kartu.' : undefined,
+            ? 'Melebihi sisa limit kartu.' : undefined,
         };
       }
       if (!savingsLoaded) {

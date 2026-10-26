@@ -15,6 +15,8 @@ import type {
 import type { DataRepositories, Repository } from '../../core/ports/repositories';
 import { categoryPath } from '../../core/domain/categories';
 import { CREDIT_CARD_PAYMENT_TAG } from '../../core/domain/transaction-tags';
+import { addDays, dayKey } from '../../core/domain/calendar';
+import { installmentCarryNote, installmentChargesBetween } from '../../core/domain/credit-card';
 
 type DbRow = Record<string, any>;
 
@@ -319,6 +321,34 @@ export function createSupabaseRepositories(
     };
   }
 
+  /** `reason` menjadi catatan jurnal penyesuaian saldo bila saldo ikut berubah. */
+  async function updateWallet(id: string, patch: Partial<Wallet>, reason?: string): Promise<Wallet> {
+    const before = await wallets.get(id);
+    if (!before) throw new Error('Wallet tidak ditemukan');
+    const payload = {
+      workspace_id: workspaceId,
+      wallet_id: id,
+      idempotency_key: idempotencyKey(),
+      name: patch.name ?? before.name,
+      institution_name: patch.bank ?? before.bank ?? null,
+      last4: patch.last4 ?? before.last4 ?? null,
+      phone_masked: patch.phone ?? before.phone ?? null,
+      card_network: patch.cardNetwork ?? before.cardNetwork ?? null,
+      credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
+      // Fungsi database menolak field tagihan kartu kredit untuk wallet aset.
+      // Jangan sertakan key ini sama sekali saat rekening debit diperbarui.
+      ...(before.kind === 'credit' ? {
+        previous_period_bill_minor: patch.previousPeriodBill ?? before.previousPeriodBill ?? 0,
+      } : {}),
+      target_balance_minor: patch.balance ?? before.balance,
+      visible_in_feed: false,
+      reason: reason ?? `Penyesuaian saldo ${patch.name ?? before.name}`,
+    };
+    const { error } = await supabase.rpc('update_wallet_with_network', { p_payload: payload });
+    throwIfError(error, 'Gagal memperbarui wallet');
+    return (await wallets.get(id))!;
+  }
+
   const wallets: Repository<Wallet> = {
     async list() {
       const { data, error } = await supabase
@@ -358,32 +388,7 @@ export function createSupabaseRepositories(
       throwIfError(error, 'Gagal membuat wallet');
       return (await wallets.get(data as string))!;
     },
-    async update(id, patch) {
-      const before = await wallets.get(id);
-      if (!before) throw new Error('Wallet tidak ditemukan');
-      const payload = {
-        workspace_id: workspaceId,
-        wallet_id: id,
-        idempotency_key: idempotencyKey(),
-        name: patch.name ?? before.name,
-        institution_name: patch.bank ?? before.bank ?? null,
-        last4: patch.last4 ?? before.last4 ?? null,
-        phone_masked: patch.phone ?? before.phone ?? null,
-        card_network: patch.cardNetwork ?? before.cardNetwork ?? null,
-        credit_limit_minor: patch.creditLimit ?? before.creditLimit ?? null,
-        // Fungsi database menolak field tagihan kartu kredit untuk wallet aset.
-        // Jangan sertakan key ini sama sekali saat rekening debit diperbarui.
-        ...(before.kind === 'credit' ? {
-          previous_period_bill_minor: patch.previousPeriodBill ?? before.previousPeriodBill ?? 0,
-        } : {}),
-        target_balance_minor: patch.balance ?? before.balance,
-        visible_in_feed: false,
-        reason: `Penyesuaian saldo ${patch.name ?? before.name}`,
-      };
-      const { error } = await supabase.rpc('update_wallet_with_network', { p_payload: payload });
-      throwIfError(error, 'Gagal memperbarui wallet');
-      return (await wallets.get(id))!;
-    },
+    update: (id, patch) => updateWallet(id, patch),
     async remove(id) {
       const { data: candidates, error: candidateError } = await supabase
         .from('wallets').select('id')
@@ -529,17 +534,60 @@ export function createSupabaseRepositories(
     },
   };
 
+  async function listInstallments(): Promise<Transaction[]> {
+    const pageSize = 500;
+    const all: Transaction[] = [];
+    for (let offset = 0; ; offset += pageSize) {
+      const { data, error } = await supabase
+        .from('v_transactions').select('*')
+        .eq('workspace_id', workspaceId)
+        .not('installment_tenor_months', 'is', null)
+        .order('occurred_at', { ascending: false })
+        .range(offset, offset + pageSize - 1);
+      throwIfError(error, 'Gagal memuat daftar cicilan');
+      all.push(...(data ?? []).map(mapTransaction));
+      if ((data ?? []).length < pageSize) break;
+    }
+    return all;
+  }
+
   /**
-   * Saldo liabilitas pada akhir periode menjadi tagihan pembuka periode yang baru.
-   * Menyalin proyeksi saldo membuat operasi ini idempoten; pemanggilan ulang tidak
-   * menggandakan pengeluaran dan pengguna tetap dapat mengubah baseline lewat Edit Kartu.
+   * Tagihan akhir kartu menjadi tagihan pembuka periode yang baru dibuka:
+   * saldo kartu (tagihan lalu − pembayaran + belanja) ditambah angsuran cicilan yang jatuh
+   * tempo sejak awal periode yang ditutup sampai sehari sebelum periode baru.
+   *
+   * Angsuran itu dicatat sebagai penyesuaian saldo kartu dengan catatan tetap. Bila catatan
+   * yang sama sudah ada di periode baru, angsurannya tidak ditambahkan lagi, sehingga
+   * pemanggilan ulang tetap aman. Pengguna masih dapat mengoreksi baseline lewat Edit Kartu.
    */
   async function carryCreditBillsToOpenedPeriod() {
-    const creditWallets = (await wallets.list()).filter(wallet => wallet.kind === 'credit');
-    await Promise.all(creditWallets.map(wallet => wallets.update(wallet.id, {
-        balance: Math.max(0, wallet.balance),
-        previousPeriodBill: Math.max(0, wallet.balance),
-      })));
+    const allPeriods = await periods.list();
+    const opened = allPeriods.find(period => period.status === 'open');
+    if (!opened) return;
+    const closed = allPeriods
+      .filter(period => period.status === 'closed' && dayKey(period.end) < dayKey(opened.start))
+      .sort((a, b) => dayKey(b.end).localeCompare(dayKey(a.end)))[0];
+    const [creditWallets, installmentList, carried] = await Promise.all([
+      wallets.list().then(list => list.filter(wallet => wallet.kind === 'credit')),
+      listInstallments(),
+      supabase.from('v_transactions').select('wallet_id, note')
+        .eq('workspace_id', workspaceId).eq('period_id', opened.id).eq('type', 'adjustment')
+        .then(({ data, error }) => {
+          throwIfError(error, 'Gagal memeriksa tagihan cicilan');
+          return (data ?? []) as Array<{ wallet_id: string; note: string | null }>;
+        }),
+    ]);
+    const note = closed ? installmentCarryNote(closed.alias) : '';
+    await Promise.all(creditWallets.map(async (wallet) => {
+      const charges = closed
+        ? installmentChargesBetween(
+          installmentList, wallet.id, dayKey(closed.start), dayKey(addDays(new Date(opened.start), -1)),
+        )
+        : 0;
+      const alreadyCarried = carried.some(row => row.wallet_id === wallet.id && row.note === note);
+      const bill = Math.max(0, wallet.balance) + (alreadyCarried ? 0 : charges);
+      await updateWallet(wallet.id, { balance: bill, previousPeriodBill: bill }, charges > 0 ? note : undefined);
+    }));
   }
 
   const budgets: Repository<Budget> = {
@@ -963,24 +1011,7 @@ export function createSupabaseRepositories(
   return {
     wallets,
     transactions,
-    installments: {
-      async list() {
-        const pageSize = 500;
-        const all: Transaction[] = [];
-        for (let offset = 0; ; offset += pageSize) {
-          const { data, error } = await supabase
-            .from('v_transactions').select('*')
-            .eq('workspace_id', workspaceId)
-            .not('installment_tenor_months', 'is', null)
-            .order('occurred_at', { ascending: false })
-            .range(offset, offset + pageSize - 1);
-          throwIfError(error, 'Gagal memuat daftar cicilan');
-          all.push(...(data ?? []).map(mapTransaction));
-          if ((data ?? []).length < pageSize) break;
-        }
-        return all;
-      },
-    },
+    installments: { list: listInstallments },
     budgets,
     periods,
     subscriptions,
@@ -1058,6 +1089,17 @@ export function createSupabaseRepositories(
           p_done: done,
         });
         throwIfError(error, 'Gagal mengubah pengingat');
+      },
+      async billInstallmentCharges(walletId, charges) {
+        // Berurutan: tiap penyesuaian membaca saldo kartu hasil penyesuaian sebelumnya.
+        for (const charge of charges) {
+          const wallet = await wallets.get(walletId);
+          if (!wallet || wallet.kind !== 'credit') throw new Error('Kartu kredit tidak ditemukan');
+          await updateWallet(walletId, {
+            balance: Math.max(0, wallet.balance) + charge.amount,
+            previousPeriodBill: (wallet.previousPeriodBill ?? Math.max(0, wallet.balance)) + charge.amount,
+          }, installmentCarryNote(charge.periodAlias));
+        }
       },
       async archiveWallet(walletId, destinationWalletId) {
         const { error } = await supabase.rpc('archive_wallet', {

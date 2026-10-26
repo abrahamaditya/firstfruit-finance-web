@@ -1,7 +1,27 @@
-import type { Wallet, Transaction, Budget, BudgetPeriod, Saving } from './types';
+import type { Wallet, WalletKind, Transaction, Budget, BudgetPeriod, Saving } from './types';
+import { dayKey } from './calendar';
 
-export function totalLiquidity(wallets: Wallet[]): number {
-  return wallets.reduce((s, w) => s + (w.kind === 'credit' ? -Math.abs(w.balance) : w.balance), 0);
+/**
+ * Transaksi milik periode: pakai `periodId` bila ada, selain itu tanggal lokalnya harus
+ * berada di rentang periode (inklusif). Semua layar memakai aturan yang sama.
+ */
+export function transactionInPeriod(
+  transaction: Pick<Transaction, 'periodId' | 'date'>,
+  period: Pick<BudgetPeriod, 'id' | 'start' | 'end'>,
+): boolean {
+  if (transaction.periodId) return transaction.periodId === period.id;
+  const day = dayKey(transaction.date);
+  return day >= dayKey(period.start) && day <= dayKey(period.end);
+}
+
+/**
+ * Arah dampak transaksi terhadap kekayaan bersih: 1 masuk, −1 keluar, 0 netral.
+ * Transfer netral. Penyesuaian kartu kredit dibalik: saldo kartu naik berarti utang naik.
+ */
+export function netWorthDirection(transaction: Pick<Transaction, 'type' | 'adjustment'>, walletKind?: WalletKind): 1 | -1 | 0 {
+  if (transaction.type === 'transfer') return 0;
+  const direction = transaction.type === 'income' ? 1 : -1;
+  return transaction.adjustment && walletKind === 'credit' ? (-direction as 1 | -1) : direction;
 }
 
 /** Dana aktual di rekening, e-wallet, dan tunai sebelum dikurangi kewajiban kartu. */
@@ -9,66 +29,6 @@ export function totalAssets(wallets: Wallet[]): number {
   return wallets
     .filter(wallet => wallet.kind !== 'credit')
     .reduce((sum, wallet) => sum + wallet.balance, 0);
-}
-
-export interface CreditObligationBreakdown {
-  /** Bagian tagihan pembuka periode yang belum tertutup pembayaran kartu. */
-  previousPeriodDue: number;
-  /** Belanja kartu periode ini yang masih belum tertutup pembayaran. */
-  currentPeriodDue: number;
-  /** Belanja kartu bruto yang dicatat pada periode aktif. */
-  currentPeriodSpending: number;
-  payments: number;
-  total: number;
-}
-
-/**
- * Membentuk liabilitas kartu dari baseline yang dikonfirmasi pengguna dan aktivitas
- * pada periode berjalan.
- *
- * Pembayaran hanya menutup tagihan pembuka periode sebelumnya. Belanja periode ini
- * tetap menjadi tagihan periode berikutnya dan tidak boleh berkurang akibat transfer
- * kartu. `wallet.balance` tidak dipakai sebagai sumber tagihan lama karena nilainya
- * dapat tertinggal ketika baseline kartu diedit pada data versi lama.
- */
-export function creditObligationBreakdown(
-  wallets: Wallet[],
-  periodTransactions: Transaction[],
-): CreditObligationBreakdown {
-  const creditWallets = wallets.filter(wallet => wallet.kind === 'credit');
-
-  return creditWallets.reduce<CreditObligationBreakdown>((result, wallet) => {
-    const spending = periodTransactions
-      .filter(transaction => !transaction.adjustment
-        && transaction.type === 'expense'
-        && transaction.walletId === wallet.id)
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
-    const payments = periodTransactions
-      .filter(transaction => !transaction.adjustment
-        && transaction.type === 'transfer'
-        && transaction.toWalletId === wallet.id)
-      .reduce((sum, transaction) => sum + transaction.amount, 0);
-    // Record lama belum memiliki baseline. Rekonstruksi nilai pembukanya dari saldo
-    // aktual agar transaksi periode ini tidak keliru dianggap sebagai tagihan lama.
-    const openingBill = wallet.previousPeriodBill
-      ?? Math.max(0, Math.abs(wallet.balance) - spending + payments);
-    const previousPeriodDue = Math.max(0, openingBill - payments);
-    const currentPeriodDue = spending;
-
-    return {
-      previousPeriodDue: result.previousPeriodDue + previousPeriodDue,
-      currentPeriodDue: result.currentPeriodDue + currentPeriodDue,
-      currentPeriodSpending: result.currentPeriodSpending + spending,
-      payments: result.payments + payments,
-      total: result.total + previousPeriodDue + currentPeriodDue,
-    };
-  }, {
-    previousPeriodDue: 0,
-    currentPeriodDue: 0,
-    currentPeriodSpending: 0,
-    payments: 0,
-    total: 0,
-  });
 }
 
 // ===== Tabungan (earmark di dalam dompet) =====
@@ -139,9 +99,6 @@ export function budgetView(b: Budget): BudgetView {
 export function remainingBudget(budgets: Budget[]): number {
   return budgets.reduce((sum, budget) => sum + Math.max(0, budget.allocated - budget.spent), 0);
 }
-export function safeToSpend(liquidity: number, budgets: Budget[], reserved = 0): number {
-  return liquidity - remainingBudget(budgets) - reserved;
-}
 
 const DAY_MS = 86_400_000;
 /**
@@ -192,7 +149,4 @@ export function periodProgress(p: BudgetPeriod, today: Date = new Date()) {
     notStarted: elapsed < 0,
     overdue: totalDays - elapsed <= 0,
   };
-}
-export function periodNet(liquidity: number, budgets: Budget[]): number {
-  return safeToSpend(liquidity, budgets);
 }

@@ -62,7 +62,7 @@ export default function PlanningScreen() {
   const capacity = monthlyCapacity(context);
   const money0 = (value: number) => money.fmt(Math.round(value));
   const moneySigned0 = (value: number) => money.fmtSigned(Math.round(value));
-  const financialCondition = context.financialCondition;
+  const freeCash = context.freeCash;
   const totalTarget = plans.reduce((sum, plan) => sum + plan.target, 0);
   const totalSaved = plans.reduce((sum, plan) => sum + plan.saved, 0);
   const savedPct = totalTarget ? Math.round((totalSaved / totalTarget) * 100) : 0;
@@ -86,38 +86,41 @@ export default function PlanningScreen() {
       <div className="sandbox-tag"><Sandbox /> {t('planning.sandboxTag')}</div>
 
       {/* Angka dasar yang dipakai semua simulasi — biar jelas hasilnya datang dari mana. */}
-      <div className={`plan-context${financialCondition >= 0 ? ' is-positive' : ' is-tight'}`}>
+      <div className={`plan-context${freeCash >= 0 ? ' is-positive' : ' is-tight'}`}>
         <div className="financial-condition-head">
           <div>
-            <span>{t('planning.financialCondition')}</span>
-            <b className={financialCondition >= 0 ? 'positive' : 'negative'}>{moneySigned0(financialCondition)}</b>
-            <p>{t('planning.financialConditionLead')}</p>
+            <span>{t('home.safeToSpend')}</span>
+            <b className={freeCash >= 0 ? 'positive' : 'negative'}>{moneySigned0(freeCash)}</b>
+            <p>{t('planning.freeCashLead')}</p>
           </div>
           <span className="financial-condition-status">
-            {t(financialCondition >= 0 ? 'planning.conditionSafe' : 'planning.conditionDeficit')}
+            {t(freeCash >= 0 ? 'planning.conditionSafe' : 'planning.conditionDeficit')}
           </span>
         </div>
 
         <div className="financial-condition-breakdown">
-          <div><span>{t('planning.assetBalance')}</span><b className="positive">+{money0(context.cashBalance)}</b></div>
-          <div><span>{t('planning.lockedSavings')}</span><b>−{money0(context.reserved)}</b></div>
-          <div><span>{t(context.cashflowCreditBill < context.nextMonthBills ? 'planning.creditBillOutsideInstallments' : 'planning.creditBill')}</span><b>−{money0(context.cashflowCreditBill)}</b></div>
-          <div><span>{t('planning.remainingBudget')}</span><b>−{money0(context.budgetRemaining)}</b></div>
+          <div><span>{t('home.assets')}</span><b className="positive">+{money0(context.cashBalance)}</b></div>
+          <div><span>{t('home.cardBill')}</span><b>−{money0(context.cardBill)}</b></div>
+          <div><span>{t('home.savings')}</span><b>−{money0(context.reserved)}</b></div>
+          <div><span>{t('home.budgetLeft')}</span><b>−{money0(context.budgetRemaining)}</b></div>
         </div>
 
         <div className="financial-condition-equation">
           <span>{t('planning.formula')}</span>
           <b>
-            {money0(context.cashBalance)} − {money0(context.reserved)} − {money0(context.cashflowCreditBill)} − {money0(context.budgetRemaining)} = <em>{moneySigned0(financialCondition)}</em>
+            {money0(context.cashBalance)} − {money0(context.cardBill)} − {money0(context.reserved)} − {money0(context.budgetRemaining)} = <em>{moneySigned0(freeCash)}</em>
           </b>
         </div>
 
-        <div className={`financial-condition-note${financialCondition >= 0 ? ' ok' : ' warn'}`}>
+        <div className={`financial-condition-note${freeCash >= 0 ? ' ok' : ' warn'}`}>
           <Info />
           <span>
-            {financialCondition >= 0
-              ? t('planning.conditionSafeNote', { amount: money0(financialCondition) })
-              : t('planning.conditionDeficitNote', { amount: money0(Math.abs(financialCondition)) })}
+            {t('planning.capacityLine', {
+              income: money0(context.monthlyIncome),
+              budget: money0(context.allocatedTotal),
+              installments: money0(context.installmentMonthly),
+              capacity: money0(capacity),
+            })}
           </span>
         </div>
       </div>
@@ -191,16 +194,8 @@ export default function PlanningScreen() {
           </label>
 
           <div className="calc-breakdown">
-            <div><span>{t('planning.financialCondition')}</span><b className={context.financialCondition >= 0 ? 'positive' : 'negative'}>{moneySigned0(context.financialCondition)}</b></div>
+            <div><span>{t('home.safeToSpend')}</span><b className={freeCash >= 0 ? 'positive' : 'negative'}>{moneySigned0(freeCash)}</b></div>
             {withReceivables && <div><span>{t('planning.receivablesIncluded')}</span><b className="positive">+{money0(context.expectedReceivables)}</b></div>}
-            <div><span>{t('planning.itemPrice')}</span><b className="negative">-{money0(price)}</b></div>
-            <div className="total"><span>{t('planning.leftAfterPurchase')}</span><b className={afford.leftover >= 0 ? 'positive' : 'negative'}>{moneySigned0(afford.leftover)}</b></div>
-          </div>
-
-          <div className="calc-breakdown afford-legacy">
-            <div><span>{t('planning.inflow')}</span><b className="positive">+{money0(afford.inflow)}</b></div>
-            <div><span>{t('planning.budgetMonthly')}</span><b className="negative">−{money0(context.allocatedTotal)}</b></div>
-            <div><span>{t('planning.billsNextMonth')}</span><b className="negative">−{money0(context.nextMonthBills)}</b></div>
             <div><span>{t('planning.itemPrice')}</span><b className="negative">−{money0(price)}</b></div>
             <div className="total"><span>{t('planning.leftAfterPurchase')}</span><b className={afford.leftover >= 0 ? 'positive' : 'negative'}>{moneySigned0(afford.leftover)}</b></div>
           </div>

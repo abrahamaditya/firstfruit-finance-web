@@ -5,15 +5,19 @@ import {
   Wallet, Transaction, Budget, BudgetPeriod, Subscription, Receivable, Plan, Saving, Reminder,
 } from '../core/domain/types';
 import {
-  totalLiquidity, safeToSpend, budgetView, BudgetView, periodProgress, periodNet, remainingBudget,
-  isActualIncome, isIncome,
-  totalReserved, reservedInWallet, totalAssets, creditObligationBreakdown,
+  budgetView, BudgetView, periodProgress, remainingBudget, actualExpenseAmount,
+  isActualIncome, isIncome, transactionInPeriod,
+  totalReserved, reservedInWallet, totalAssets,
 } from '../core/domain/calculations';
 import {
   totalMonthlyBurden, isReminderDue, isEndingSoon, daysUntilBilling, daysUntilEnd,
 } from '../core/domain/subscription';
 import { PlanningContext, estimateMonthlyIncome } from '../core/domain/planning';
-import { installmentCashflowForPeriod } from '../core/domain/installment-cashflow';
+import {
+  CreditCardPosition, CreditCardTotals, UncarriedInstallmentCharge, creditCardPeriod, creditCardPositions,
+  installmentsDueWithinMonth, sumCreditCards, uncarriedInstallmentCharges,
+} from '../core/domain/credit-card';
+import { InstallmentDue, installmentDuesForPeriod } from '../core/domain/installment-schedule';
 
 type CollectionCacheEntry<T> = {
   data?: T[];
@@ -93,7 +97,7 @@ function useCollection<T extends { id: string }>(
 
 export function useWallets() {
   const { data: wallets, loading, reload } = useCollection<Wallet>(r => r.wallets);
-  return { wallets, loading, reload, liquidity: totalLiquidity(wallets) };
+  return { wallets, loading, reload };
 }
 
 export function useTransactions() {
@@ -127,15 +131,7 @@ export function usePeriodTransactions(periodId?: string | null) {
   const period = periods.find((entry) => entry.id === periodId) ?? active;
   const data = useMemo(() => {
     if (!period || period.status === 'draft') return [];
-    const start = new Date(period.start);
-    const end = new Date(period.end);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(23, 59, 59, 999);
-    return result.data.filter(transaction => {
-      if (transaction.periodId) return transaction.periodId === period.id;
-      const occurredAt = new Date(transaction.date);
-      return occurredAt >= start && occurredAt <= end;
-    });
+    return result.data.filter(transaction => transactionInPeriod(transaction, period));
   }, [period, result.data]);
 
   return {
@@ -179,65 +175,76 @@ function findActivePeriod(periods: BudgetPeriod[]) {
     ?? periods.find(period => period.status == null && !period.closed);
 }
 
-/** Dashboard view-model: composes wallets + budgets + period into the home screen data. */
-export function useDashboard() {
-  const { wallets, liquidity, loading: walletsLoading } = useWallets();
+export interface FinancialSnapshot {
+  period?: BudgetPeriod;
+  progress: ReturnType<typeof periodProgress> | null;
+  wallets: Wallet[];
+  /** Saldo rekening, e-wallet, dan tunai. */
+  assets: number;
+  /** Dana di tabungan; tetap di dompet tetapi tidak bebas dipakai. */
+  reserved: number;
+  /** Periode acuan posisi kartu: periode berjalan, atau periode terakhir yang ditutup. */
+  cardPeriod?: BudgetPeriod;
+  cards: CreditCardPosition[];
+  card: CreditCardTotals;
+  /** Angsuran dari periode yang ditutup sebelum pembawaan otomatis ada; belum ada di tagihan. */
+  uncarried: Array<{ wallet: Wallet; charges: UncarriedInstallmentCharge[]; total: number }>;
+  /** Σ max(alokasi − realisasi, 0) anggaran periode berjalan. */
+  budgetRemaining: number;
+  /** Angsuran cicilan yang jatuh tempo di periode berjalan (sudah termasuk di tagihan kartu). */
+  installmentDues: InstallmentDue[];
+  /** Arus kas bebas = saldo aset − tagihan kartu − tabungan − sisa anggaran. */
+  safeToSpend: number;
+  /** Likuiditas bersih = saldo aset − seluruh utang kartu (termasuk cicilan belum ditagih). */
+  netLiquidity: number;
+  loading: boolean;
+}
+
+/**
+ * Satu-satunya tempat posisi keuangan periode berjalan dihitung. Beranda, Dompet,
+ * Anggaran, Laporan, Periode, dan Rencana membaca dari sini supaya angkanya selalu sama.
+ */
+export function useDashboard(): FinancialSnapshot {
+  const { wallets, loading: walletsLoading } = useWallets();
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
   const { reserved, loading: savingsLoading } = useSavings();
   const { data: transactions, loading: transactionsLoading } = useTransactions();
   const { data: installments, loading: installmentsLoading } = useInstallments();
   const { data: periods, loading: periodsLoading } = useCollection<BudgetPeriod>(r => r.periods);
   const period = findActivePeriod(periods);
-  const periodBudgets = period
-    ? budgets.filter(budget => budget.periodId === period.id)
+  const periodBudgets = period ? budgets.filter(budget => budget.periodId === period.id) : [];
+  const cardPeriod = creditCardPeriod(periods, period);
+  const cardTransactions = cardPeriod
+    ? transactions.filter(transaction => transactionInPeriod(transaction, cardPeriod))
     : [];
-  const periodTransactions = period
-    ? transactions.filter(transaction => {
-      if (transaction.periodId) return transaction.periodId === period.id;
-      const occurredAt = new Date(transaction.date);
-      const start = new Date(period.start);
-      const end = new Date(period.end);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      return occurredAt >= start && occurredAt <= end;
-    })
+  const cards = creditCardPositions(wallets, cardTransactions, installments, cardPeriod);
+  const card = sumCreditCards(cards);
+  const uncarried = period
+    ? cards
+      .map(({ wallet }) => {
+        const charges = uncarriedInstallmentCharges(wallet, installments, periods, transactions, period);
+        return { wallet, charges, total: charges.reduce((sum, charge) => sum + charge.amount, 0) };
+      })
+      .filter(entry => entry.total > 0)
     : [];
-  const creditObligations = creditObligationBreakdown(wallets, periodTransactions);
-  const installmentCashflow = period
-    ? installmentCashflowForPeriod(wallets, periodTransactions, installments, period)
-    : { unpaid: 0, coveredByPreviousBill: 0, coveredByCurrentBill: 0, additionalReserve: 0 };
   const assets = totalAssets(wallets);
-  const effectiveLiquidity = assets - creditObligations.total;
-  const manualBudgetRemaining = remainingBudget(periodBudgets);
-  const freeCashflow = safeToSpend(effectiveLiquidity, periodBudgets, reserved)
-    - installmentCashflow.additionalReserve;
+  const budgetRemaining = remainingBudget(periodBudgets);
   return {
-    assets,
-    liquidity: effectiveLiquidity,
-    recordedLiquidity: liquidity,
-    creditLiabilities: creditObligations.total,
-    cashflowCreditLiabilities: creditObligations.total
-      - installmentCashflow.coveredByPreviousBill - installmentCashflow.coveredByCurrentBill,
-    previousPeriodCreditDue: creditObligations.previousPeriodDue,
-    cashflowPreviousCreditDue: creditObligations.previousPeriodDue
-      - installmentCashflow.coveredByPreviousBill,
-    currentPeriodCreditDue: creditObligations.currentPeriodDue,
-    cashflowCurrentCreditDue: creditObligations.currentPeriodDue
-      - installmentCashflow.coveredByCurrentBill,
-    currentPeriodCreditSpending: creditObligations.currentPeriodSpending,
-    creditPayments: creditObligations.payments,
-    reserved,
-    // Dipakai beranda untuk menjabarkan asal angka "aman dibelanjakan".
-    allocated: manualBudgetRemaining + installmentCashflow.unpaid,
-    manualBudgetRemaining,
-    installmentBudgetRemaining: installmentCashflow.unpaid,
-    installmentCoveredByCredit: installmentCashflow.unpaid - installmentCashflow.additionalReserve,
-    safeToSpend: freeCashflow,
     period,
     progress: period ? periodProgress(period) : null,
-    netSurplus: periodNet(effectiveLiquidity, periodBudgets) - installmentCashflow.additionalReserve,
     wallets,
-    loading: walletsLoading || budgetsLoading || savingsLoading || transactionsLoading || installmentsLoading || periodsLoading,
+    assets,
+    reserved,
+    cardPeriod,
+    cards,
+    card,
+    uncarried,
+    budgetRemaining,
+    installmentDues: period ? installmentDuesForPeriod(installments, period) : [],
+    safeToSpend: assets - card.bill - reserved - budgetRemaining,
+    netLiquidity: assets - card.debt,
+    loading: walletsLoading || budgetsLoading || savingsLoading || transactionsLoading
+      || installmentsLoading || periodsLoading,
   };
 }
 
@@ -261,72 +268,42 @@ export function useReceivables() {
   const active = data.filter(r => r.status ? r.status === 'open' || r.status === 'partial' : !r.settled);
   const settled = data.filter(r => r.status ? r.status === 'settled' : r.settled);
   const writtenOff = data.filter(r => r.status === 'written_off');
-  return { receivables: data, active, settled, writtenOff, total: active.reduce((s, r) => s + r.amount, 0), loading };
+  // Total = sisa yang belum dibayar, bukan nominal awal piutang.
+  const total = active.reduce((sum, r) => sum + Math.max(0, r.amount - (r.paid ?? 0)), 0);
+  return { receivables: data, active, settled, writtenOff, total, loading };
 }
 
 export function usePlans() { return useCollection<Plan>(r => r.plans); }
 
-/**
- * Konteks angka untuk layar Rencana: menggabungkan kas, anggaran, pemasukan rutin,
- * dan tagihan kartu kredit berjalan yang perlu disiapkan untuk bulan berikutnya.
- */
+/** Konteks angka layar Rencana; posisi keuangannya sama persis dengan Beranda. */
 export function usePlanningContext(): PlanningContext & { budgets: Budget[] } {
-  const { wallets } = useWallets();
+  const snapshot = useDashboard();
   const { raw: budgets } = useBudgets();
-  const { reserved } = useSavings();
   const { data: transactions } = useTransactions();
   const { data: installments } = useInstallments();
   const { total: receivableTotal } = useReceivables();
-  const { data: periods } = useCollection<BudgetPeriod>(r => r.periods);
-  const period = findActivePeriod(periods);
-  const progress = period ? periodProgress(period) : null;
-  const periodBudgets = period
-    ? budgets.filter(budget => budget.periodId === period.id)
+  const periodBudgets = snapshot.period
+    ? budgets.filter(budget => budget.periodId === snapshot.period?.id)
     : [];
-
-  const today = new Date();
-  const periodTransactions = period
-    ? transactions.filter(transaction => {
-      if (transaction.periodId) return transaction.periodId === period.id;
-      const occurredAt = new Date(transaction.date);
-      const start = new Date(period.start);
-      const end = new Date(period.end);
-      start.setHours(0, 0, 0, 0);
-      end.setHours(23, 59, 59, 999);
-      return occurredAt >= start && occurredAt <= end;
-    })
-    : [];
-  // Konsisten dengan Dompet dan Arus Kas Bebas: baseline tagihan yang dikonfirmasi
-  // pengguna, dikurangi pembayaran, lalu ditambah belanja kartu periode berjalan.
-  const creditBillNextMonth = creditObligationBreakdown(wallets, periodTransactions).total;
-  const installmentCashflow = period
-    ? installmentCashflowForPeriod(wallets, periodTransactions, installments, period)
-    : { unpaid: 0, additionalReserve: 0 };
-  const cashBalance = wallets
-    .filter(wallet => wallet.kind !== 'credit')
-    .reduce((sum, wallet) => sum + wallet.balance, 0);
-  const allocatedTotal = periodBudgets.reduce((sum, budget) => sum + budget.allocated, 0);
-  const budgetRemaining = remainingBudget(periodBudgets) + installmentCashflow.unpaid;
-  const cashflowCreditBill = creditBillNextMonth
-    - (installmentCashflow.unpaid - installmentCashflow.additionalReserve);
+  // Dari jadwal, bukan alokasi pembayaran: alokasi bersifat opsional.
+  const installmentMonthly = installmentsDueWithinMonth(installments);
 
   return {
     budgets: periodBudgets,
-    cashBalance,
-    reserved,
-    budgetRemaining,
-    cashflowCreditBill,
-    available: cashBalance - reserved - cashflowCreditBill,
-    financialCondition: cashBalance - reserved - cashflowCreditBill - budgetRemaining,
-    allocatedTotal,
-    spentTotal: periodBudgets.reduce((sum, b) => sum + b.spent, 0),
-    monthlyIncome: estimateMonthlyIncome(transactions, today),
-    nextMonthBills: Math.round(creditBillNextMonth),
+    cashBalance: snapshot.assets,
+    reserved: snapshot.reserved,
+    cardBill: snapshot.card.bill,
+    budgetRemaining: snapshot.budgetRemaining,
+    available: snapshot.assets - snapshot.reserved - snapshot.card.bill,
+    freeCash: snapshot.safeToSpend,
+    allocatedTotal: periodBudgets.reduce((sum, budget) => sum + budget.allocated, 0),
+    spentTotal: periodBudgets.reduce((sum, budget) => sum + budget.spent, 0),
+    monthlyIncome: estimateMonthlyIncome(transactions, new Date()),
+    installmentMonthly,
     expectedReceivables: receivableTotal,
-    // Konteks simulasi tidak mengenal periode lewat tanggal — sisa negatif tidak punya
-    // arti untuk "kalau saya belanja segini, per hari turun berapa", jadi dijepit di sini.
-    daysLeft: Math.max(0, progress?.daysLeft ?? 0),
-    totalDays: progress?.totalDays ?? 30,
+    // Simulasi tidak mengenal periode lewat tanggal; sisa negatif dijepit ke 0.
+    daysLeft: Math.max(0, snapshot.progress?.daysLeft ?? 0),
+    totalDays: snapshot.progress?.totalDays ?? 30,
   };
 }
 
@@ -339,12 +316,14 @@ export function usePeriods(version = 0) {
 
 export interface PeriodReport {
   period?: BudgetPeriod;
-  /** Periode berjalan — hanya di sini angka kas/aman-dibelanjakan masih berarti. */
+  /** Periode berjalan — hanya di sini posisi kas (arus kas bebas) masih berarti. */
   isActive: boolean;
   progress: ReturnType<typeof periodProgress> | null;
   income: number;
   actualIncome: number;
   expense: number;
+  actualExpense: number;
+  /** Arus kas riil = pemasukan riil − pengeluaran riil. */
   net: number;
   txCount: number;
   budgets: BudgetView[];
@@ -352,24 +331,19 @@ export interface PeriodReport {
   spent: number;
   /** Kategori pengeluaran terbesar di periode ini, urut menurun. */
   categories: Array<{ name: string; total: number }>;
-  liquidity: number;
-  reserved: number;
-  safeToSpend: number;
+  snapshot: FinancialSnapshot;
   loading: boolean;
 }
 
 /**
- * Laporan satu periode. Berbeda dengan `useDashboard` yang selalu bicara "sekarang",
- * angka di sini dibatasi rentang tanggal periode yang diminta — jadi periode yang
- * sudah ditutup tetap bisa dibaca ulang sebagai arsip.
+ * Laporan satu periode, termasuk arsip. Arus masuk/keluar dibatasi periode yang diminta;
+ * posisi kas hanya bermakna untuk periode berjalan dan diambil dari `useDashboard`.
  */
 export function usePeriodReport(periodId?: string | null): PeriodReport {
   const { periods, loading: periodsLoading } = usePeriods();
   const { data: transactions, loading: txLoading } = useTransactions();
-  const { data: installments, loading: installmentsLoading } = useInstallments();
   const { raw: budgets, loading: budgetsLoading } = useBudgets();
-  const { wallets, liquidity, loading: walletsLoading } = useWallets();
-  const { reserved, loading: savingsLoading } = useSavings();
+  const snapshot = useDashboard();
 
   const period = periods.find(item => item.id === periodId)
     ?? findActivePeriod(periods)
@@ -379,38 +353,23 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
     && (period.status === 'open' || (period.status == null && !period.closed)),
   );
 
-  const from = period ? +new Date(period.start) : 0;
-  const to = period ? +new Date(period.end) : 0;
-  // Penyesuaian saldo bukan belanja nyata, transfer cuma memindahkan uang — keduanya
-  // dikecualikan supaya pemasukan/pengeluaran periode mencerminkan arus kas sebenarnya.
-  const periodTransactions = period
-    ? transactions.filter(tx => {
-      if (tx.periodId) return tx.periodId === period.id;
-      const at = +new Date(tx.date);
-      return at >= from && at <= to;
-    })
+  // Transfer hanya memindahkan uang dan penyesuaian saldo bukan belanja nyata.
+  const inPeriod = period
+    ? transactions.filter(tx => transactionInPeriod(tx, period) && !tx.adjustment && tx.type !== 'transfer')
     : [];
-  const inPeriod = periodTransactions.filter(tx => !tx.adjustment && tx.type !== 'transfer');
   const income = inPeriod.filter(isIncome).reduce((sum, tx) => sum + tx.amount, 0);
   const actualIncome = inPeriod.filter(isActualIncome).reduce((sum, tx) => sum + tx.amount, 0);
-  const expense = inPeriod.filter(tx => tx.type === 'expense').reduce((sum, tx) => sum + tx.amount, 0);
+  const expenses = inPeriod.filter(tx => tx.type === 'expense');
+  const expense = expenses.reduce((sum, tx) => sum + tx.amount, 0);
+  const actualExpense = expenses.reduce((sum, tx) => sum + actualExpenseAmount(tx), 0);
 
   // Anggaran tanpa `periodId` hanya bisa berasal dari periode berjalan (data lama).
   const periodBudgets = budgets.filter(b => (b.periodId ? b.periodId === period?.id : isActive));
-  const effectiveLiquidity = isActive
-    ? totalAssets(wallets) - creditObligationBreakdown(wallets, periodTransactions).total
-    : liquidity;
-  const installmentReserve = isActive && period
-    ? installmentCashflowForPeriod(wallets, periodTransactions, installments, period).additionalReserve
-    : 0;
-
   const totals = new Map<string, number>();
-  inPeriod
-    .filter(tx => tx.type === 'expense')
-    .forEach(tx => {
-      const label = tx.labels[0];
-      if (label) totals.set(label, (totals.get(label) ?? 0) + tx.amount);
-    });
+  expenses.forEach(tx => {
+    const label = tx.labels[0];
+    if (label) totals.set(label, (totals.get(label) ?? 0) + tx.amount);
+  });
 
   return {
     period,
@@ -419,7 +378,8 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
     income,
     actualIncome,
     expense,
-    net: actualIncome - expense,
+    actualExpense,
+    net: actualIncome - actualExpense,
     txCount: inPeriod.length,
     budgets: periodBudgets.map(budgetView),
     allocated: periodBudgets.reduce((sum, b) => sum + b.allocated, 0),
@@ -428,10 +388,8 @@ export function usePeriodReport(periodId?: string | null): PeriodReport {
       .map(([name, total]) => ({ name, total }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 6),
-    liquidity: effectiveLiquidity,
-    reserved,
-    safeToSpend: safeToSpend(effectiveLiquidity, periodBudgets, reserved) - installmentReserve,
-    loading: periodsLoading || txLoading || budgetsLoading || walletsLoading || savingsLoading || installmentsLoading,
+    snapshot,
+    loading: periodsLoading || txLoading || budgetsLoading || snapshot.loading,
   };
 }
 

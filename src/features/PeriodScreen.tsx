@@ -18,6 +18,7 @@ export default function PeriodScreen() {
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const repos = useRepositories();
   const report = usePeriodReport(ui.periodId);
+  const { snapshot } = report;
   const { data: periodTransactions } = usePeriodTransactions(ui.periodId);
   const { periods, active: activePeriod } = usePeriods();
   // Tutup buku dua langkah: tombolnya cuma membuka pilihan, keputusan "buat periode
@@ -137,7 +138,7 @@ export default function PeriodScreen() {
           </span>
           <strong>{money.fmtSigned(report.net)}</strong>
           <small>
-            {t('period.netCashflow')} · {range(current.start, current.end)}
+            {t('reports.realNet')} · {range(current.start, current.end)}
           </small>
         </div>
         <button className="period-switch-btn" onClick={ui.openPeriods}>
@@ -146,57 +147,53 @@ export default function PeriodScreen() {
       </div>
 
       {!isDraft && (
-        <div className="period-data-nav" aria-label="Data periode">
-          <button type="button" onClick={() => ui.go('tx')}><ListIcon /><span>Transaksi</span></button>
-          <button type="button" onClick={() => ui.go('wallets')}><WalletIcon /><span>Dompet</span></button>
-          <button type="button" onClick={() => ui.go('budget')}><Gauge /><span>Anggaran</span></button>
+        <div className="period-data-nav" aria-label={t('period.dataNav')}>
+          <button type="button" onClick={() => ui.go('tx')}><ListIcon /><span>{t('nav.tx')}</span></button>
+          <button type="button" onClick={() => ui.go('wallets')}><WalletIcon /><span>{t('nav.wallets')}</span></button>
+          <button type="button" onClick={() => ui.go('budget')}><Gauge /><span>{t('nav.budget')}</span></button>
         </div>
       )}
 
       <div className="metric-grid period-metrics">
         <div className="metric-card m-in">
-          <span>{t('reports.income')}</span>
-          <b>{money.fmtCompact(report.income)}</b>
-          <small>{t('period.inThisPeriod')}</small>
-        </div>
-        <div className="metric-card m-in">
           <span>{t('reports.actualIncome')}</span>
           <b>{money.fmtCompact(report.actualIncome)}</b>
-          <small>{t('period.inThisPeriod')}</small>
+          <small>{t('period.ofTotal', { amount: money.fmtCompact(report.income) })}</small>
         </div>
         <div className="metric-card m-out">
-          <span>{t('reports.expense')}</span>
-          <b>{money.fmtCompact(report.expense)}</b>
-          <small>{report.txCount} {t('reports.txCount')}</small>
+          <span>{t('reports.actualExpense')}</span>
+          <b>{money.fmtCompact(report.actualExpense)}</b>
+          <small>{t('period.ofTotal', { amount: money.fmtCompact(report.expense) })}</small>
         </div>
         <div className={`metric-card m-net${report.net < 0 ? ' negative-net' : ''}`}>
-          <span>{t('reports.netCashflow')}</span>
+          <span>{t('reports.realNet')}</span>
           <b>{money.fmtCompactSigned(report.net)}</b>
-          <small>{t('reports.afterExpense')}</small>
+          <small>{t('reports.actualIncomeMinusExpense')}</small>
+        </div>
+        <div className="metric-card">
+          <span>{t('budget.transaction')}</span>
+          <b>{report.txCount}</b>
+          <small>{t('period.inThisPeriod')}</small>
         </div>
       </div>
 
-      {/* Angka kas hanya berarti untuk periode berjalan — arsip tidak menyimpan saldo historis. */}
+      {/* Posisi kas hanya berarti untuk periode berjalan; arsip tidak menyimpan saldo historis. */}
       {report.isActive && (
         <div className="brk-card">
-          <div className="brk-cells">
-            <div><span>{t('home.liquidity')}</span><b>{money.fmtCompactSigned(report.liquidity)}</b></div>
-            <div><span>{t('home.inSavings')}</span><b>{report.reserved > 0 ? '−' : ''}{money.fmtCompact(report.reserved)}</b></div>
-            <div>
-              <span>{t('home.safeToSpend')}</span>
-              <b className={report.safeToSpend < 0 ? 'negative' : undefined}>
-                {money.fmtCompactSigned(report.safeToSpend)}
-              </b>
-            </div>
+          <div className="brk-cells home-cashflow-breakdown">
+            <div><span>{t('home.assets')}</span><b>{money.fmtCompactSigned(snapshot.assets)}</b></div>
+            <div><span>{t('home.cardBill')}</span><b>{snapshot.card.bill > 0 ? '−' : ''}{money.fmtCompact(snapshot.card.bill)}</b></div>
+            <div><span>{t('home.savings')}</span><b>{snapshot.reserved > 0 ? '−' : ''}{money.fmtCompact(snapshot.reserved)}</b></div>
+            <div><span>{t('home.budgetLeft')}</span><b>{snapshot.budgetRemaining > 0 ? '−' : ''}{money.fmtCompact(snapshot.budgetRemaining)}</b></div>
           </div>
-          {report.progress && (
-            <div className="card-foot">
-              <div className="brk-bar"><i style={{ width: `${(report.progress.fraction * 100).toFixed(0)}%` }} /></div>
-              <span>
-                {report.progress.dayOf}/{report.progress.totalDays} {t('home.days')} · {Math.max(0, report.progress.daysLeft)} {t('home.daysLeft')}
-              </span>
-            </div>
-          )}
+          <div className="card-foot">
+            {report.progress && <div className="brk-bar"><i style={{ width: `${(report.progress.fraction * 100).toFixed(0)}%` }} /></div>}
+            <span>
+              {t('home.safeToSpend')}{' '}
+              <b className={snapshot.safeToSpend < 0 ? 'negative' : undefined}>{money.fmtCompactSigned(snapshot.safeToSpend)}</b>
+              {report.progress && <> · {report.progress.dayOf}/{report.progress.totalDays} {t('home.days')} · {Math.max(0, report.progress.daysLeft)} {t('home.daysLeft')}</>}
+            </span>
+          </div>
         </div>
       )}
 
@@ -338,8 +335,8 @@ export default function PeriodScreen() {
                 <div>
                   <span className="step-number"><Check /></span>
                   <p><b>{t('closing.computeSurplus')}</b><small>{t('closing.computeSurplusDesc')}</small></p>
-                  <strong className={report.safeToSpend < 0 ? 'negative' : undefined}>
-                    {money.fmtSigned(report.safeToSpend)}
+                  <strong className={snapshot.safeToSpend < 0 ? 'negative' : undefined}>
+                    {money.fmtSigned(snapshot.safeToSpend)}
                   </strong>
                 </div>
               </div>

@@ -1,4 +1,4 @@
-import type { Transaction, Wallet } from './types';
+import type { Transaction } from './types';
 
 export type InstallmentPricingMode = 'monthly' | 'item_total';
 
@@ -60,43 +60,4 @@ export function installmentPaidAmount(transaction: Transaction, count: number): 
 export function installmentRemainingAmount(transaction: Transaction): number {
   return Math.max(0, installmentTotalPayable(transaction)
     - installmentPaidAmount(transaction, transaction.installmentPaidMonths ?? 0));
-}
-
-export interface CreditLimitBreakdown {
-  otherBalance: number;
-  installmentRemaining: number;
-  used: number;
-  available: number;
-}
-
-/**
- * Ledger lama mencatat satu angsuran saat transaksi dibuat. Pisahkan bagian itu
- * beserta pelunasan yang dialokasikan, lalu gantikan dengan SEMUA angsuran yang
- * belum lunas, termasuk transaksi dari periode sebelumnya. Cicilan lunas tetap
- * ikut rekonsiliasi karena pembayaran kartu sudah mengurangi saldo ledger.
- */
-export function creditLimitBreakdown(wallet: Wallet, installments: Transaction[]): CreditLimitBreakdown {
-  const cardInstallments = installments.filter((transaction) =>
-    transaction.type === 'expense'
-    && transaction.walletId === wallet.id
-    && (transaction.installmentTenorMonths ?? 0) >= 2,
-  );
-  const recordedInstallmentBalance = cardInstallments.reduce((sum, transaction) => {
-    const initialPaid = transaction.installmentInitialPaidMonths ?? 0;
-    const paid = transaction.installmentPaidMonths ?? initialPaid;
-    const paidSinceRecorded = installmentPaidAmount(transaction, paid)
-      - installmentPaidAmount(transaction, initialPaid);
-    return sum + transaction.amount - paidSinceRecorded;
-  }, 0);
-  const installmentRemaining = cardInstallments.reduce(
-    (sum, transaction) => sum + installmentRemainingAmount(transaction), 0,
-  );
-  const otherBalance = wallet.balance - recordedInstallmentBalance;
-  const used = Math.max(0, otherBalance + installmentRemaining);
-  return {
-    otherBalance,
-    installmentRemaining,
-    used,
-    available: Math.max(0, (wallet.creditLimit ?? 0) - used),
-  };
 }

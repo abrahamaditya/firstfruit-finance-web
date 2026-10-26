@@ -1,5 +1,7 @@
 import { Repository, DataRepositories } from '../../core/ports/repositories';
 import * as seed from '../seed';
+import { addDays, dayKey } from '../../core/domain/calendar';
+import { installmentCarryNote, installmentChargesBetween } from '../../core/domain/credit-card';
 
 // In-memory repository — lets the app run with sample data, no Firebase required.
 class MemoryRepo<T extends { id: string }> implements Repository<T> {
@@ -22,13 +24,25 @@ export function createMemoryRepositories(): DataRepositories {
   const plans = new MemoryRepo(seed.seedPlans);
   const savings = new MemoryRepo(seed.seedSavings);
   const reminders = new MemoryRepo(seed.seedReminders);
-  // Setelah periode berganti, saldo kartu akhir menjadi tagihan pembuka periode baru.
-  // Operasi ini idempoten dan nilainya tetap dapat diedit setelah auto-fill.
+  // Setelah periode berganti, saldo kartu akhir ditambah angsuran cicilan yang jatuh tempo
+  // di periode yang ditutup menjadi tagihan pembuka periode baru (sama dengan Supabase).
   const carryCreditBills = async () => {
+    const allPeriods = await periods.list();
+    const opened = allPeriods.find((period) => period.status === 'open');
+    const closed = opened && allPeriods
+      .filter((period) => period.status === 'closed' && dayKey(period.end) < dayKey(opened.start))
+      .sort((a, b) => dayKey(b.end).localeCompare(dayKey(a.end)))[0];
+    const installments = (await transactions.list()).filter((transaction) => transaction.installmentTenorMonths != null);
     const creditWallets = (await wallets.list()).filter((wallet) => wallet.kind === 'credit');
-    await Promise.all(creditWallets.map((wallet) => wallets.update(wallet.id, {
-      previousPeriodBill: Math.max(0, wallet.balance),
-    })));
+    await Promise.all(creditWallets.map((wallet) => {
+      const charges = opened && closed
+        ? installmentChargesBetween(
+          installments, wallet.id, dayKey(closed.start), dayKey(addDays(new Date(opened.start), -1)),
+        )
+        : 0;
+      const bill = Math.max(0, wallet.balance) + charges;
+      return wallets.update(wallet.id, { balance: bill, previousPeriodBill: bill });
+    }));
   };
   return {
     wallets,
@@ -178,6 +192,20 @@ export function createMemoryRepositories(): DataRepositories {
       },
       async archiveWallet(walletId) {
         await wallets.remove(walletId);
+      },
+      async billInstallmentCharges(walletId, charges) {
+        const wallet = await wallets.get(walletId);
+        if (!wallet) throw new Error('Kartu tidak ditemukan');
+        const total = charges.reduce((sum, charge) => sum + charge.amount, 0);
+        await wallets.update(walletId, {
+          balance: Math.max(0, wallet.balance) + total,
+          previousPeriodBill: (wallet.previousPeriodBill ?? Math.max(0, wallet.balance)) + total,
+        });
+        // Penanda yang sama dengan Supabase agar angsurannya tidak ditawarkan lagi.
+        await Promise.all(charges.map((charge) => transactions.create({
+          type: 'income', nature: 'fixed', amount: charge.amount, walletId, labels: [],
+          adjustment: true, note: installmentCarryNote(charge.periodAlias), date: new Date().toISOString(),
+        })));
       },
       async finalizeSplitBill() {
         return 'split_' + Math.random().toString(36).slice(2, 9);

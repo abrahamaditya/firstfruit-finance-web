@@ -1,11 +1,11 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
-import { usePeriodTransactions, useWallets, useSavings, useInstallments } from '../application/hooks';
-import { ArrowLeft, CardChip, ChevronR, Down, Eye, EyeOff, ListIcon, Pencil, Plus, TransferCard, Up, WalletIcon } from '../components/ui/icons';
+import { useDashboard, usePeriodTransactions, useWallets, useSavings } from '../application/hooks';
+import { ArrowLeft, CardChip, ChevronR, Down, Eye, EyeOff, Info, ListIcon, Pencil, Plus, TransferCard, Up, WalletIcon } from '../components/ui/icons';
+import { useRepositories } from '../infrastructure/RepositoryProvider';
 import type { Transaction, Wallet } from '../core/domain/types';
-import { creditObligationBreakdown, isActualIncome, isWalletIncome } from '../core/domain/calculations';
-import { creditLimitBreakdown } from '../core/domain/installment-pricing';
+import { actualExpenseAmount, isActualIncome, isWalletIncome, netWorthDirection } from '../core/domain/calculations';
 import { walletCardTheme } from '../core/wallet-card-theme';
 import { walletBrandLogo, walletNetworkLogo, walletProductInitial } from '../core/wallet-branding';
 import { walletProduct } from '../core/wallet-products';
@@ -30,7 +30,9 @@ export default function WalletsScreen() {
   const t = useT();
   const { wallets } = useWallets();
   const { savings, reservedIn } = useSavings();
-  const { data: installments } = useInstallments();
+  const dashboard = useDashboard();
+  const repos = useRepositories();
+  const [billingBacklog, setBillingBacklog] = useState(false);
   const { data: transactions, period: viewedPeriod, isArchive } = usePeriodTransactions(ui.periodId);
   const mediumRank: Record<string, number> = { bank: 0, ewallet: 1, cash: 2, credit: 3 };
   const byCategoryThenName = (a: typeof wallets[number], b: typeof wallets[number]) =>
@@ -73,13 +75,13 @@ export default function WalletsScreen() {
     ? undefined
     : cards.find((wallet) => wallet.id === selectedWalletId);
   const currentReserved = current ? reservedIn(current.id) : 0;
-  const totalDebit = debit.reduce((sum, wallet) => sum + wallet.balance, 0);
-  // Liabilitas kartu harus mengikuti baseline tagihan yang dikonfirmasi pengguna,
-  // bukan saldo internal lama yang dapat tertinggal setelah field tersebut diedit.
-  // Transaksi dari hook ini sudah dibatasi ke periode yang sedang aktif/dilihat.
-  const totalCredit = creditObligationBreakdown(credit, transactions).total;
-  const totalLiquidity = totalDebit - totalCredit;
-  const totalReserved = savings.reduce((sum, saving) => sum + saving.balance, 0);
+  const totalDebit = dashboard.assets;
+  // Posisi kartu selalu dari periode berjalan, juga saat layar sedang menampilkan arsip:
+  // utang kartu adalah keadaan sekarang, bukan angka historis.
+  const positionOf = (walletId: string) => dashboard.cards.find((card) => card.wallet.id === walletId);
+  const totalCredit = dashboard.card.debt;
+  const totalLiquidity = dashboard.netLiquidity;
+  const totalReserved = dashboard.reserved;
   const availableDebit = totalDebit - totalReserved;
   const summaryAmount = (value: number) => hidden ? '••••••' : money.fmt(value);
 
@@ -190,39 +192,42 @@ export default function WalletsScreen() {
     ? transactions.filter((transaction) => transaction.walletId === current.id || transaction.toWalletId === current.id)
     : [];
   const selectedSavings = current ? savings.filter((saving) => saving.walletId === current.id) : [];
-  const now = new Date();
-  const periodStart = viewedPeriod ? new Date(viewedPeriod.start) : new Date(now.getFullYear(), now.getMonth(), 1);
-  const periodEnd = viewedPeriod ? new Date(viewedPeriod.end) : new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  periodStart.setHours(0, 0, 0, 0);
-  periodEnd.setHours(23, 59, 59, 999);
-  const periodTransactions = selectedTransactions.filter((transaction) => {
-    const at = new Date(transaction.date);
-    return at >= periodStart && at <= periodEnd;
-  });
-  const actualExpensePeriod = periodTransactions
-    .filter((transaction) => !transaction.adjustment && transaction.type === 'expense' && transaction.walletId === current?.id)
+  // `transactions` sudah dibatasi ke periode yang sedang dilihat.
+  const periodTransactions = selectedTransactions.filter((transaction) => !transaction.adjustment);
+  const ownOutflows = periodTransactions.filter((transaction) => transaction.walletId === current?.id);
+  const expensePeriod = ownOutflows
+    .filter((transaction) => transaction.type === 'expense')
     .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const creditPaymentPeriod = current?.kind === 'credit'
-    ? periodTransactions
-      .filter((transaction) => !transaction.adjustment
-        && transaction.type === 'transfer'
-        && transaction.toWalletId === current.id)
-      .reduce((sum, transaction) => sum + transaction.amount, 0)
-    : 0;
-  const previousCreditBill = current?.kind === 'credit'
-    ? current.previousPeriodBill ?? 0
-    : 0;
-  const currentCreditLimit = current?.kind === 'credit'
-    ? creditLimitBreakdown(current, installments) : null;
-  const creditAvailable = currentCreditLimit?.available ?? 0;
-  const creditLiabilityForCard = (wallet: typeof cards[number]) =>
-    wallet.kind === 'credit'
-      ? creditLimitBreakdown(wallet, installments).used
-      : 0;
-  const creditAvailableForCard = (wallet: typeof cards[number]) => {
-    if (wallet.kind !== 'credit') return wallet.balance;
-    return Math.max(0, (wallet.creditLimit ?? 0) - creditLiabilityForCard(wallet));
+  const realExpensePeriod = ownOutflows.reduce((sum, transaction) => sum + actualExpenseAmount(transaction), 0);
+  const transferOutPeriod = ownOutflows
+    .filter((transaction) => transaction.type === 'transfer' && transaction.toWalletId !== current?.id)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const spentPeriod = expensePeriod + transferOutPeriod;
+  const currentCard = current?.kind === 'credit' ? positionOf(current.id) : undefined;
+  const backlog = current ? dashboard.uncarried.find((entry) => entry.wallet.id === current.id) : undefined;
+  const billBacklog = async () => {
+    if (!backlog) return;
+    setBillingBacklog(true);
+    try {
+      await repos.commands.billInstallmentCharges(backlog.wallet.id, backlog.charges.map((charge) => ({
+        periodAlias: charge.period.alias,
+        amount: charge.amount,
+      })));
+      ui.notify(t('wallets.backlogDone', { amount: money.fmt(backlog.total) }));
+      ui.refresh();
+    } catch (caught) {
+      ui.notify(caught instanceof Error ? caught.message : t('wallets.backlogFailed'));
+    } finally {
+      setBillingBacklog(false);
+    }
   };
+  const cardBillParts = (card: { previousDue: number; spending: number; installmentDue: number }) => [
+    card.previousDue > 0 && t('home.cardBillPrevious', { amount: money.fmtCompact(card.previousDue) }),
+    card.spending > 0 && t('home.cardBillSpending', { amount: money.fmtCompact(card.spending) }),
+    card.installmentDue > 0 && t('home.cardBillInstallments', { amount: money.fmtCompact(card.installmentDue) }),
+  ].filter(Boolean).join(' · ') || t('wallets.cardBillEmpty');
+  const creditAvailableForCard = (wallet: typeof cards[number]) =>
+    wallet.kind === 'credit' ? positionOf(wallet.id)?.available ?? 0 : wallet.balance;
   const receivedPeriod = current ? periodTransactions
     .filter((transaction) => isWalletIncome(transaction, current.id))
     .reduce((sum, transaction) => sum + transaction.amount, 0)
@@ -230,22 +235,18 @@ export default function WalletsScreen() {
   const actualIncomePeriod = periodTransactions
     .filter((transaction) => transaction.walletId === current?.id && isActualIncome(transaction))
     .reduce((sum, transaction) => sum + transaction.amount, 0);
-  const spentPeriod = periodTransactions
-    .filter((transaction) => !transaction.adjustment
-      && transaction.walletId === current?.id
-      && (transaction.type === 'expense' || transaction.type === 'transfer'))
-    .reduce((sum, transaction) => sum + transaction.amount, 0);
   const nonRealIncomePeriod = Math.max(0, receivedPeriod - actualIncomePeriod);
-  const transferOutPeriod = Math.max(0, spentPeriod - actualExpensePeriod);
   const periodLocale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
-  const periodDate = (date: Date) => date.toLocaleDateString(periodLocale, { day: 'numeric', month: 'short', year: 'numeric' });
-  const periodName = viewedPeriod?.alias ?? 'Bulan berjalan';
-  const periodRange = `${periodDate(periodStart)} – ${periodDate(periodEnd)}`;
+  const periodDate = (value: string) => new Date(value).toLocaleDateString(periodLocale, { day: 'numeric', month: 'short', year: 'numeric' });
+  // Kartu kredit selalu menampilkan posisi pada periode acuannya (periode berjalan).
+  const flowPeriod = current?.kind === 'credit' ? dashboard.cardPeriod : viewedPeriod;
+  const periodName = flowPeriod?.alias ?? t('wallets.noPeriod');
+  const periodRange = flowPeriod ? `${periodDate(flowPeriod.start)} – ${periodDate(flowPeriod.end)}` : '';
   const transactionAmount = (transaction: Transaction) => {
     if (transaction.type === 'transfer') {
       return transaction.toWalletId === current?.id ? transaction.amount : -transaction.amount;
     }
-    return transaction.type === 'income' ? transaction.amount : -transaction.amount;
+    return netWorthDirection(transaction, current?.kind) * transaction.amount;
   };
   const transactionDate = (iso: string) => new Intl.DateTimeFormat(
     ui.prefs.language === 'EN' ? 'en-US' : 'id-ID',
@@ -394,16 +395,16 @@ export default function WalletsScreen() {
             >
               <div className="all-wallets-overview-head">
                 <span className="all-wallets-overview-icon"><WalletIcon /></span>
-                <span><small>Ringkasan keuangan</small><strong>Semua Dompet</strong></span>
+                <span><small>{t('wallets.overviewEyebrow')}</small><strong>{t('wallets.overviewTitle')}</strong></span>
                 <b>{cards.length}</b>
               </div>
               <div className="all-wallets-overview-balance">
-                <span>Total likuiditas</span>
+                <span>{t('wallets.netLiquidity')}</span>
                 <strong>{hidden ? '••••••' : money.fmt(totalLiquidity)}</strong>
               </div>
               <div className="all-wallets-overview-stats">
-                <span><small>Tersedia</small><b>{hidden ? '••••' : money.fmt(totalDebit - totalReserved)}</b></span>
-                <span><small>Liabilitas</small><b className="out">{hidden ? '••••' : money.fmt(totalCredit)}</b></span>
+                <span><small>{t('wallets.freeFunds')}</small><b>{hidden ? '••••' : money.fmt(availableDebit)}</b></span>
+                <span><small>{t('wallets.cardDebt')}</small><b className="out">{hidden ? '••••' : money.fmt(totalCredit)}</b></span>
               </div>
             </div>
           </div>
@@ -510,60 +511,85 @@ export default function WalletsScreen() {
                 {current.cardNetwork && <span>{current.cardNetwork.toUpperCase()}</span>}
               </div>
             </div>
-            <button className="ghost-btn compact" onClick={() => ui.openCreate('wallet', true, current.name, current.id)}><Pencil />Ubah</button>
+            <button className="ghost-btn compact" onClick={() => ui.openCreate('wallet', true, current.name, current.id)}><Pencil />{t('common.edit')}</button>
           </div>
 
           <div className="wallet-insight-grid wallet-balance-grid">
             {current.kind === 'credit' ? <>
-              <div><span>Tagihan periode sebelumnya</span><b className="out">{money.fmt(previousCreditBill)}</b><small>Nilai tetap; tidak dipengaruhi transaksi periode ini</small></div>
-              <div><span>Sisa limit</span><b>{money.fmt(creditAvailable)}</b><small>Limit − kewajiban kartu, termasuk {money.fmt(currentCreditLimit?.installmentRemaining ?? 0)} sisa cicilan lintas periode</small></div>
+              <div>
+                <span>{t('home.cardBill')}</span>
+                <b className="out">{money.fmt(currentCard?.bill ?? 0)}</b>
+                <small>{currentCard ? cardBillParts(currentCard) : ''}</small>
+              </div>
+              <div>
+                <span>{t('wallets.cardAvailable')}</span>
+                <b>{money.fmt(currentCard?.available ?? 0)}</b>
+                <small>{t('wallets.cardDebtOfLimit', {
+                  debt: money.fmtCompact(currentCard?.debt ?? 0),
+                  limit: money.fmtCompact(currentCard?.limit ?? 0),
+                })}{currentCard?.installmentUnbilled
+                  ? ` · ${t('wallets.cardUnbilled', { amount: money.fmtCompact(currentCard.installmentUnbilled) })}`
+                  : ''}</small>
+              </div>
             </> : <>
-              <div><span>Saldo</span><b>{money.fmt(current.balance)}</b><small>Total dana di dompet ini</small></div>
-              <div><span>Tersedia</span><b>{money.fmt(current.balance - currentReserved)}</b><small>Saldo setelah dikurangi tabungan</small></div>
+              <div><span>{t('wallets.balance')}</span><b>{money.fmt(current.balance)}</b><small>{t('wallets.balanceNote')}</small></div>
+              <div><span>{t('wallets.available')}</span><b>{money.fmt(current.balance - currentReserved)}</b><small>{t('wallets.availableNote')}</small></div>
             </>}
           </div>
 
+          {backlog && (
+            <div className="note wallet-backlog">
+              <Info />
+              <span>
+                {t('wallets.backlogNote', {
+                  amount: money.fmt(backlog.total),
+                  periods: backlog.charges.map((charge) => charge.period.alias).join(', '),
+                })}
+                <button type="button" className="addg" disabled={billingBacklog} onClick={() => void billBacklog()}>
+                  {t('wallets.backlogAction')}
+                </button>
+              </span>
+            </div>
+          )}
+
           <div className="wallet-period-summary">
             <div className="wallet-period-head">
-              <div><span>Arus periode</span><strong>{periodName}</strong></div>
+              <div><span>{t('wallets.periodFlow')}</span><strong>{periodName}</strong></div>
               <small>{periodRange}</small>
             </div>
             <div className="wallet-flow-grid">
               {current.kind === 'credit' ? <>
                 <div className="wallet-flow-card income">
-                  <span>Pelunasan tagihan bulan sebelumnya</span>
-                  <b>{money.fmt(creditPaymentPeriod)}</b>
-                  <div><small>Transfer pembayaran masuk</small><strong>{money.fmt(creditPaymentPeriod)}</strong></div>
+                  <span>{t('wallets.cardPayments')}</span>
+                  <b>{money.fmt(currentCard?.payments ?? 0)}</b>
+                  <div><small>{t('wallets.cardPreviousLeft')}</small><strong>{money.fmt(currentCard?.previousDue ?? 0)}</strong></div>
                 </div>
                 <div className="wallet-flow-card expense">
-                  <span>Pengeluaran bulan ini</span>
-                  <b>{money.fmt(actualExpensePeriod)}</b>
-                  <div><small>Ditagih di bulan berikutnya</small><strong>{money.fmt(actualExpensePeriod)}</strong></div>
+                  <span>{t('wallets.cardSpending')}</span>
+                  <b>{money.fmt(currentCard?.spending ?? 0)}</b>
+                  <div><small>{t('wallets.cardInstallmentsDue')}</small><strong>{money.fmt(currentCard?.installmentDue ?? 0)}</strong></div>
                 </div>
               </> : <>
                 <div className="wallet-flow-card income">
-                  <span>Pemasukan</span>
+                  <span>{t('wallets.inflow')}</span>
                   <b>{money.fmt(receivedPeriod)}</b>
-                  <div><small>Pemasukan riil</small><strong>{money.fmt(actualIncomePeriod)}</strong></div>
-                  <div><small>Transfer masuk & pelunasan piutang</small><strong>{money.fmt(nonRealIncomePeriod)}</strong></div>
+                  <div><small>{t('reports.actualIncome')}</small><strong>{money.fmt(actualIncomePeriod)}</strong></div>
+                  <div><small>{t('wallets.inflowOther')}</small><strong>{money.fmt(nonRealIncomePeriod)}</strong></div>
                 </div>
                 <div className="wallet-flow-card expense">
-                  <span>Pengeluaran</span>
+                  <span>{t('wallets.outflow')}</span>
                   <b>{money.fmt(spentPeriod)}</b>
-                  <div><small>Pengeluaran riil</small><strong>{money.fmt(actualExpensePeriod)}</strong></div>
-                  <div><small>Transfer keluar</small><strong>{money.fmt(transferOutPeriod)}</strong></div>
+                  <div><small>{t('reports.actualExpense')}</small><strong>{money.fmt(realExpensePeriod)}</strong></div>
+                  <div><small>{t('wallets.transferOut')}</small><strong>{money.fmt(transferOutPeriod)}</strong></div>
                 </div>
               </>}
             </div>
-            <p>{current.kind === 'credit'
-              ? 'Pengeluaran kartu periode ini akan ditagihkan pada bulan berikutnya. Transfer masuk adalah pelunasan tagihan sebelumnya.'
-              : 'Pemasukan/pengeluaran riil tidak menghitung transfer antar-dompet. Pelunasan piutang juga tidak dianggap pendapatan baru.'}
-            </p>
+            <p>{t(current.kind === 'credit' ? 'wallets.cardFlowNote' : 'wallets.debitFlowNote')}</p>
           </div>
 
           {selectedSavings.length > 0 && (
             <>
-              <div className="sec"><span className="t">Tabungan di dompet ini</span><button className="addg" onClick={() => ui.openCreate('tabungan')}><Plus />{t('common.new')}</button></div>
+              <div className="sec"><span className="t">{t('wallets.savingsHere')}</span><button className="addg" onClick={() => ui.openCreate('tabungan')}><Plus />{t('common.new')}</button></div>
               {selectedSavings.map((saving) => {
                 const pct = saving.target ? Math.min(100, Math.round((saving.balance / saving.target) * 100)) : null;
                 return (
@@ -577,16 +603,18 @@ export default function WalletsScreen() {
             </>
           )}
 
-          <div className="sec"><span className="t">Aktivitas terbaru</span><button className="addg" onClick={() => ui.go('tx')}>{t('tab.tx.title')}<ChevronR /></button></div>
+          <div className="sec"><span className="t">{t('wallets.recentActivity')}</span><button className="addg" onClick={() => ui.go('tx')}>{t('tab.tx.title')}<ChevronR /></button></div>
           {selectedTransactions.slice(0, 6).map((transaction) => {
             const signedAmount = transactionAmount(transaction);
             return (
               <div className="row wallet-activity" key={transaction.id} onClick={() => ui.openItem(transactionTitle(transaction), transaction.type === 'transfer' ? 'transfer' : 'transaksi', transaction.id)}>
                 <div className={`ic ${signedAmount > 0 ? 'in' : signedAmount < 0 ? 'out' : ''}`}>
-                  {transaction.type === 'income' ? <Down /> : transaction.type === 'transfer' ? <TransferCard /> : <Up />}
+                  {transaction.type === 'transfer' ? <TransferCard /> : signedAmount > 0 ? <Down /> : <Up />}
                 </div>
                 <div className="mid"><div className="t1">{transactionTitle(transaction)}</div><div className="t2">
-                  {transaction.type === 'income' && (
+                  {transaction.adjustment ? (
+                    <span className="chip">{t('tx.adjustmentChip')}</span>
+                  ) : transaction.type === 'income' && (
                     <span className="chip" data-cat="income">
                       {isActualIncome(transaction) ? t('reports.actualIncome') : t('tx.receivableIncome')}
                     </span>
@@ -597,35 +625,38 @@ export default function WalletsScreen() {
               </div>
             );
           })}
-          {selectedTransactions.length === 0 && <div className="saving-empty">Belum ada aktivitas di dompet ini.</div>}
+          {selectedTransactions.length === 0 && <div className="saving-empty">{t('wallets.noActivity')}</div>}
         </div>
       ) : (
       <>
       <div className="all-wallet-insights">
         <div className="wallet-net-card">
-          <span>Likuiditas bersih</span>
+          <span>{t('wallets.netLiquidity')}</span>
           <b className={totalLiquidity < 0 ? 'out' : undefined}>{summaryAmount(totalLiquidity)}</b>
           <div className="wallet-net-formula">
-            <span><small>Saldo aset</small><strong>{summaryAmount(totalDebit)}</strong></span>
+            <span><small>{t('home.assets')}</small><strong>{summaryAmount(totalDebit)}</strong></span>
             <i aria-hidden="true">−</i>
-            <span><small>Liabilitas</small><strong>{summaryAmount(totalCredit)}</strong></span>
+            <span><small>{t('wallets.cardDebt')}</small><strong>{summaryAmount(totalCredit)}</strong></span>
           </div>
         </div>
         <div className="wallet-breakdown-grid">
           <div>
-            <span>Dana bebas di dompet</span>
+            <span>{t('wallets.freeFunds')}</span>
             <b>{summaryAmount(availableDebit)}</b>
-            <small>Saldo aset yang belum dialokasikan ke tabungan</small>
+            <small>{t('wallets.freeFundsNote')}</small>
           </div>
           <div>
-            <span>Dialokasikan ke tabungan</span>
+            <span>{t('home.savings')}</span>
             <b>{summaryAmount(totalReserved)}</b>
-            <small>Masih bagian dari saldo aset, tetapi sedang disisihkan</small>
+            <small>{t('wallets.savingsNote')}</small>
           </div>
           <div>
-            <span>Liabilitas kartu kredit</span>
+            <span>{t('wallets.cardDebt')}</span>
             <b className="out">{summaryAmount(totalCredit)}</b>
-            <small>Tagihan berjalan yang mengurangi likuiditas bersih</small>
+            <small>{t('wallets.cardDebtNote', {
+              bill: hidden ? '••••' : money.fmtCompact(dashboard.card.bill),
+              unbilled: hidden ? '••••' : money.fmtCompact(dashboard.card.installmentUnbilled),
+            })}</small>
           </div>
         </div>
       </div>
@@ -693,17 +724,27 @@ export default function WalletsScreen() {
       {credit.length === 0 && (
         <div className="saving-empty">{t('wallets.creditEmpty')}</div>
       )}
-      {credit.map(w => (
-        <div className="row" key={w.id} onClick={() => ui.openItem(w.name, 'wallet', w.id)}>
-          {walletListIcon(
-            w,
-            walletProductInitial(w) || 'CC',
-            walletProduct(mediumOf(w), w.bank)?.color || '#2F4858',
-          )}
-          <div className="mid"><div className="t1">{w.name}</div><div className="t2">•••• {w.last4}</div></div>
-          <div className="r"><div className="val out">−{money.fmt(creditLiabilityForCard(w))}</div><div className="subt">{t('wallets.limit')} {money.fmtCompact(w.creditLimit!)}</div></div>
-        </div>
-      ))}
+      {credit.map(w => {
+        const position = positionOf(w.id);
+        return (
+          <div className="row" key={w.id} onClick={() => ui.openItem(w.name, 'wallet', w.id)}>
+            {walletListIcon(
+              w,
+              walletProductInitial(w) || 'CC',
+              walletProduct(mediumOf(w), w.bank)?.color || '#2F4858',
+            )}
+            <div className="mid"><div className="t1">{w.name}</div><div className="t2">•••• {w.last4}</div></div>
+            <div className="r">
+              <div className="val out">−{money.fmt(position?.debt ?? 0)}</div>
+              <div className="subt">{t('wallets.cardRowBill', { amount: money.fmtCompact(position?.bill ?? 0) })}</div>
+              <div className="subt">{t('wallets.cardAvailable')} {money.fmtCompact(position?.available ?? 0)}</div>
+              {dashboard.uncarried.some((entry) => entry.wallet.id === w.id) && (
+                <div className="subt out">{t('wallets.backlogRow')}</div>
+              )}
+            </div>
+          </div>
+        );
+      })}
       </>
       )}
     </>

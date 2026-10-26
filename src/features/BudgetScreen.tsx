@@ -3,28 +3,35 @@ import React from 'react';
 import { useUI, useMoney, useT } from '../components/AppShell';
 import { useBudgets, useDashboard, useInstallments, usePeriodTransactions, usePeriods } from '../application/hooks';
 import { installmentDuesForPeriod, type InstallmentDue } from '../core/domain/installment-schedule';
+import { addDays, dayKey, startOfDay } from '../core/domain/calendar';
 import { Card, Check, Chevron, Plus, Warn } from '../components/ui/icons';
 
+/**
+ * Cicilan bukan bagian dari anggaran: angsurannya sudah menjadi tagihan kartu. Bagian ini
+ * hanya menampilkan jadwalnya supaya terlihat berapa yang jatuh tempo per periode.
+ */
 function InstallmentBudgetSection({
-  title, detail, dues, future,
+  title, detail, dues, note,
 }: {
   title: string;
   detail?: string;
   dues: InstallmentDue[];
-  future?: boolean;
+  note?: string;
 }) {
   const ui = useUI();
   const money = useMoney();
   const t = useT();
   const locale = ui.prefs.language === 'EN' ? 'en-US' : 'id-ID';
   const total = dues.reduce((sum, due) => sum + due.amount, 0);
-  const unpaid = dues.filter((due) => !due.paid).reduce((sum, due) => sum + due.amount, 0);
   return (
     <section className="installment-budget-section">
-      <div className="sec"><span className="t">{title}</span></div>
+      <div className="sec">
+        <span className="t">{title}</span>
+        <button className="addg" onClick={() => ui.go('installments')}>{t('common.seeAll')}</button>
+      </div>
       <div className="installment-budget-card">
         <div className="installment-budget-summary">
-          <div><b>{money.fmt(future ? unpaid : total)}</b><small>{detail}</small></div>
+          <div><b>{money.fmt(total)}</b><small>{detail}</small></div>
           <span>{dues.length} {t('budget.installmentCount')}</span>
         </div>
         {dues.length > 0 ? dues.map((due) => (
@@ -47,7 +54,7 @@ function InstallmentBudgetSection({
             <strong>{money.fmt(due.amount)}</strong>
           </button>
         )) : <p className="installment-budget-empty">{t('budget.noInstallments')}</p>}
-        <p className="installment-budget-note">{t('budget.installmentAccounting')}</p>
+        {note && <p className="installment-budget-note">{note}</p>}
       </div>
     </section>
   );
@@ -74,22 +81,18 @@ export default function BudgetScreen() {
   const currentDues = viewedPeriod && viewedPeriod.status !== 'closed'
     ? installmentDuesForPeriod(installments, viewedPeriod)
     : [];
+  // Periode berikutnya: draft yang sudah ada, atau perkiraan satu bulan setelah periode ini.
   const followingDraft = viewedPeriod && !isArchive
-    ? periods.filter((period) => period.status === 'draft'
-        && period.start.slice(0, 10) > viewedPeriod.end.slice(0, 10))
+    ? periods.filter((period) => period.status === 'draft' && dayKey(period.start) > dayKey(viewedPeriod.end))
       .sort((a, b) => a.start.localeCompare(b.start))[0]
     : undefined;
-  const nextStart = viewedPeriod ? new Date(viewedPeriod.end.slice(0, 10) + 'T12:00:00Z') : null;
-  nextStart?.setUTCDate(nextStart.getUTCDate() + 1);
-  const nextEnd = nextStart ? (() => {
-    const year = nextStart.getUTCFullYear();
-    const month = nextStart.getUTCMonth();
-    const lastDay = new Date(Date.UTC(year, month + 2, 0)).getUTCDate();
-    return new Date(Date.UTC(year, month + 1, Math.min(nextStart.getUTCDate(), lastDay) - 1, 12));
-  })() : null;
-  const nextPeriod = followingDraft ?? (nextStart && nextEnd ? {
-    start: nextStart.toISOString(), end: nextEnd.toISOString(),
-  } : null);
+  const nextPeriod = followingDraft ?? (viewedPeriod ? (() => {
+    const start = addDays(startOfDay(new Date(viewedPeriod.end)), 1);
+    // Sebulan setelah tanggal mulai, dijepit ke akhir bulan pendek (31 Jan → 28/29 Feb).
+    const lastDay = new Date(start.getFullYear(), start.getMonth() + 2, 0).getDate();
+    const sameDayNextMonth = new Date(start.getFullYear(), start.getMonth() + 1, Math.min(start.getDate(), lastDay));
+    return { start: start.toISOString(), end: addDays(sameDayNextMonth, -1).toISOString() };
+  })() : null);
   const nextDues = !isArchive && nextPeriod
     ? installmentDuesForPeriod(installments, nextPeriod).filter((due) => !due.paid)
     : [];
@@ -101,20 +104,16 @@ export default function BudgetScreen() {
   const installmentSections = <>
     {currentDues.length > 0 && (
       <InstallmentBudgetSection title={t('budget.installmentsCurrent')} dues={currentDues}
-        detail={t('budget.installmentsCurrentDetail')} />
+        detail={t('budget.installmentsCurrentDetail')} note={t('budget.installmentNote')} />
     )}
     {nextDues.length > 0 && (
-      <InstallmentBudgetSection title={t('budget.installmentsNext')} dues={nextDues} future
+      <InstallmentBudgetSection title={t('budget.installmentsNext')} dues={nextDues}
         detail={nextRange} />
     )}
   </>;
-  const manualAllocated = budgets.reduce((s, b) => s + b.allocated, 0);
-  const manualSpent = budgets.reduce((s, b) => s + b.spent, 0);
-  const allocated = manualAllocated + currentDues.reduce((sum, due) => sum + due.amount, 0);
-  const spent = manualSpent + currentDues.filter((due) => due.paid)
-    .reduce((sum, due) => sum + due.amount, 0);
+  const allocated = budgets.reduce((s, b) => s + b.allocated, 0);
+  const spent = budgets.reduce((s, b) => s + b.spent, 0);
   const remaining = allocated - spent;
-  const manualRemaining = manualAllocated - manualSpent;
   const progress = allocated ? Math.round((spent / allocated) * 100) : 0;
   const transactionsByBudget = React.useMemo(() => transactions.reduce((groups, transaction) => {
     if (!transaction.budgetId) return groups;
@@ -128,11 +127,11 @@ export default function BudgetScreen() {
   const daysLeft = Math.max(1, d.progress?.daysLeft ?? 1);
   const dayOf = d.progress?.dayOf ?? 0;
   const totalDays = d.progress?.totalDays ?? 30;
-  const perDay = Math.round(manualRemaining / daysLeft);
+  const perDay = Math.round(remaining / daysLeft);
   const perWeek = perDay * 7;
   // Pace: sudah pakai berapa persen dibanding porsi hari yang sudah lewat.
-  const idealSpent = totalDays ? manualAllocated * (dayOf / totalDays) : 0;
-  const paceDiff = manualSpent - idealSpent;
+  const idealSpent = totalDays ? allocated * (dayOf / totalDays) : 0;
+  const paceDiff = spent - idealSpent;
   const onTrack = paceDiff <= 0;
 
   if (budgets.length === 0) {
@@ -188,13 +187,12 @@ export default function BudgetScreen() {
           <div><span>{t('budget.perWeek')}</span><b className={perWeek < 0 ? 'negative' : ''}>{money.fmt(Math.max(0, perWeek))}</b></div>
         </div>
         <div className={`pace-note${onTrack ? ' ok' : ' warn'}`}>
-          {manualRemaining < 0
-            ? t('budget.paceOver', { amount: money.fmt(-manualRemaining) })
+          {remaining < 0
+            ? t('budget.paceOver', { amount: money.fmt(-remaining) })
             : onTrack
               ? t('budget.paceOk', { amount: money.fmt(Math.round(-paceDiff)) })
               : t('budget.paceFast', { amount: money.fmt(Math.round(paceDiff)) })}
         </div>
-        {currentDues.length > 0 && <small className="pace-scope-note">{t('budget.dailyExcludesInstallments')}</small>}
       </div>
       </>}
 
