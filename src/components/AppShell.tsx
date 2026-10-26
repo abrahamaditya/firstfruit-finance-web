@@ -87,7 +87,7 @@ import ReportsScreen from '../features/ReportsScreen';
 import CalendarScreen from '../features/CalendarScreen';
 import PeriodScreen from '../features/PeriodScreen';
 import ProfileScreen from '../features/ProfileScreen';
-import { usePeriods } from '../application/hooks';
+import { invalidateCollections, usePeriods } from '../application/hooks';
 
 export type Tab =
   | 'home'
@@ -613,6 +613,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
   // Kerangka aplikasi tidak ikut di-remount saat data berubah — daftar periodenya
   // disegarkan lewat dataVersion, sama seperti layar yang di-remount lewat key.
   const [dataVersion, setDataVersion] = useState(0);
+  // Data berubah: fetch yang dimulai sebelum perubahan diambil ulang, lalu semua layar
+  // dimuat ulang sebagai satu gelombang sehingga angka tidak berganti bertahap.
+  const bumpData = useCallback(() => {
+    invalidateCollections(repos);
+    setDataVersion((version) => version + 1);
+  }, [repos]);
   const { periods, active: activePeriod } = usePeriods(dataVersion);
   const [tab, setTab] = useState<Tab>('home');
   const [tabHistory, setTabHistory] = useState<Tab[]>([]);
@@ -1071,7 +1077,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     },
     openCreate,
     notify,
-    refresh: () => setDataVersion((version) => version + 1),
+    refresh: bumpData,
     periodId,
     viewPeriod,
     isArchivePeriod,
@@ -1137,7 +1143,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
     let timer: number | undefined;
     const scheduleRefresh = () => {
       window.clearTimeout(timer);
-      timer = window.setTimeout(() => setDataVersion((version) => version + 1), 120);
+      timer = window.setTimeout(bumpData, 120);
     };
     let channel = supabase.channel(`firstfruit-finance-${workspaceId}`);
     [
@@ -1165,7 +1171,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       window.clearTimeout(timer);
       void supabase.removeChannel(channel);
     };
-  }, [auth.workspaceId]);
+  }, [auth.workspaceId, bumpData]);
 
   const formConfig = useCallback(
     (type: CreateType): FormConfig => {
@@ -2596,7 +2602,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         }
       }
 
-      setDataVersion((version) => version + 1);
+      bumpData();
       close();
       const savedAmount = formatIDR(toNumber(form.amount));
       notify(
@@ -2656,7 +2662,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       if (item.type === 'transaksi' || item.type === 'transfer') {
         await repos.transactions.remove(item.id);
       }
-      setDataVersion((version) => version + 1);
+      bumpData();
       close();
       notify(`${item.name} dihapus${removalNote}`);
     } catch (caught) {

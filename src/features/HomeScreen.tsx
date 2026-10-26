@@ -9,67 +9,62 @@ import { actualExpenseAmount, isActualIncome, netWorthDirection } from '../core/
 import { categoryTone } from '../core/domain/categories';
 import { installmentSchedule } from '../core/domain/installment-schedule';
 
-const randomScramble = (value: string, lockedDigits = 0) => {
-  let digitIndex = 0;
-  return value.replace(/\d/g, (digit) => {
-    const locked = digitIndex < lockedDigits;
-    digitIndex += 1;
-    return locked ? digit : String(Math.floor(Math.random() * 10));
-  });
-};
+const COUNT_DURATION = 600;
+/** Cepat di awal, melambat menjelang angka akhir. */
+const easeOutQuart = (t: number) => 1 - (1 - t) ** 4;
 
 /**
- * Nominal mengacak digit selama data dimuat, lalu mengunci digit kiri-ke-kanan ke
- * nilai sebenarnya. Tanda, mata uang, dan pemisah ribuan tidak ikut berubah.
+ * Nominal yang bergulir singkat ke nilai barunya: saat data pertama tiba (dari 0) dan
+ * setiap kali nilainya berubah. Selama data dimuat angkanya diam; tidak ada pengacakan.
+ * Bila nominal disembunyikan atau pengguna memilih reduced motion, angka langsung berganti.
  */
-function useGlitchAmount(target: string, loadingTemplate: string, loading: boolean, enabled: boolean) {
-  const [display, setDisplay] = React.useState(target);
-  const fetchedThisMount = React.useRef(loading);
+function useCountAmount(value: number, loading: boolean, enabled: boolean) {
+  const [display, setDisplay] = React.useState(loading ? 0 : value);
+  const shown = React.useRef(display);
 
   React.useEffect(() => {
-    if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      fetchedThisMount.current = false;
-      setDisplay(target);
-      return;
-    }
-
-    if (loading) {
-      fetchedThisMount.current = true;
-      setDisplay(randomScramble(loadingTemplate));
-      const interval = window.setInterval(() => {
-        setDisplay(randomScramble(loadingTemplate));
-      }, 48);
-      return () => window.clearInterval(interval);
-    }
-
-    // Data dari cache langsung ditampilkan. Fase settle hanya dijalankan bila beranda
-    // ini sebelumnya benar-benar mengalami fetch, bukan sekadar di-mount ulang.
-    if (!fetchedThisMount.current) {
-      setDisplay(target);
-      return;
-    }
-    fetchedThisMount.current = false;
-
-    const duration = 680;
-    const startedAt = performance.now();
-    const digitCount = (target.match(/\d/g) ?? []).length;
-    let timeout = 0;
-    const tick = () => {
-      const progress = Math.min(1, (performance.now() - startedAt) / duration);
-      if (progress === 1) {
-        setDisplay(target);
-        return;
-      }
-      // Sepertiga awal tetap liar; setelah itu digit menetap bertahap dari kiri.
-      const settleProgress = Math.max(0, (progress - 0.34) / 0.66);
-      setDisplay(randomScramble(target, Math.floor(settleProgress * digitCount)));
-      timeout = window.setTimeout(tick, 44);
+    if (loading) return;
+    const from = shown.current;
+    const jump = () => {
+      shown.current = value;
+      setDisplay(value);
     };
-    tick();
-    return () => window.clearTimeout(timeout);
-  }, [enabled, loading, loadingTemplate, target]);
+    if (from === value) return;
+    if (!enabled || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      jump();
+      return;
+    }
+    const startedAt = performance.now();
+    let frame = requestAnimationFrame(function step(now) {
+      const progress = Math.min(1, (now - startedAt) / COUNT_DURATION);
+      const next = progress === 1 ? value : Math.round(from + (value - from) * easeOutQuart(progress));
+      shown.current = next;
+      setDisplay(next);
+      if (progress < 1) frame = requestAnimationFrame(step);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [enabled, loading, value]);
 
   return display;
+}
+
+/**
+ * Nominal besar Beranda. Dipisah menjadi komponen sendiri supaya tiap frame animasi
+ * hanya merender angka ini, bukan seluruh Beranda.
+ */
+function CountAmount({ value, loading, hidden, format, label }: {
+  value: number;
+  loading: boolean;
+  hidden: boolean;
+  format: (value: number) => string;
+  label: string;
+}) {
+  const shown = useCountAmount(value, loading, !hidden);
+  return (
+    <div className={`sa${shown < 0 ? ' negative' : ''}${loading ? ' loading' : ''}`} aria-label={label}>
+      <span aria-hidden="true">{hidden ? '••••••' : format(shown)}</span>
+    </div>
+  );
 }
 
 const MARQUEE_SPEED = 28;        // piksel/detik, menyamai laju animasi CSS sebelumnya
@@ -406,8 +401,6 @@ export default function HomeScreen() {
     card.installmentDue > 0 && tr('home.cardBillInstallments', { amount: money.fmtCompact(card.installmentDue) }),
   ].filter(Boolean).join(' · ');
   const safeAmount = moneyOrHidden(d.safeToSpend);
-  const loadingSafeAmount = money.fmtSigned(d.safeToSpend || 8_888_888);
-  const safeAmountGlitch = useGlitchAmount(safeAmount, loadingSafeAmount, d.loading, !hidden);
   const highlights = [
     {
       value: hidden ? '••••' : signed(todayNet),
@@ -448,12 +441,13 @@ export default function HomeScreen() {
       <div className="shero home-hero">
         <div className="sl">{tr('home.safeToSpend')}</div>
         <div className="sa-wrap">
-          <div
-            className={`sa${d.safeToSpend < 0 ? ' negative' : ''}`}
-            aria-label={hidden ? 'Nominal disembunyikan' : safeAmount}
-          >
-            <span aria-hidden="true">{safeAmountGlitch}</span>
-          </div>
+          <CountAmount
+            value={d.safeToSpend}
+            loading={d.loading}
+            hidden={hidden}
+            format={money.fmtSigned}
+            label={hidden ? 'Nominal disembunyikan' : safeAmount}
+          />
           <button
             className={`hero-eye${hidden ? ' on' : ''}`}
             onClick={() => ui.setPref('hideHomeAmounts', !hidden)}

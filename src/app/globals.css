@@ -164,6 +164,8 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
    jadi font nominalnya otomatis ikut semua tanpa selector per-layar. */
 .shero .sa{font-size:clamp(36px,10.5vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1.04;margin-top:9px;font-variant-numeric:tabular-nums;font-family:var(--nominal)}
 .shero .sa-wrap{display:inline-flex;align-items:center;justify-content:center;gap:10px}
+.shero .sa{transition:opacity .2s}
+.shero .sa.loading{opacity:.35}
 .shero .sa .cur{font-size:18px;color:var(--ink-soft);margin-right:3px}
 .shero .sp{display:flex;align-items:center;justify-content:center;gap:7px;margin-top:12px;font-size:12.5px;font-weight:600;color:var(--ink-soft)}
 .shero .sp-label{line-height:1}

@@ -20,6 +20,11 @@ bersama. [Skema domain](schema.md) menjelaskan bentuk data dan pemetaan tabelnya
   jurnal pembayaran yang sudah ada.
 - Saldo, alokasi, dan laporan tidak boleh menghitung transfer antar-dompet sebagai
   pemasukan baru atau mengurangi anggaran dua kali.
+- Setelah data berubah (mutasi atau realtime), semua koleksi dimuat ulang sebagai satu
+  gelombang dan diterbitkan bersamaan (`src/application/collection-cache.ts`). Angka
+  turunan seperti arus kas bebas tidak pernah dihitung dari campuran saldo baru dan
+  realisasi anggaran lama. Fetch yang dimulai sebelum perubahan diambil ulang; satu
+  gelombang paling lama ditahan 10 detik.
 
 ## Dompet, kartu kredit, dan posisi keuangan
 

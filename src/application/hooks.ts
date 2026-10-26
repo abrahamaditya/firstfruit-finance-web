@@ -18,26 +18,9 @@ import {
   installmentsDueWithinMonth, sumCreditCards, uncarriedInstallmentCharges,
 } from '../core/domain/credit-card';
 import { InstallmentDue, installmentDuesForPeriod } from '../core/domain/installment-schedule';
+import { cacheFor, fetchCollection, waveFor } from './collection-cache';
 
-type CollectionCacheEntry<T> = {
-  data?: T[];
-  request?: Promise<T[]>;
-  listeners: Set<(data: T[]) => void>;
-};
-
-// Cache mengikuti instance repository, sehingga otomatis terpisah per workspace dan
-// dibuang GC ketika pengguna keluar. Halaman yang di-mount ulang langsung memakai data
-// terakhir, lalu melakukan revalidasi di background (stale-while-revalidate).
-const collectionCache = new WeakMap<object, CollectionCacheEntry<unknown>>();
-
-function cacheFor<T>(repository: object): CollectionCacheEntry<T> {
-  let entry = collectionCache.get(repository) as CollectionCacheEntry<T> | undefined;
-  if (!entry) {
-    entry = { listeners: new Set() };
-    collectionCache.set(repository, entry as CollectionCacheEntry<unknown>);
-  }
-  return entry;
-}
+export { invalidateCollections } from './collection-cache';
 
 // Shared collection loader. `version` memaksa revalidasi setelah mutasi, tetapi data
 // lama tetap dirender sampai respons baru datang agar UI tidak berkedip ke empty state.
@@ -47,36 +30,28 @@ function useCollection<T extends { id: string }>(
 ) {
   const repos = useRepositories();
   const repository = pick(repos);
-  const entry = cacheFor<T>(repository);
+  const entry = cacheFor<T>(repos, repository);
   const [data, setData] = useState<T[]>(() => entry.data ?? []);
   const [loading, setLoading] = useState(() => entry.data === undefined);
 
   const reload = useCallback(async () => {
-    const current = cacheFor<T>(repository);
+    const current = cacheFor<T>(repos, repository);
     if (current.data === undefined) setLoading(true);
     try {
-      if (!current.request) {
-        current.request = repository.list()
-          .then((fresh) => {
-            current.data = fresh;
-            current.listeners.forEach((listener) => listener(fresh));
-            return fresh;
-          })
-          .finally(() => {
-            current.request = undefined;
-          });
-      }
-      const fresh = await current.request;
-      setData(fresh);
+      // Hasilnya sampai ke state lewat listener, bersamaan dengan koleksi lain.
+      return await new Promise<T[]>((resolve, reject) => {
+        current.waiters.push({ resolve, reject });
+        if (!current.fetching) fetchCollection(repository, current, waveFor(repos));
+      });
     } finally {
       setLoading(false);
     }
     // `version` sengaja jadi dependensi walau tidak dipakai di badan fungsi.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [repository, version]);
+  }, [repos, repository, version]);
 
   useEffect(() => {
-    const current = cacheFor<T>(repository);
+    const current = cacheFor<T>(repos, repository);
     const receive = (fresh: T[]) => setData(fresh);
     current.listeners.add(receive);
     if (current.data !== undefined) {
@@ -90,7 +65,7 @@ function useCollection<T extends { id: string }>(
     return () => {
       current.listeners.delete(receive);
     };
-  }, [reload, repository]);
+  }, [reload, repos, repository]);
 
   return { data, loading, reload };
 }
