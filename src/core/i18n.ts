@@ -122,6 +122,7 @@ const D: Record<string, Entry> = {
   'home.cardBillPrevious': { id: 'lalu {amount}', en: '{amount} previous' },
   'home.cardBillSpending': { id: 'belanja {amount}', en: '{amount} spending' },
   'home.cardBillInstallments': { id: 'cicilan {amount}', en: '{amount} installments' },
+  'home.cardBillCashAdvance': { id: 'tarik tunai {amount}', en: '{amount} cash advance' },
   'home.savings': { id: 'Tabungan', en: 'Savings' },
   'home.budgetLeft': { id: 'Sisa anggaran', en: 'Budget left' },
   'home.cardAvailable': { id: 'Sisa limit · {name}', en: 'Available · {name}' },
@@ -189,6 +190,7 @@ const D: Record<string, Entry> = {
   'wallets.cardPreviousLeft': { id: 'Sisa tagihan lalu', en: 'Previous bill left' },
   'wallets.cardSpending': { id: 'Belanja kartu', en: 'Card spending' },
   'wallets.cardInstallmentsDue': { id: 'Angsuran jatuh tempo', en: 'Installments due' },
+  'wallets.cardCashAdvance': { id: 'Tarik tunai', en: 'Cash advance' },
   'wallets.cardFlowNote': {
     id: 'Pembayaran melunasi tagihan lalu. Belanja dan angsuran periode ini ditagih di periode berikutnya.',
     en: 'Payments settle the previous bill. This period’s spending and installments are billed next period.',

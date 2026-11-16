@@ -687,7 +687,7 @@ Saldo ledger menggunakan aturan:
 | Tagihan liability dinaikkan manual | Equity adjustment | Wallet liability |
 | Tagihan liability diturunkan manual | Wallet liability | Equity adjustment |
 
-Transfer asset ke liability harus dianggap `credit_payment`, bukan transfer biasa. Transfer liability ke asset tidak didukung V1 kecuali dibuat sebagai proses cash advance yang eksplisit.
+Transfer asset ke liability harus dianggap `credit_payment`, bukan transfer biasa. Transfer liability ke asset adalah cash advance (migrasi `202611160075`): tetap `transfer`, debit wallet asset dan kredit wallet liability, bertag `Tarik Tunai Kartu Kredit`, tanpa anggaran. Transfer liability ke liability tidak didukung.
 
 ---
 

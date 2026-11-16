@@ -85,6 +85,14 @@ Pengeluaran dapat terkait `budgetId`, pemanfaatan (`self`, `shared`, `other`), d
 piutang. Transfer dapat mengisi tabungan pada dompet tujuan. Transfer ke kartu kredit
 menjadi pembayaran kartu dan **tidak** boleh merealisasikan anggaran lagi.
 
+Transfer **dari** kartu kredit ke dompet debit adalah tarik tunai (cash advance). Di SQL
+tetap bertipe `transfer` dengan tag `Tarik Tunai Kartu Kredit`: saldo dompet tujuan dan utang
+kartu sama-sama naik, jadi kekayaan bersih tidak berubah. Nominalnya masuk tagihan periode
+berjalan (`cashAdvance` pada posisi kartu), memakai limit, dan tidak dapat ditautkan ke
+anggaran. Biaya tarik tunai yang diisi di form dicatat sebagai pengeluaran terpisah dari
+kartu yang sama (`Debt & Bills`). Bunga harian tidak dihitung otomatis; catat saat muncul di
+tagihan. Transfer antar kartu kredit tetap ditolak.
+
 - Kategori transaksi disimpan sebagai satu kategori terpilih pada database; repository
   membentuk jalur induk → anak untuk UI. Filter Transaksi dapat menyaring bertahap,
   termasuk seluruh tingkat di bawah **Giving**. Giving dihitung sebagai manfaat untuk

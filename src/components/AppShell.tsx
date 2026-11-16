@@ -24,7 +24,12 @@ import { periodProgress, transactionInPeriod } from '../core/domain/calculations
 import { installmentPaidAmount, installmentQuote } from '../core/domain/installment-pricing';
 import { creditCardPeriod, creditCardPosition } from '../core/domain/credit-card';
 import { BudgetPeriod, CardNetwork, Transaction, Wallet, WalletKind, WalletMedium } from '../core/domain/types';
-import { CREDIT_CARD_PAYMENT_TAG } from '../core/domain/transaction-tags';
+import {
+  CASH_ADVANCE_FEE_CATEGORY,
+  CASH_ADVANCE_FEE_NOTE,
+  CASH_ADVANCE_TAG,
+  CREDIT_CARD_PAYMENT_TAG,
+} from '../core/domain/transaction-tags';
 import { walletProduct, walletProductsFor } from '../core/wallet-products';
 import {
   CATEGORY_CUSTOM,
@@ -180,7 +185,7 @@ const FX_KEY = 'abraham.fx';
 const FX_FALLBACK = 16000; // dipakai bila API & cache gagal
 
 // Field nominal uang: input diberi pemisah ribuan otomatis (digit mentah disimpan di state).
-const MONEY_FIELDS = new Set(['amount', 'balance', 'creditLimit', 'creditOutstanding', 'owed', 'target', 'saved', 'allocated', 'spent', 'share', 'installmentItemTotal', 'installmentInterestTotal']);
+const MONEY_FIELDS = new Set(['amount', 'balance', 'creditLimit', 'creditOutstanding', 'owed', 'target', 'saved', 'allocated', 'spent', 'share', 'installmentItemTotal', 'installmentInterestTotal', 'cashAdvanceFee']);
 // Kapsul nominal cepat (menambah ke nilai saat ini).
 const QUICK_AMOUNTS = [50_000, 100_000, 500_000, 1_000_000, 5_000_000];
 
@@ -252,6 +257,7 @@ const TRANSACTION_FORM_SECTIONS: FormSectionDefinition[] = [
   { title: 'Informasi transaksi', keys: ['txType', 'date', 'amount'] },
   { title: 'Sumber dana', keys: ['walletId', 'toWalletId', 'savingId'] },
   { title: 'Pembayaran kartu', keys: ['creditPaymentSummary', 'paymentTag', 'creditPaymentInstallments'] },
+  { title: 'Tarik tunai kartu kredit', keys: ['cashAdvanceTag', 'cashAdvanceFee'] },
   { title: 'Cicilan kartu kredit', keys: [
     'isInstallment', 'installmentTenor', 'installmentPricingMode', 'installmentItemTotal',
     'installmentInterestTotal', 'installmentItemComputed', 'installmentTotalComputed',
@@ -1188,9 +1194,12 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       const usesCreditCard = (form: Record<string, string>) =>
         isExpense(form)
         && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit');
+      const isCashAdvance = (form: Record<string, string>) =>
+        isTransfer(form)
+        && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit');
       const isBudgetable = (form: Record<string, string>) =>
         (isExpense(form) && !(usesCreditCard(form) && form.isInstallment === 'yes'))
-        || (isTransfer(form) && Boolean(form.toWalletId) && !isCreditPayment(form));
+        || (isTransfer(form) && Boolean(form.toWalletId) && !isCreditPayment(form) && !isCashAdvance(form));
       const defaultWalletId = prefs.defaultWalletId || '';
       const today = new Date().toISOString().slice(0, 10);
       const nextMonth = new Date();
@@ -1229,7 +1238,31 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             type: 'select',
             options: wallets,
           },
-          { key: 'toWalletId', label: 'Dompet tujuan', type: 'select', options: wallets, showIf: isTransfer },
+          {
+            key: 'toWalletId',
+            label: 'Dompet tujuan',
+            type: 'select',
+            // Tarik tunai hanya ke dompet debit; kartu ke kartu tidak didukung.
+            optionsOf: (f) => isCashAdvance(f) ? debitWallets : wallets,
+            showIf: isTransfer,
+          },
+          {
+            key: 'cashAdvanceTag',
+            label: 'Tag transaksi',
+            type: 'computed',
+            computedValue: () => CASH_ADVANCE_TAG,
+            hint: 'Saldo dompet tujuan dan utang kartu sama-sama bertambah. Tidak dihitung ke anggaran.',
+            showIf: isCashAdvance,
+          },
+          {
+            key: 'cashAdvanceFee',
+            label: 'Biaya tarik tunai',
+            type: 'number',
+            placeholder: '0 jika tanpa biaya',
+            optional: true,
+            hint: 'Dicatat sebagai pengeluaran terpisah dari kartu ini (Debt & Bills). Bunga harian dicatat saat muncul di tagihan.',
+            showIf: (f) => isCashAdvance(f) && !create.isEdit,
+          },
           {
             key: 'creditPaymentSummary',
             label: 'Pelunasan tagihan sebelumnya',
@@ -1490,6 +1523,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           installmentPricingMode: 'monthly',
           installmentItemTotal: '',
           installmentInterestTotal: '0',
+          cashAdvanceFee: '',
           note: '',
         },
       };
@@ -2238,6 +2272,15 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       notify('Transfer dalam dompet yang sama harus masuk ke tabungan');
       return;
     }
+    if (
+      form.txType === 'transfer'
+      && form.walletId !== form.toWalletId
+      && [form.walletId, form.toWalletId].every((walletId) =>
+        walletOptions.some((wallet) => wallet.value === walletId && wallet.kind === 'credit'))
+    ) {
+      notify('Transfer antar kartu kredit tidak didukung. Tarik tunai hanya ke dompet debit.');
+      return;
+    }
     if (create.type === 'periode' && form.end < form.start) {
       notify('Tanggal selesai periode tidak boleh sebelum tanggal mulai');
       return;
@@ -2363,6 +2406,10 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           && walletOptions.some((wallet) => wallet.value === form.toWalletId && wallet.kind === 'credit');
         const usesCreditCard = type === 'expense'
           && walletOptions.some((wallet) => wallet.value === form.walletId && wallet.kind === 'credit');
+        const cashAdvanceCard = isTransfer
+          ? walletOptions.find((wallet) => wallet.value === form.walletId && wallet.kind === 'credit')
+          : undefined;
+        const cashAdvanceFee = cashAdvanceCard && !shouldUpdate ? toNumber(form.cashAdvanceFee) : 0;
         const installmentTenorMonths =
           usesCreditCard && form.isInstallment === 'yes' ? toNumber(form.installmentTenor) : undefined;
         const installmentPaidMonths =
@@ -2408,6 +2455,18 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
             return;
           }
         }
+        if (cashAdvanceCard) {
+          if (!Number.isInteger(cashAdvanceFee) || cashAdvanceFee < 0) {
+            notify('Biaya tarik tunai tidak valid');
+            return;
+          }
+          const { limit, available } = cardPositionFor(cashAdvanceCard.wallet);
+          // Saat edit, nominal lama sudah terpakai di limit; database tetap menjaga batasnya.
+          if (!shouldUpdate && limit > 0 && amount + cashAdvanceFee > available) {
+            notify(`Tarik tunai dan biayanya melebihi sisa limit ${cashAdvanceCard.label} (${formatIDR(available)})`);
+            return;
+          }
+        }
         const selectedInstallments = creditPaymentCandidates
           .flatMap((candidate) => {
             const installmentsPaid = creditPaymentInstallments[candidate.id];
@@ -2440,8 +2499,11 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
           savingId: isTransfer && form.savingId && form.savingId !== 'none'
             ? form.savingId
             : undefined,
-          labels: isCreditPayment ? [CREDIT_CARD_PAYMENT_TAG] : isTransfer ? [] : [category],
-          budgetId: ((type === 'expense' && installmentTenorMonths === undefined) || (isTransfer && !isCreditPayment))
+          labels: isCreditPayment ? [CREDIT_CARD_PAYMENT_TAG]
+            : cashAdvanceCard ? [CASH_ADVANCE_TAG]
+              : isTransfer ? [] : [category],
+          budgetId: ((type === 'expense' && installmentTenorMonths === undefined)
+            || (isTransfer && !isCreditPayment && !cashAdvanceCard))
             && form.includeBudget === 'yes'
             ? form.budgetId
             : undefined,
@@ -2471,6 +2533,27 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         shouldUpdate
           ? await repos.transactions.update(id!, payload)
           : await repos.transactions.create(payload);
+        if (cashAdvanceCard && cashAdvanceFee > 0) {
+          // Biaya dicatat terpisah agar tetap terbaca sebagai pengeluaran riil, sedangkan
+          // pokok tarik tunai hanya memindahkan dana dari limit kartu ke dompet tujuan.
+          try {
+            await repos.transactions.create({
+              type: 'expense',
+              nature: 'fixed',
+              amount: cashAdvanceFee,
+              walletId: cashAdvanceCard.value,
+              labels: [CASH_ADVANCE_FEE_CATEGORY],
+              benefitScope: 'self',
+              note: CASH_ADVANCE_FEE_NOTE,
+              date: payload.date,
+            });
+            extraNote = ` · biaya ${formatIDR(cashAdvanceFee)} dicatat`;
+          } catch (caught) {
+            // Pokoknya sudah tersimpan: form tetap ditutup agar tidak tersimpan dua kali.
+            const reason = caught instanceof Error ? caught.message : 'alasan tidak diketahui';
+            extraNote = ` · biaya tarik tunai gagal dicatat (${reason}), catat manual sebagai pengeluaran kartu`;
+          }
+        }
       }
 
       if (create.type === 'subscription') {
@@ -2731,18 +2814,22 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
       if (selected.kind === 'credit') {
         if (!installmentsLoaded) return { text: `Memuat sisa limit ${selected.label}…` };
         const { available, installmentUnbilled } = cardPositionFor(selected.wallet);
-        const quote = form.isInstallment === 'yes' ? quoteForInstallmentForm(form) : null;
+        const quote = form.txType === 'expense' && form.isInstallment === 'yes' ? quoteForInstallmentForm(form) : null;
         const paid = quote ? toNumber(form.installmentPaidMonths) : 0;
         const alreadyPaid = quote
           ? Math.floor(quote.totalPayable / toNumber(form.installmentTenor)) * paid
             + Math.min(quote.totalPayable % toNumber(form.installmentTenor), paid)
           : 0;
-        const newCharge = quote ? quote.totalPayable - alreadyPaid : enteredAmount;
+        const isCashAdvance = form.txType === 'transfer';
+        const newCharge = quote
+          ? quote.totalPayable - alreadyPaid
+          : enteredAmount + (isCashAdvance ? toNumber(form.cashAdvanceFee) : 0);
         return {
           text: `Sisa limit ${selected.label}: ${formatted(available)}`
             + (installmentUnbilled > 0 ? ` · cicilan belum ditagih ${formatted(installmentUnbilled)}` : ''),
-          warning: !create.isEdit && form.txType === 'expense' && newCharge > available
-            ? 'Melebihi sisa limit kartu.' : undefined,
+          warning: !create.isEdit && (form.txType === 'expense' || isCashAdvance) && newCharge > available
+            ? isCashAdvance ? 'Tarik tunai dan biayanya melebihi sisa limit kartu.' : 'Melebihi sisa limit kartu.'
+            : undefined,
         };
       }
       if (!savingsLoaded) {

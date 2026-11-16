@@ -123,6 +123,34 @@ test('angsuran periode tertutup yang belum dibawa terdeteksi sampai penandanya a
   assert.deepEqual(uncarriedInstallmentCharges(card(), [tx], periods, [marker], october), []);
 });
 
+test('tarik tunai dan biayanya masuk tagihan serta memakai limit', () => {
+  const cashAdvance = {
+    id: 'ca', type: 'transfer', nature: 'fixed', amount: 2_000_000, walletId: 'cc', toWalletId: 'bca',
+    labels: ['Tarik Tunai Kartu Kredit'], date: '2026-11-07T10:00:00',
+  };
+  const fee = {
+    id: 'ca-fee', type: 'expense', nature: 'fixed', amount: 100_000, walletId: 'cc',
+    labels: ['Debt & Bills'], note: 'Biaya tarik tunai', date: '2026-11-07T10:00:00',
+  };
+  const position = creditCardPosition(
+    card({ previousPeriodBill: 1_000_000 }), [cashAdvance, fee, payment(400_000)], [], november,
+  );
+  assert.equal(position.cashAdvance, 2_000_000);
+  assert.equal(position.spending, 100_000);
+  assert.equal(position.payments, 400_000);
+  assert.equal(position.previousDue, 600_000);
+  assert.equal(position.bill, 2_700_000);
+  assert.equal(position.debt, 2_700_000);
+  assert.equal(position.available, 17_300_000);
+
+  // Tanpa baseline, tarik tunai periode ini tidak boleh terbaca sebagai tagihan lama.
+  const legacy = creditCardPosition(
+    card({ previousPeriodBill: undefined, balance: 3_100_000 }), [cashAdvance, fee], [], november,
+  );
+  assert.equal(legacy.previousDue, 1_000_000);
+  assert.equal(legacy.bill, 3_100_000);
+});
+
 test('beberapa kartu dijumlahkan tanpa saling memengaruhi', () => {
   const other = card({ id: 'cc2', previousPeriodBill: 200_000, creditLimit: 5_000_000 });
   const tx = installment();

@@ -398,6 +398,7 @@ export default function HomeScreen() {
   const cardBillParts = (card: typeof d.card) => [
     card.previousDue > 0 && tr('home.cardBillPrevious', { amount: money.fmtCompact(card.previousDue) }),
     card.spending > 0 && tr('home.cardBillSpending', { amount: money.fmtCompact(card.spending) }),
+    card.cashAdvance > 0 && tr('home.cardBillCashAdvance', { amount: money.fmtCompact(card.cashAdvance) }),
     card.installmentDue > 0 && tr('home.cardBillInstallments', { amount: money.fmtCompact(card.installmentDue) }),
   ].filter(Boolean).join(' · ');
   const safeAmount = moneyOrHidden(d.safeToSpend);

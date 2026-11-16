@@ -9,7 +9,7 @@ type PeriodRange = Pick<BudgetPeriod, 'start' | 'end'>;
  * sini supaya Beranda, Dompet, Anggaran, Laporan, dan Rencana selalu sama.
  *
  * ```text
- * tagihan = sisa tagihan lalu + belanja periode ini + angsuran jatuh tempo periode ini
+ * tagihan = sisa tagihan lalu + belanja + tarik tunai periode ini + angsuran jatuh tempo periode ini
  * utang   = tagihan + angsuran yang jatuh tempo setelah periode ini
  * sisa limit = limit − utang
  * ```
@@ -28,9 +28,11 @@ export interface CreditCardPosition {
   previousDue: number;
   /** Belanja kartu periode ini di luar cicilan. */
   spending: number;
+  /** Tarik tunai periode ini: transfer dari kartu ke dompet debit. Biayanya tercatat di `spending`. */
+  cashAdvance: number;
   /** Semua angsuran cicilan yang jatuh tempo di periode ini, termasuk angsuran pertama. */
   installmentDue: number;
-  /** Total yang harus dilunasi dari kas: tagihan lalu + belanja + angsuran periode ini. */
+  /** Total yang harus dilunasi dari kas: tagihan lalu + belanja + tarik tunai + angsuran periode ini. */
   bill: number;
   /** Angsuran yang jatuh tempo setelah periode ini. */
   installmentUnbilled: number;
@@ -45,7 +47,6 @@ export type CreditCardTotals = Omit<CreditCardPosition, 'wallet'>;
 
 export const isInstallmentTransaction = (transaction: Transaction) =>
   transaction.type === 'expense' && (transaction.installmentTenorMonths ?? 0) >= 2;
-
 const cardSchedules = (installments: Transaction[], walletId: string) => installments
   .filter((transaction) => isInstallmentTransaction(transaction) && transaction.walletId === walletId)
   .map(installmentSchedule);
@@ -107,10 +108,13 @@ export function creditCardPosition(
   const payments = own
     .filter((transaction) => transaction.type === 'transfer' && transaction.toWalletId === wallet.id)
     .reduce((sum, transaction) => sum + transaction.amount, 0);
+  const cashAdvance = own
+    .filter((transaction) => transaction.type === 'transfer' && transaction.walletId === wallet.id)
+    .reduce((sum, transaction) => sum + transaction.amount, 0);
   // Record lama belum punya baseline; rekonstruksi dari saldo ledger agar belanja periode
   // ini tidak terhitung dua kali sebagai tagihan lama.
   const openingBill = wallet.previousPeriodBill
-    ?? Math.max(0, Math.abs(wallet.balance) - spending - installmentPostings + payments);
+    ?? Math.max(0, Math.abs(wallet.balance) - spending - cashAdvance - installmentPostings + payments);
   const previousDue = Math.max(0, openingBill - payments);
   const end = period ? dayKey(period.end) : dayKey(today);
   const dues = cardDues(installments, wallet.id);
@@ -118,13 +122,14 @@ export function creditCardPosition(
     ? sumDues(dues.filter((due) => due.dueDate >= dayKey(period.start) && due.dueDate <= end))
     : 0;
   const installmentUnbilled = sumDues(dues.filter((due) => due.dueDate > end));
-  const bill = previousDue + spending + installmentDue;
+  const bill = previousDue + spending + cashAdvance + installmentDue;
   const debt = bill + installmentUnbilled;
   const limit = wallet.creditLimit ?? 0;
   return {
     wallet,
     previousDue,
     spending,
+    cashAdvance,
     installmentDue,
     bill,
     installmentUnbilled,
@@ -149,7 +154,7 @@ export function creditCardPositions(
 
 export function sumCreditCards(positions: CreditCardPosition[]): CreditCardTotals {
   const totals: CreditCardTotals = {
-    previousDue: 0, spending: 0, installmentDue: 0, bill: 0,
+    previousDue: 0, spending: 0, cashAdvance: 0, installmentDue: 0, bill: 0,
     installmentUnbilled: 0, debt: 0, payments: 0, limit: 0, available: 0,
   };
   for (const position of positions) {

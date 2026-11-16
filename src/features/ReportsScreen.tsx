@@ -340,6 +340,7 @@ export default function ReportsScreen() {
   const cardBillParts = [
     dashboard.card.previousDue > 0 && t('home.cardBillPrevious', { amount: money.fmtCompact(dashboard.card.previousDue) }),
     dashboard.card.spending > 0 && t('home.cardBillSpending', { amount: money.fmtCompact(dashboard.card.spending) }),
+    dashboard.card.cashAdvance > 0 && t('home.cardBillCashAdvance', { amount: money.fmtCompact(dashboard.card.cashAdvance) }),
     dashboard.card.installmentDue > 0 && t('home.cardBillInstallments', { amount: money.fmtCompact(dashboard.card.installmentDue) }),
   ].filter(Boolean).join(' · ');
 

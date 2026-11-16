@@ -221,9 +221,10 @@ export default function WalletsScreen() {
       setBillingBacklog(false);
     }
   };
-  const cardBillParts = (card: { previousDue: number; spending: number; installmentDue: number }) => [
+  const cardBillParts = (card: { previousDue: number; spending: number; cashAdvance: number; installmentDue: number }) => [
     card.previousDue > 0 && t('home.cardBillPrevious', { amount: money.fmtCompact(card.previousDue) }),
     card.spending > 0 && t('home.cardBillSpending', { amount: money.fmtCompact(card.spending) }),
+    card.cashAdvance > 0 && t('home.cardBillCashAdvance', { amount: money.fmtCompact(card.cashAdvance) }),
     card.installmentDue > 0 && t('home.cardBillInstallments', { amount: money.fmtCompact(card.installmentDue) }),
   ].filter(Boolean).join(' · ') || t('wallets.cardBillEmpty');
   const creditAvailableForCard = (wallet: typeof cards[number]) =>
@@ -568,6 +569,9 @@ export default function WalletsScreen() {
                   <span>{t('wallets.cardSpending')}</span>
                   <b>{money.fmt(currentCard?.spending ?? 0)}</b>
                   <div><small>{t('wallets.cardInstallmentsDue')}</small><strong>{money.fmt(currentCard?.installmentDue ?? 0)}</strong></div>
+                  {(currentCard?.cashAdvance ?? 0) > 0 && (
+                    <div><small>{t('wallets.cardCashAdvance')}</small><strong>{money.fmt(currentCard?.cashAdvance ?? 0)}</strong></div>
+                  )}
                 </div>
               </> : <>
                 <div className="wallet-flow-card income">
