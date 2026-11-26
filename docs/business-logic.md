@@ -122,10 +122,10 @@ Form menyediakan dua cara input (`installmentQuote`):
 | Harga barang | `totalBayar = hargaBarang + totalBunga`; nominal bulanan diturunkan dari total dan tenor. |
 
 Bunga adalah **nominal total selama tenor**, bukan persen atau bunga per bulan. Jika
-totalBayar tidak habis dibagi tenor, sisa pembulatan Rp1 dibagikan ke angsuran paling
-awal; jumlah semua angsuran tetap tepat sama dengan totalBayar. Contoh: harga barang
-Rp1.000.000 + bunga Rp100.000 untuk 3 bulan menghasilkan Rp366.667, Rp366.667, dan
-Rp366.666. Sebaliknya, input Rp500.000/bulan selama 3 bulan berarti **Rp500.000 tiap
+totalBayar tidak habis dibagi tenor, angsuran dibulatkan ke bawah dan sisa pembulatan Rp1
+dibagikan ke angsuran paling akhir (sama seperti tagihan BCA); jumlah semua angsuran tetap
+tepat sama dengan totalBayar. Contoh: harga barang Rp1.000.000 + bunga Rp100.000 untuk 3
+bulan menghasilkan Rp366.666, Rp366.667, dan Rp366.667. Sebaliknya, input Rp500.000/bulan selama 3 bulan berarti **Rp500.000 tiap
 bulan**, sehingga totalBayar Rp1.500.000, bukan Rp500.000 untuk seluruh tenor.
 
 `installmentInitialPaidMonths` adalah angsuran yang sudah lunas sebelum transaksi

@@ -108,7 +108,7 @@ View `v_transactions` mengeksposnya sebagai field berikut:
 transaksi diposting, **bukan** seluruh biaya tenor. `installmentTotalPayable` memakai
 `itemTotal + interestTotal` bila rincian tersedia; untuk record lama tanpa rincian,
 perkiraannya `amount × tenor`. `installmentPaymentAmount` membagikan pembulatan Rp1 ke
-angsuran terawal, sehingga jumlah angsuran tepat sama dengan total bayar.
+angsuran terakhir, sehingga jumlah angsuran tepat sama dengan total bayar.
 
 Alokasi pembayaran berada di `credit_payment_installment_allocations`, menghubungkan
 `payment_transaction_id` dan `installment_transaction_id`, dengan

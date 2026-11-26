@@ -21,7 +21,7 @@ import {
 import { getBrowserSupabase } from '../infrastructure/supabase/browser';
 import { formatIDR, formatMoney, formatMoneyCompact } from '../core/domain/money';
 import { periodProgress, transactionInPeriod } from '../core/domain/calculations';
-import { installmentPaidAmount, installmentQuote } from '../core/domain/installment-pricing';
+import { installmentPaidAmount, installmentPaidTotal, installmentQuote } from '../core/domain/installment-pricing';
 import { creditCardPeriod, creditCardPosition } from '../core/domain/credit-card';
 import { BudgetPeriod, CardNetwork, Transaction, Wallet, WalletKind, WalletMedium } from '../core/domain/types';
 import {
@@ -442,6 +442,7 @@ const quoteForInstallmentForm = (form: Record<string, string>) => {
     toNumber(form.installmentTenor),
     toNumber(mode === 'item_total' ? form.installmentItemTotal : form.amount),
     toNumber(form.installmentInterestTotal),
+    form.isInstallment === 'yes' ? toNumber(form.installmentPaidMonths) : 0,
   );
 };
 
@@ -1376,7 +1377,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
               const quote = quoteForInstallmentForm(f);
               return quote ? formatIDR(quote.monthlyAmount) : 'Isi harga barang, bunga, dan tenor';
             },
-            hint: 'Sisa pembulatan Rp1 masuk ke angsuran awal.',
+            hint: 'Dibulatkan ke bawah; sisa pembulatan Rp1 masuk ke angsuran terakhir.',
             showIf: (f) => usesCreditCard(f) && f.isInstallment === 'yes' && f.installmentPricingMode === 'item_total',
           },
           {
@@ -2817,8 +2818,7 @@ function Inner({ initialPreferences }: { initialPreferences?: Preferences }) {
         const quote = form.txType === 'expense' && form.isInstallment === 'yes' ? quoteForInstallmentForm(form) : null;
         const paid = quote ? toNumber(form.installmentPaidMonths) : 0;
         const alreadyPaid = quote
-          ? Math.floor(quote.totalPayable / toNumber(form.installmentTenor)) * paid
-            + Math.min(quote.totalPayable % toNumber(form.installmentTenor), paid)
+          ? installmentPaidTotal(quote.totalPayable, toNumber(form.installmentTenor), paid)
           : 0;
         const isCashAdvance = form.txType === 'transfer';
         const newCharge = quote
