@@ -66,6 +66,7 @@ next-env.d.ts
 !/supabase/migrations/202609280073_update_installment_pricing_metadata.sql
 !/supabase/migrations/202609280074_validate_monthly_installment_allocation.sql
 !/supabase/migrations/202611160075_allow_credit_card_cash_advance.sql
+!/supabase/migrations/202611260076_round_installments_down.sql
 !/supabase/tests/
 /supabase/tests/*
 !/supabase/tests/database/

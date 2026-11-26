@@ -459,6 +459,9 @@ export function createSupabaseRepositories(
       const before = await transactions.get(id);
       if (!before) throw new Error('Transaksi tidak ditemukan');
       const next = { ...before, ...patch };
+      const hasInstallmentPayments = (before.installmentPaidMonths ?? 0) > (before.installmentInitialPaidMonths ?? 0);
+      // Nominal angsuran yang berubah (mis. aturan pembulatan) diposting ulang selama belum ada
+      // pembayaran; setelah ada pembayaran, nominal yang sudah diposting dipertahankan.
       const pricingOnly = Boolean(before.installmentTenorMonths && next.installmentTenorMonths)
         && before.type === next.type
         && before.nature === next.nature
@@ -475,7 +478,7 @@ export function createSupabaseRepositories(
         && before.date.slice(0, 10) === next.date.slice(0, 10)
         && before.installmentTenorMonths === next.installmentTenorMonths
         && (before.installmentInitialPaidMonths ?? 0) === (patch.installmentPaidMonths ?? before.installmentInitialPaidMonths ?? 0)
-        && (next.installmentPricingMode === 'item_total' || before.amount === next.amount);
+        && (before.amount === next.amount || (next.installmentPricingMode === 'item_total' && hasInstallmentPayments));
       if (pricingOnly && next.installmentItemTotal != null) {
         const { error } = await supabase.rpc('update_installment_pricing', {
           p_payload: {
@@ -489,8 +492,7 @@ export function createSupabaseRepositories(
         throwIfError(error, 'Gagal memperbarui harga dan bunga cicilan');
         return (await transactions.get(id))!;
       }
-      if (before.installmentTenorMonths
-        && (before.installmentPaidMonths ?? 0) > (before.installmentInitialPaidMonths ?? 0)) {
+      if (before.installmentTenorMonths && hasInstallmentPayments) {
         throw new Error('Cicilan ini sudah memiliki pembayaran. Ubah hanya rincian harga barang dan bunga agar progresnya tetap terjaga.');
       }
       if (before.creditPaymentInstallments !== undefined) {
